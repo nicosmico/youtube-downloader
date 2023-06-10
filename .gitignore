@@ -1,0 +1,56 @@
+# Entornos virtuales
+venv/
+env/
+
+# Archivos de registro
+*.log
+
+# Archivos generados por Flask
+__pycache__/
+instance/
+
+# Archivos generados por Pytube
+*.pyc
+*.pyo
+
+# Archivos de configuración
+*.cfg
+*.ini
+
+# Archivos de caché
+*.swp
+*.swo
+
+# Archivos de respaldo
+*~
+*.bak
+
+# Archivos de bases de datos
+*.db
+
+# Carpeta de subida de archivos
+uploads/
+
+# Entorno de desarrollo (por ejemplo, para VS Code)
+.vscode/
+
+# Carpeta de dependencias de Flask
+env/
+
+# Archivo de variables de entorno local
+.env
+
+# Carpeta de archivos compilados
+__pycache__/
+
+# Archivos de registros de prueba
+pytest.ini
+
+# Archivos de Docker
+docker-compose.yml
+
+# Carpetas generadas por Docker
+.docker/
+
+# Carpeta de descargas
+downloads/
