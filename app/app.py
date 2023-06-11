@@ -3,6 +3,7 @@ from utils.file_manager import FileManager
 from utils.converter import Converter
 from utils.downloader import Downloader
 import io
+import os
 
 app = Flask(__name__)
 
@@ -31,7 +32,7 @@ def download():
         return "Error: MP3 conversion failed"
 
     # Save converted file in memory to delete it later
-    download_name = converted_file_path.split('\\')[-1];
+    download_name = os.path.basename(converted_file_path)
     file = io.BytesIO()
     with open(file_path, 'rb') as fo:
         file.write(fo.read())
@@ -45,5 +46,4 @@ def download():
     return send_file(file, as_attachment=True, mimetype='audio/mp3', download_name=download_name)
 
 if __name__ == '__main__':
-    # app.run()
-    app.run(debug=True)
+    app.run()

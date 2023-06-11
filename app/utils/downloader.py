@@ -9,7 +9,7 @@ class Downloader:
         """
 
         current_path = os.getcwd()
-        output_path = output_path or f'{current_path}\\downloads'
+        output_path = output_path or os.path.join(current_path, 'downloads')
 
         try:
             yt = YouTube(link)
