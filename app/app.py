@@ -1,4 +1,4 @@
-from flask import Flask, send_file, render_template, request
+from flask import Flask, send_file, render_template, request, redirect
 from utils.file_manager import FileManager
 from utils.converter import Converter
 from utils.downloader import Downloader
@@ -9,10 +9,21 @@ app = Flask(__name__)
 
 @app.route('/', methods=['GET'])
 def index():
+    video_id = request.args.get('v')
+    if video_id:
+        link = f'https://www.youtube.com/watch?v={video_id}'
+        return render_template('index.html', link=link)
     return render_template('index.html')
 
-# Route to download as mp3
 @app.route('/watch', methods=['GET'])
+def watch():
+    video_id = request.args.get('v')
+    if video_id:
+        return redirect(f'/?v={video_id}')
+    return redirect('/')
+
+# Route to download as mp3
+@app.route('/download', methods=['GET'])
 def download():
     video_id = request.args.get('v')
     if not video_id:

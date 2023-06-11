@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const downloadUrl = `/watch?v=${encodeURIComponent(youtubeLink)}`;
+        const downloadUrl = `/download?v=${encodeURIComponent(youtubeLink)}`;
 
         statusMessage.textContent = 'Descargando...';
         downloadButton.disabled = true;
