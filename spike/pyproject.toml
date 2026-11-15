@@ -1,0 +1,8 @@
+[project]
+name = "spike01"
+version = "0.0.0"
+requires-python = ">=3.13"
+dependencies = ["fastapi>=0.115", "uvicorn>=0.32"]
+
+[dependency-groups]
+build = ["pyinstaller>=6.11"]

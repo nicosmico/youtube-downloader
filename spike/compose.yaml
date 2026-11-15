@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    environment:
+      BIND_HOST: 0.0.0.0
+      PORT: "${PORT:-8765}"
+      OPEN_BROWSER: "0"
+    ports:
+      - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"

@@ -1,0 +1,84 @@
+# Workflow del spike 01. NO ejecutado. Para probarlo: copiar a .github/workflows/spike-01.yml
+# en una rama de prueba (workflow_dispatch). Verifica PyInstaller onedir en macOS arm64 y Windows x64.
+name: spike-01-pyinstaller
+on: workflow_dispatch
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-arm64
+            exe: spike01
+            noconsole: ""
+            sep: ":"
+          - os: windows-latest
+            name: windows-x64
+            exe: spike01.exe
+            noconsole: "--noconsole"
+            sep: ";"
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: spike
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Python y dependencias
+        run: uv sync --group build --python 3.13
+      - name: Arquitectura
+        run: uv run python -c "import platform,sys; print(platform.machine(), sys.version)"
+      - name: PyInstaller onedir
+        run: >
+          uv run pyinstaller --noconfirm --onedir --name spike01 ${{ matrix.noconsole }}
+          --add-data "app/static${{ matrix.sep }}static" app/main.py
+      - name: Arquitectura del binario (macOS)
+        if: runner.os == 'macOS'
+        run: file dist/spike01/spike01
+      - name: Smoke test (arranca y responde /api/health)
+        run: |
+          ./dist/spike01/${{ matrix.exe }} --no-browser --port 18765 &
+          PID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18765/api/health; then echo; OK=1; break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18765/ | grep -q "Hola mundo" || OK=0
+          kill $PID || true
+          [ "${OK:-0}" = 1 ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spike01-${{ matrix.name }}
+          path: spike/dist/spike01
+          retention-days: 3
+
+  # Verifica `yt-dlp -U` en Windows con otra instancia de yt-dlp.exe en ejecucion.
+  # Mejor esfuerzo: no ejecutado todavia. Resultado esperado (segun update.py): el -U renombra
+  # el exe en uso a .old, instala el nuevo, la instancia vieja sigue viva, y un segundo update
+  # falla con "Unable to remove the old version" mientras el .old siga bloqueado.
+  update-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: yt-dlp.exe viejo + instancia en uso + -U
+        run: |
+          mkdir engine && cd engine
+          curl -fsSL -o yt-dlp.exe https://github.com/yt-dlp/yt-dlp/releases/download/2025.11.12/yt-dlp.exe
+          ./yt-dlp.exe --version
+          mkdir srv && python -c "open('srv/big.mp4','wb').write(b'0'*(50*1024*1024))"
+          (cd srv && python -m http.server 18080 &) ; sleep 2
+          ./yt-dlp.exe --limit-rate 50K -o out.mp4 http://127.0.0.1:18080/big.mp4 > busy.log 2>&1 &
+          sleep 8; tasklist | grep -i yt-dlp || { echo "no hay instancia en uso"; cat busy.log; exit 1; }
+          echo "=== -U con instancia en uso"; ./yt-dlp.exe -U; echo "exit=$?"
+          ls -la
+          echo "=== instancia vieja sigue viva?"; tasklist | grep -i yt-dlp
+          ./yt-dlp.exe --version
+          echo "=== segundo update (downgrade) mientras .old puede seguir bloqueado"
+          ./yt-dlp.exe --update-to 2025.11.12; echo "exit=$?"
+          ls -la
+          taskkill //F //IM yt-dlp.exe || true
