@@ -13,7 +13,7 @@ from app.engine import EngineManager, EngineStatus
 from app.events import EventBroadcaster
 from app.idle import IdleMonitor
 from app.main import create_app
-from tests.conftest import PORT, RecordingBroadcaster, ShutdownRecorder
+from tests.conftest import APP_HEADERS, HOST, PORT, RecordingBroadcaster, ShutdownRecorder
 from tests.fake_engine import FakeEngine
 from tests.test_jobs_api import enqueue
 
@@ -194,6 +194,18 @@ class TestInTheApp:
         assert app.state.idle.check()
 
         assert events.named("shutdown") == [{"reason": "idle"}]
+        assert shutdown.calls == 1
+
+    def test_closing_from_the_ui_tells_every_tab(
+        self, make_app, shutdown: ShutdownRecorder
+    ) -> None:
+        events = RecordingBroadcaster()
+        client = TestClient(make_app(broadcaster=events), base_url=f"http://{HOST}")
+
+        response = client.post("/api/system/shutdown", headers=APP_HEADERS)
+
+        assert response.status_code == 202
+        assert events.named("shutdown") == [{"reason": "user"}]
         assert shutdown.calls == 1
 
     def test_a_subscribed_client_prevents_it_and_leaving_restarts_the_timer(

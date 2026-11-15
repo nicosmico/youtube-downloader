@@ -67,6 +67,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Solo en desarrollo, `BIND_HOST` y `PORT` fijan la interfaz y el puerto para que Docker pueda publicarlo (ver ADR-0008).
 - `Single Instance`: un lock de archivo en `$DATA_DIR` evita dos arranques simultáneos. Si `runtime.json` existe y `GET /api/health` responde con el identificador de la app, se abre esa instancia y el segundo proceso termina.
 - El apagado se dispara desde la UI (`POST /api/system/shutdown`), por señal o por `Idle Shutdown`, cancelando jobs activos y marcándolos `interrupted`.
+- `IDLE_SHUTDOWN_SECONDS` (por defecto 600; `0` lo desactiva) fija el tiempo; el entorno Docker de desarrollo lo pone a `0`.
 - `Idle Shutdown`: si pasan 10 minutos sin clientes SSE conectados, sin jobs `queued`, `downloading` o `processing` y sin instalación del `Engine` en curso, la app se apaga ordenadamente. El temporizador se reinicia con cualquier conexión.
 
 ### Frontend
@@ -175,15 +176,15 @@ CREATE TABLE presets (
 
 | Método | Ruta | Contrato |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | Identificador y versión de la app, Engine (mismo objeto que `/api/system/engine`), puerto. |
+| `GET` | `/api/health` | Identificador y versión de la app, `platform`, Engine (mismo objeto que `/api/system/engine`), puerto. |
 | `POST` | `/api/preview` | `{url}` → `MediaPreview`. |
 | `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, title?, entries?}` → `{batchId \| null, jobs[]}`. `title` viene del `MediaPreview` del cliente. |
 | `GET` | `/api/jobs` | `{jobs, nextBefore}`, del más reciente al más antiguo. Filtros: `status` (lista separada por comas), `limit`, `before` (id de job). |
 | `GET` | `/api/jobs/{id}` | `DownloadJob`. |
 | `POST` | `/api/jobs/{id}/cancel` | Cancela job en cola o activo y espera a que termine (hasta ~7 s). `409 job_not_cancelable` si ya es terminal. |
 | `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`, al final de la cola. `409 job_not_retryable` en otros estados. |
-| `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer (acción del host). |
-| `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409` si no es terminal. |
+| `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer. `404 file_missing` si el archivo ya no está, `409 job_not_completed`, `501 open_unavailable` (Docker), `500 open_failed`. |
+| `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409 job_not_removable` si no es terminal. Al quitar el último job de un `Batch` se borra también el `Batch`. |
 | `GET` | `/api/events` | Stream SSE. |
 | `GET` | `/api/presets` | Lista de `Preset` ordenada por nombre. |
 | `POST` | `/api/presets` | Crea `Preset`. |
@@ -211,7 +212,7 @@ Los errores usan `{code, message, detail?}`. El `message` de los errores que ve 
 | `job.removed` | Job quitado del `History`. |
 | `engine.updated` | Cambio de estado o versión del Engine. |
 | `queue.updated` | Cambio en cola o jobs activos, con `{active, queued}`. |
-| `shutdown` | La app va a cerrarse, con el motivo (`user`, `signal`, `idle`). |
+| `shutdown` | La app va a cerrarse, con el motivo `user` (botón de cualquier pestaña) o `idle`. Un cierre por señal no se anuncia: las pestañas ven el corte y reconectan. |
 
 Al conectar, el stream envía primero el estado actual (`engine.updated` y `queue.updated`). Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignora.
 

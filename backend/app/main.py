@@ -107,6 +107,11 @@ def create_app(
         remove_runtime(data_dir, only_pid=os.getpid())  # a new launch must not reuse a dying app
         request_shutdown()
 
+    def shutdown_by_user() -> None:
+        # Every open tab learns the app closed, not only the one whose button was pressed.
+        broadcaster.publish("shutdown", {"reason": "user"})
+        request_shutdown()
+
     idle: IdleMonitor | None = None
     if idle_shutdown_seconds > 0:
         idle = IdleMonitor(
@@ -156,7 +161,7 @@ def create_app(
         build_router(
             data_dir=data_dir,
             port=port,
-            request_shutdown=request_shutdown,
+            request_shutdown=shutdown_by_user,
             engine=engine,
             previews=PreviewService(engine, ytdlp_runner),
             download_dir=download_dir,
