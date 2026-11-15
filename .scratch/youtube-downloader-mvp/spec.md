@@ -106,7 +106,8 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Verificación con `yt-dlp --version`, `ffmpeg -version`, `ffprobe -version` y `deno --version`. Si cualquiera falla, incluido Deno, el Engine queda en `error`: no se descarga en modo degradado.
 - Estados: `missing → installing → ready | error`.
 - Actualización de `yt-dlp` al arrancar si `engine.json` tiene más de 24 h, cada 24 h mientras la app está abierta, o manualmente desde la UI. No se usa `-U`: la app consulta el último release, descarga el binario nuevo a un temporal, lo verifica contra `SHA2-256SUMS` y lo intercambia con el actual (el viejo pasa a `.old` y se borra).
-- Durante la actualización la `Queue` deja de despachar jobs nuevos, espera a que terminen los activos, intercambia el binario y reanuda. Así ningún proceso retiene el binario viejo, que en Windows impediría borrarlo.
+- Durante la actualización la `Queue` deja de despachar jobs nuevos, espera a que terminen los activos, intercambia el binario y reanuda. Así ningún proceso retiene el binario viejo, que en Windows impediría borrarlo. Vale tanto para la actualización automática como para la manual.
+- La instalación es incremental: un reintento no vuelve a descargar los binarios ya instalados. `engine.json` guarda también el hash del archivo descargado (`archiveSha256`) para detectar cuándo una nueva versión de la app fija otra versión de `ffmpeg`, `ffprobe` o Deno.
 - `ffmpeg`, `ffprobe` y Deno solo cambian con una nueva versión de la app.
 - `engine.json` en `$DATA_DIR` guarda versión y hash de cada binario y la fecha del último chequeo de `yt-dlp`; se reescribe tras cada actualización.
 - Las descargas quedan bloqueadas hasta que el Engine esté `ready`.
@@ -170,7 +171,7 @@ CREATE TABLE presets (
 
 | Método | Ruta | Contrato |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | Identificador y versión de la app, estado del Engine, puerto. |
+| `GET` | `/api/health` | Identificador y versión de la app, Engine (mismo objeto que `/api/system/engine`), puerto. |
 | `POST` | `/api/preview` | `{url}` → `MediaPreview`. |
 | `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, entries?}` → `{batchId \| null, jobs[]}`. |
 | `GET` | `/api/jobs` | Lista paginada con filtros `status`, `limit`, `before`. |
@@ -184,8 +185,9 @@ CREATE TABLE presets (
 | `POST` | `/api/presets` | Crea `Preset`. |
 | `PATCH` | `/api/presets/{id}` | Edita `Preset`. |
 | `DELETE` | `/api/presets/{id}` | Elimina `Preset`. |
-| `GET` | `/api/system/engine` | Estado y versiones del Engine. |
-| `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. |
+| `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
+| `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |
+| `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, o `409` (`engine_busy`, `engine_not_ready`, `engine_external` con `ENGINE_BIN_DIR`). |
 | `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer (acción del host). |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
@@ -193,7 +195,7 @@ CREATE TABLE presets (
 
 Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean de YouTube.
 
-Los errores usan `{code, message, detail?}`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable`, `timeout`, `engine_not_ready`.
+Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable`, `timeout`, `engine_not_ready`.
 
 ### Eventos SSE
 
@@ -205,7 +207,7 @@ Los errores usan `{code, message, detail?}`. Códigos de preview: `invalid_url`,
 | `queue.updated` | Cambio en cola o jobs activos. |
 | `shutdown` | La app va a cerrarse, con el motivo (`user`, `signal`, `idle`). |
 
-Heartbeat cada 15 s.
+Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignora.
 
 ### Runner y `yt-dlp`
 

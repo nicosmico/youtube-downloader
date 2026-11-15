@@ -14,4 +14,5 @@
 - [ ] Una URL inválida y un timeout se manejan sin bloquear la API.
 - [ ] El preview no crea archivos ni `DownloadJob`.
 - [ ] La UI muestra estados de carga y error.
+- [ ] Con el Engine sin `ready`, la API responde `engine_not_ready` y la UI deshabilita el campo de URL (usa `engineReady`).
 - [ ] Tests unitarios del clasificador de URLs y tests de integración con `FakeEngine`, sin red.

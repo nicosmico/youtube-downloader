@@ -12,7 +12,7 @@
 - [x] Los restos `.old` y `.new` se borran al arrancar.
 - [x] `ENGINE_BIN_DIR` permite apuntar a binarios montados sin cambiar el código.
 - [x] `engine.json` registra versión y hash de cada binario y la fecha del último chequeo de `yt-dlp`.
-- [ ] La UI muestra el estado y bloquea el encolado hasta `ready`.
+- [x] La UI muestra el estado; expone la señal `engineReady` y el guard de backend `engine_not_ready`. El bloqueo efectivo de preview y encolado se verifica en los tickets 04 y 05.
 - [x] Un fallo de red deja estado `error` con mensaje y opción de reintentar.
 - [x] La actualización manual descarga el último release, lo verifica contra `SHA2-256SUMS`, intercambia el binario y cambia la versión y el hash en `engine.json` sin reiniciar la app.
 - [x] La actualización no arranca mientras haya descargas activas (la coordinación con la `Queue` se completa en el ticket 06).

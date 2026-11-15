@@ -14,4 +14,5 @@
 - [ ] El movimiento final funciona entre volúmenes distintos (staging y descargas en montajes separados del contenedor).
 - [ ] El endpoint de abrir carpeta responde y la UI muestra el resultado; la apertura nativa en Finder se valida en el ticket 14.
 - [ ] Un fallo de `yt-dlp` deja el job `failed` con mensaje saneado y borra su staging.
+- [ ] Con el Engine sin `ready`, `POST /api/jobs` responde `engine_not_ready` y la UI no permite encolar.
 - [ ] Tests de integración con `FakeEngine` y tests de contrato de argumentos.

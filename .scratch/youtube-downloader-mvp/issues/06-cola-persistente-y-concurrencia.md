@@ -12,5 +12,5 @@
 - [ ] Los jobs activos al cerrar quedan `interrupted`.
 - [ ] Los `queued` se reanudan automáticamente tras reiniciar.
 - [ ] La UI refleja la cola y los estados sin recargar.
-- [ ] Una actualización del Engine pausa el despacho, espera a que terminen los jobs activos, intercambia el binario y reanuda la `Queue` (ADR-0002).
+- [ ] Una actualización del Engine, automática o manual, pausa el despacho, espera a que terminen los jobs activos, intercambia el binario y reanuda la `Queue` (ADR-0002). La manual responde `202` en vez del `409` provisional del ticket 03, y la UI muestra que la actualización está pendiente.
 - [ ] Tests de concurrencia y persistencia con SQLite temporal.
