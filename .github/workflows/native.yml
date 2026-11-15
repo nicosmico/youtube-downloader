@@ -1,10 +1,13 @@
-# Native packaging smoke (ticket 14): PyInstaller onedir of the real app on macOS arm64 and
-# Windows x64, then a smoke test of the built executable (Engine install, download, shutdown).
+# Native packaging (tickets 12, 13, 14): PyInstaller build of the real app on macOS arm64 (ad-hoc
+# signed .app) and Windows x64 (onedir), a smoke test of the built executable (Engine install,
+# download, shutdown) and the distributable .zip. PRs and branches only keep the .zip as a
+# short-lived artifact; a `v*` tag also publishes both .zip files in a GitHub Release.
 name: Native
 
 on:
   push:
-    branches: [main, "ticket/14-*"]
+    branches: [main, "ticket/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -17,10 +20,12 @@ jobs:
         include:
           - os: macos-latest
             name: macos-arm64
-            exe: packaging/dist/youtube-downloader/youtube-downloader
+            exe: packaging/dist/YouTube Downloader.app/Contents/MacOS/youtube-downloader
+            zip: YouTube-Downloader-macos-arm64.zip
           - os: windows-latest
             name: windows-x64
-            exe: packaging/dist/youtube-downloader/youtube-downloader.exe
+            exe: packaging/dist/YouTube Downloader/YouTube Downloader.exe
+            zip: YouTube-Downloader-windows-x64.zip
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -47,17 +52,35 @@ jobs:
         working-directory: backend
         run: uv run --no-sync python -c "import platform,sys; print(platform.machine(), sys.version)"
 
-      - name: PyInstaller onedir
+      - name: PyInstaller (.app on macOS, onedir on Windows)
         working-directory: backend
+        env:
+          APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: >
           uv run --no-sync pyinstaller --noconfirm
           --distpath ../packaging/dist --workpath ../packaging/build
           ../packaging/youtube-downloader.spec
       - name: Build size
-        run: du -sh packaging/dist/youtube-downloader
+        run: du -sh packaging/dist/*
       - name: Binary architecture (macOS)
         if: runner.os == 'macOS'
-        run: file ${{ matrix.exe }}
+        run: file "${{ matrix.exe }}"
+
+      - name: Ad-hoc signature and zip (macOS)
+        if: runner.os == 'macOS'
+        working-directory: packaging/dist
+        run: |
+          codesign --force --deep -s - "YouTube Downloader.app"
+          codesign --verify --deep --strict --verbose=2 "YouTube Downloader.app"
+          # ditto keeps the signature, symlinks and permissions that `zip` would damage.
+          ditto -c -k --keepParent "YouTube Downloader.app" "${{ matrix.zip }}"
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: packaging/dist
+        run: Compress-Archive -Path "YouTube Downloader" -DestinationPath "${{ matrix.zip }}"
+      - name: Zip size
+        run: ls -l "packaging/dist/${{ matrix.zip }}"
 
       - name: Smoke test (health, Engine ready, open folder, download, shutdown)
         env:
@@ -76,9 +99,33 @@ jobs:
           PYTHONUTF8: "1"
         run: uv run --no-project python packaging/smoke.py "${{ matrix.exe }}" --empty-ca-store
 
+      - name: Signature still valid after running the app (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict "packaging/dist/YouTube Downloader.app"
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: youtube-downloader-${{ matrix.name }}
-          path: packaging/dist/youtube-downloader
+          name: ${{ matrix.zip }}
+          path: packaging/dist/${{ matrix.zip }}
           retention-days: 3
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}" dist/*.zip
+          --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --generate-notes
