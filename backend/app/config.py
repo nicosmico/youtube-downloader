@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.idle import IDLE_SHUTDOWN_SECONDS
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -19,6 +21,8 @@ class Settings:
     open_browser: bool = True
     # Dev/CI only: use the Engine binaries found here as they are (no download, no pinned hashes).
     engine_bin_dir: Path | None = None
+    # Idle Shutdown (ADR-0001): seconds without clients or work before the app closes; 0 disables.
+    idle_shutdown_seconds: float = IDLE_SHUTDOWN_SECONDS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -33,8 +37,17 @@ class Settings:
             engine_bin_dir=Path(env["ENGINE_BIN_DIR"]).expanduser()
             if env.get("ENGINE_BIN_DIR")
             else None,
+            idle_shutdown_seconds=_seconds(env.get("IDLE_SHUTDOWN_SECONDS")),
         )
 
 
 def _path(value: str | None, default: Path) -> Path:
     return Path(value).expanduser() if value else default
+
+
+def _seconds(value: str | None) -> float:
+    """Unset or unreadable: the default. Negative values disable it, like 0."""
+    try:
+        return max(0.0, float(value)) if value else IDLE_SHUTDOWN_SECONDS
+    except ValueError:
+        return IDLE_SHUTDOWN_SECONDS

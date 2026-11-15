@@ -15,6 +15,9 @@ services:
       DOWNLOAD_DIR: /downloads
       # Optional: use Engine binaries from this (mounted) directory instead of downloading.
       ENGINE_BIN_DIR: "${ENGINE_BIN_DIR:-}"
+      # Idle Shutdown (ADR-0001), in seconds. Off in dev (0) so the container does not stop on
+      # its own; set e.g. 20 to try it, or empty for the product default (600).
+      IDLE_SHUTDOWN_SECONDS: "${IDLE_SHUTDOWN_SECONDS-0}"
     ports:
       # Published on the host loopback only.
       - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"

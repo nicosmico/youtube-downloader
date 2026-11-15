@@ -66,6 +66,7 @@ def run(settings: Settings) -> int:
             request_shutdown=request_shutdown,
             engine_bin_dir=settings.engine_bin_dir,
             download_dir=settings.download_dir,
+            idle_shutdown_seconds=settings.idle_shutdown_seconds,
         )
         # log_config=None: no console under PyInstaller --noconsole; logging goes to a file.
         # timeout_graceful_shutdown: open SSE streams must not keep the server from stopping.

@@ -1,7 +1,9 @@
-"""Routes of the jobs: create, list, get, cancel and retry."""
+"""Routes of the jobs: create, list, get, cancel, retry, remove and reveal."""
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -10,9 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
 from app.jobs.folders import FALLBACK_FOLDER, sanitize_folder_name
+from app.jobs.models import JobStatus
 from app.jobs.options import AudioFormatName, Mode, QualityName, check_options
-from app.jobs.queue import JobQueue, NotCancelable, NotRetryable, UnknownJob
+from app.jobs.queue import JobQueue, NotCancelable, NotRemovable, NotRetryable, UnknownJob
 from app.jobs.repository import JobRepository
+from app.opener import FileRevealer, OpenUnavailable
 from app.preview.failures import failure
 from app.preview.urls import UrlKind, UrlRejected, classify_url, require_video_url
 
@@ -43,7 +47,7 @@ class CreateJob(BaseModel):
     entries: list[CreateEntry] | None = Field(default=None, max_length=MAX_ENTRIES)
 
 
-def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
+def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevealer) -> APIRouter:
     router = APIRouter(prefix="/api/jobs")
 
     @router.post("", dependencies=[Depends(require_engine_ready)])
@@ -143,6 +147,52 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
                 "job_not_retryable",
                 "Solo se pueden reintentar descargas fallidas, canceladas o interrumpidas.",
             ) from None
+
+    @router.delete("/{job_id}")
+    def remove_job(job_id: str) -> dict[str, str]:
+        """Quita un job terminal del History; el archivo descargado no se toca."""
+        try:
+            queue.remove(job_id)
+        except UnknownJob:
+            raise _not_found() from None
+        except NotRemovable:
+            raise ApiError(
+                409,
+                "job_not_removable",
+                "Solo se pueden quitar del historial las descargas que ya terminaron.",
+            ) from None
+        return {"status": "removed"}
+
+    @router.post("/{job_id}/reveal")
+    def reveal_job(job_id: str) -> dict[str, str]:
+        """Host action: show the file of a `completed` job in Finder/Explorer."""
+        job = repo.get(job_id)
+        if job is None:
+            raise _not_found()
+        if job.status is not JobStatus.COMPLETED:
+            raise ApiError(
+                409,
+                "job_not_completed",
+                "Solo se puede mostrar el archivo de una descarga completada.",
+            )
+        path = Path(job.output_path) if job.output_path else None
+        if path is None or not path.is_file():
+            raise ApiError(
+                404,
+                "file_missing",
+                "El archivo ya no está en su carpeta: se movió o se eliminó.",
+            )
+        try:
+            reveal(path)
+        except OpenUnavailable:
+            raise ApiError(
+                501,
+                "open_unavailable",
+                "Esta acción solo funciona en la aplicación de escritorio (macOS o Windows).",
+            ) from None
+        except (OSError, subprocess.SubprocessError):
+            raise ApiError(500, "open_failed", "No se pudo mostrar el archivo.") from None
+        return {"status": "revealed"}
 
     return router
 

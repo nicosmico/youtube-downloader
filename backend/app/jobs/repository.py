@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.db import Database
-from app.jobs.models import Batch, Job, JobStatus
+from app.jobs.models import TERMINAL_STATUSES, Batch, Job, JobStatus
 
 # Columns the runner and the queue may change after creation.
 _MUTABLE = frozenset(
@@ -129,6 +129,28 @@ class JobRepository:
         )
         jobs = [Job.from_row(r) for r in rows[:limit]]
         return jobs, (jobs[-1].id if len(rows) > limit else None)
+
+    def delete_terminal(self, job_id: str) -> Job | None:
+        """Remove a finished job from the History (its file is never touched). The Batch goes
+        with its last job. None if the job is not terminal (or does not exist): one atomic
+        statement, so a job that a retry just requeued is not removed."""
+        job = self.get(job_id)
+        if job is None:
+            return None
+        marks = ",".join("?" * len(TERMINAL_STATUSES))
+        removed = self._db.execute(
+            f"DELETE FROM jobs WHERE id = ? AND status IN ({marks})",
+            (job_id, *(s.value for s in TERMINAL_STATUSES)),
+        )
+        if not removed:
+            return None
+        if job.batch_id:
+            self._db.execute(
+                "DELETE FROM batches WHERE id = ? "
+                "AND NOT EXISTS (SELECT 1 FROM jobs WHERE batch_id = ?)",
+                (job.batch_id, job.batch_id),
+            )
+        return job
 
     def update(self, job_id: str, **fields: Any) -> Job:
         unknown = set(fields) - _MUTABLE

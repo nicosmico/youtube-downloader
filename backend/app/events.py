@@ -1,8 +1,11 @@
 """Server-Sent Events: a small broadcaster plus the `GET /api/events` stream.
 
-Later tickets publish `job.*`, `queue.updated` and `shutdown` through the same broadcaster.
-Every client has a bounded queue; a client that falls behind is dropped (it reconnects and
-rehydrates). Smarter slow-client handling is ticket 11.
+Jobs, the Queue, the Engine and the shutdown publish through the same broadcaster.
+
+Slow clients (ticket 11): publishing never blocks, whoever calls it (the runner's threads
+included). Every client has a bounded queue; one that falls behind is dropped: its queue is
+emptied, its stream ends and the browser reconnects and rehydrates from `GET /api/jobs`. The other
+clients are not affected.
 """
 
 from __future__ import annotations
@@ -45,6 +48,15 @@ class EventBroadcaster:
         self._queue_size = queue_size
         self._subscribers: set[Subscription] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._activity: list[Callable[[], None]] = []
+
+    def add_activity_listener(self, listener: Callable[[], None]) -> None:
+        """Called on every publish, connection and disconnection (the Idle Shutdown timer)."""
+        self._activity.append(listener)
+
+    def _touch(self) -> None:
+        for listener in self._activity:
+            listener()
 
     @property
     def client_count(self) -> int:
@@ -56,6 +68,7 @@ class EventBroadcaster:
 
     def publish(self, name: str, data: Any) -> None:
         """Thread-safe: queue an event for every connected client."""
+        self._touch()
         event = Event(name, data)
         loop = self._loop
         if loop is None or loop.is_closed():
@@ -69,13 +82,15 @@ class EventBroadcaster:
         else:
             loop.call_soon_threadsafe(self._dispatch, event)
 
-    def subscribe(self) -> Subscription:
-        sub = Subscription(self._queue_size)
+    def subscribe(self, *, size: int | None = None) -> Subscription:
+        sub = Subscription(size or self._queue_size)
         self._subscribers.add(sub)
+        self._touch()
         return sub
 
     def unsubscribe(self, sub: Subscription) -> None:
         self._subscribers.discard(sub)
+        self._touch()
 
     def close(self) -> None:
         """End every stream (server shutting down)."""

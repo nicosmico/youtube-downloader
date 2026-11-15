@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ def build_router(
             "version": __version__,
             "engine": engine.info().to_dict(),
             "port": port,
+            "platform": sys.platform,
         }
 
     @router.get("/system/engine")

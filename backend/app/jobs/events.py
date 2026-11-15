@@ -1,4 +1,4 @@
-"""SSE publishing for jobs: `job.updated` and `queue.updated`."""
+"""SSE publishing for jobs: `job.updated`, `job.removed` and `queue.updated`."""
 
 from __future__ import annotations
 
@@ -12,6 +12,9 @@ class JobEvents:
 
     def job_updated(self, job: Job) -> None:
         self._broadcaster.publish("job.updated", job.to_dict())
+
+    def job_removed(self, job_id: str) -> None:
+        self._broadcaster.publish("job.removed", {"id": job_id})
 
     def queue_updated(self, *, active: int, queued: int) -> None:
         self._broadcaster.publish("queue.updated", {"active": active, "queued": queued})

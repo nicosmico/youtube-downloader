@@ -32,6 +32,10 @@ class NotRetryable(Exception):
     """Only `failed`, `canceled` and `interrupted` jobs can be retried."""
 
 
+class NotRemovable(Exception):
+    """Only terminal jobs (`completed`, `failed`, `canceled`, `interrupted`) leave the History."""
+
+
 def start_thread(fn: Callable[[], None]) -> None:
     threading.Thread(target=fn, name="download", daemon=True).start()
 
@@ -183,6 +187,14 @@ class JobQueue:
         self.kick()
         return queued
 
+    def remove(self, job_id: str) -> None:
+        """Take a finished job out of the History. The downloaded file stays where it is."""
+        if self._repo.get(job_id) is None:
+            raise UnknownJob(job_id)
+        if self._repo.delete_terminal(job_id) is None:
+            raise NotRemovable(job_id)
+        self._events.job_removed(job_id)
+
     def kick(self) -> None:
         """Start as many queued jobs as there are free slots (none while held or closed)."""
         with self._lock:
@@ -215,6 +227,11 @@ class JobQueue:
         """No job is running (what a yt-dlp update needs)."""
         with self._lock:
             return not self._active
+
+    def has_work(self) -> bool:
+        """Something is `queued`, `downloading` or `processing`."""
+        with self._lock:
+            return bool(self._active) or self._repo.count(JobStatus.QUEUED) > 0
 
     def counts(self) -> dict[str, int]:
         with self._lock:
