@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 (Preview de video).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Un video público se descarga y el archivo aparece en `DOWNLOAD_DIR`; el staging del job queda vacío.
 - [x] `POST /api/jobs` para un video suelto responde `batchId: null`.
@@ -40,3 +40,5 @@ Verificación: pytest 386 (+ `pytest -m network` real de "Me at the zoo": OK), r
 **2026-11-15 — Revisión: total conocido y tests deterministas.** El runner pasa también `--print "before_dl:TOTAL%(filesize,filesize_approx)j"`; el parser usa ese valor como denominador (`max(total, bytes)`), de modo que el porcentaje no llega a 100 tras el primer stream, y cae a la agregación anterior si es `null` o basura. La última línea de stdout sigue siendo `after_move:filepath`. Verificado contra `2PuFyjAs7JA` a 720p (video+audio separados): `TOTAL845176` = 665442 + 179734, y en la app real el job anuncia `totalBytes 845176` desde el primer evento y solo llega a 100 al terminar. Los tests de API usan un reloj congelado y los del runner un reloj inyectado, sin esperas reales; pytest 399 pasó 5 veces seguidas.
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (399 backend estables, 119 frontend, ruff, build). Descarga real en el navegador integrado de `2PuFyjAs7JA` a 720p: H.264 1280x720 + AAC en `DOWNLOAD_DIR`, staging vacío, tarjeta "Completado" con "Abrir carpeta". Spec actualizada con `title`, forma de `GET /api/jobs`, códigos de `open-downloads`, `queue.updated` y la línea `TOTAL`.
+
+**2026-11-15 — Resuelto.** CI verde en GitHub (run `43759159781`).
