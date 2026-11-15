@@ -109,7 +109,7 @@ describe('Downloads', () => {
 
   it('offers "Abrir carpeta" on a completed job and shows the result', async () => {
     await show({ status: 'completed', progressPercent: 100 });
-    expect(el('job-status')?.textContent).toContain('Completado');
+    expect(el('job-status')?.textContent).toContain('Completada');
     expect(el('job-progress')).toBeNull();
 
     (el('open-folder') as HTMLButtonElement).click();
@@ -141,7 +141,7 @@ describe('Downloads', () => {
   it('shows the error of a failed job, without a folder button', async () => {
     await show({ status: 'failed', error: 'El video no está disponible.' });
 
-    expect(el('job-status')?.textContent).toContain('Falló');
+    expect(el('job-status')?.textContent).toContain('Fallida');
     expect(el('job-error')?.textContent).toContain('El video no está disponible.');
     expect(el('open-folder')).toBeNull();
   });

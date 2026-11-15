@@ -119,7 +119,8 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Un `DownloadJob` por video. Una playlist se modela como `Batch` con N jobs; un video suelto no tiene `Batch` (`batch_id` nulo).
 - Estados del job: `queued → downloading → processing → completed`, con salidas laterales a `failed`, `canceled` e `interrupted`.
 - `completed` solo se marca cuando el archivo final está en la `Destination`.
-- Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted`; no se reanudan solos. Los `queued` sí se reanudan.
+- Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted` ("La aplicación se cerró durante la descarga") y se borra su staging; no se reanudan solos. Los `queued` sí se reanudan, en orden.
+- El apagado deja de despachar, termina los árboles de procesos activos (terminate, 3 s, kill, 2 s) y marca esos jobs `interrupted`.
 - Concurrencia máxima: 2. Selección FIFO por `created_at`.
 - Solo los jobs en estado terminal se pueden quitar del `History`; borrar uno activo o en cola responde `409`.
 - Persistencia en SQLite con WAL en `$DATA_DIR/db.sqlite3` y migraciones numeradas:
@@ -189,7 +190,7 @@ CREATE TABLE presets (
 | `DELETE` | `/api/presets/{id}` | Elimina `Preset`. |
 | `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
 | `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |
-| `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, o `409` (`engine_busy`, `engine_not_ready`, `engine_external` con `ENGINE_BIN_DIR`). |
+| `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, también con descargas activas: el Engine queda con `updatePending` y se aplica al terminar. `409` si ya hay una pendiente o en curso (`engine_busy`), si no está listo (`engine_not_ready`) o con `ENGINE_BIN_DIR` (`engine_external`). |
 | `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer. `200`, `501 open_unavailable` (sin abridor, p. ej. en Docker) o `500 open_failed`. |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
@@ -209,7 +210,7 @@ Los errores usan `{code, message, detail?}`. El `message` de los errores que ve 
 | `queue.updated` | Cambio en cola o jobs activos, con `{active, queued}`. |
 | `shutdown` | La app va a cerrarse, con el motivo (`user`, `signal`, `idle`). |
 
-Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignora.
+Al conectar, el stream envía primero el estado actual (`engine.updated` y `queue.updated`). Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignora.
 
 ### Runner y `yt-dlp`
 
