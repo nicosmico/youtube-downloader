@@ -56,7 +56,8 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 ### Forma de la aplicación
 
 - Un único proceso empaquetado con PyInstaller en modo `onedir`.
-- El `Launcher` elige un puerto libre con bind a `127.0.0.1:0`, escribe `runtime.json` con `{pid, port, startedAt}` y abre el navegador por defecto.
+- El `Launcher` elige un puerto libre con bind a `127.0.0.1:0`, escribe `runtime.json` con `{pid, port, startedAt}` y abre el navegador por defecto. `--no-browser` o `OPEN_BROWSER=0` desactiva la apertura (usado en Docker).
+- `DATA_DIR` y `DOWNLOAD_DIR` se pueden sobrescribir por variable de entorno; sus defaults son `~/.youtube-downloader` y `~/Downloads`. La UI no expone un selector de carpeta.
 - `Single Instance`: si `runtime.json` existe y `GET /api/health` responde, se abre esa instancia y el segundo proceso termina.
 - El apagado se dispara desde la UI (`POST /api/system/shutdown`) o por señal, cancelando jobs activos y marcándolos `interrupted`.
 
@@ -69,9 +70,10 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 
 ### Engine
 
-- Binarios externos en `~/.youtube-downloader/bin`: `yt-dlp`, `ffmpeg`, `ffprobe`.
-- `yt-dlp` se obtiene del release oficial (`yt-dlp_macos` o `yt-dlp.exe`).
-- `ffmpeg`/`ffprobe` se obtienen de un build estático validado por plataforma y arquitectura. Proveedor concreto a confirmar con un spike; candidatos: evermeet.cx o ffmpeg.martin-riedl.de para macOS, BtbN para Windows x64.
+- Binarios externos en `$DATA_DIR/bin`: `yt-dlp`, `ffmpeg`, `ffprobe`. `ENGINE_BIN_DIR` permite sobrescribir esa ruta en desarrollo y CI.
+- `yt-dlp` se obtiene del release oficial (`yt-dlp_macos`, `yt-dlp.exe` o `yt-dlp_linux` según la plataforma).
+- `ffmpeg`/`ffprobe` se obtienen de un build estático validado por plataforma y arquitectura. Proveedor concreto a confirmar con un spike; candidatos: evermeet.cx o ffmpeg.martin-riedl.de para macOS, BtbN para Windows x64 y Linux.
+- En desarrollo y CI sobre Linux se usan binarios Linux; Linux no es plataforma soportada para usuarios finales.
 - Descarga a archivo temporal y `rename` atómico; permiso de ejecución en macOS.
 - Verificación con `yt-dlp --version` y `ffmpeg -version`.
 - Estados: `missing → installing → ready | error`.
@@ -84,7 +86,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Estados del job: `queued → downloading → processing → completed`, con salidas laterales a `failed`, `canceled` e `interrupted`.
 - Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted`; no se reanudan solos.
 - Concurrencia máxima: 2. Selección FIFO por `created_at`.
-- Persistencia en SQLite con WAL y migraciones numeradas:
+- Persistencia en SQLite con WAL en `$DATA_DIR/db.sqlite3` y migraciones numeradas:
 
 ```sql
 CREATE TABLE batches (
@@ -147,7 +149,7 @@ CREATE TABLE presets (
 | `DELETE` | `/api/presets/{id}` | Elimina `Preset`. |
 | `GET` | `/api/system/engine` | Estado y versiones del Engine. |
 | `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. |
-| `POST` | `/api/system/open-downloads` | Abre `~/Downloads` en Finder/Explorer. |
+| `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer (acción del host). |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
 `MediaPreview` incluye `kind` (`video` o `playlist`), título, miniatura, duración, autor, calidades disponibles y `entries` para playlists. Los errores usan `{code, message, detail?}`.
@@ -179,8 +181,9 @@ Heartbeat cada 15 s.
 
 ### Archivos
 
-- Video suelto: `~/Downloads/%(title)s.%(ext)s`.
-- Playlist: `~/Downloads/%(playlist_title)s/%(title)s.%(ext)s`.
+- Video suelto: `$DOWNLOAD_DIR/%(title)s.%(ext)s`.
+- Playlist: `$DOWNLOAD_DIR/%(playlist_title)s/%(title)s.%(ext)s`.
+- `DOWNLOAD_DIR` es `~/Downloads` en producción y se sobrescribe en desarrollo para apuntar al volumen montado.
 - Colisión: si existe un archivo con el mismo stem al despachar, se agrega ` (2)`, ` (3)`, etc.
 - La ruta final se toma de `--print after_move:filepath` y se guarda en `outputPath`.
 
@@ -191,12 +194,21 @@ Heartbeat cada 15 s.
 - Endpoints mutantes exigen `X-Requested-With: youtube-downloader` y validan `Origin` cuando está presente.
 - Sin autenticación de usuario en el MVP.
 
+### Entorno de desarrollo
+
+- Backend y tests corren en Docker Compose sobre Linux, usando OrbStack en macOS. No se requiere Python en el host.
+- El build de Angular puede correr con Node local (ya instalado) o en un contenedor opcional.
+- El contenedor publica el puerto en `127.0.0.1`, monta `~/Downloads` y `$DATA_DIR`, y arranca con `OPEN_BROWSER=0`. El host abre el navegador.
+- Los tests de backend se ejecutan en el mismo contenedor que CI.
+- "Abrir carpeta" en desarrollo es una acción del host; el contenedor no puede abrir Finder ni Explorer.
+
 ### Empaquetado
 
 - PyInstaller `onedir`, con los estáticos de Angular incluidos.
 - macOS: `.app` con firma ad-hoc, distribuido en `.zip`.
 - Windows: carpeta con `.exe`, distribuida en `.zip`.
-- Cada sistema se compila en su propio SO. Sin firma ni notarización en el MVP.
+- Los builds se ejecutan en GitHub Actions con matriz `macos-latest` y `windows-latest`; Docker no participa en el empaquetado nativo.
+- Cada runner publica el artefacto correspondiente. Sin firma ni notarización en el MVP.
 
 ## Testing Decisions
 
@@ -214,8 +226,10 @@ Decisiones de prueba:
 - Tests unitarios del parser de progreso, plantillas de salida, colisiones, máquina de estados y validadores.
 - Tests de contrato de los argumentos que se pasan a `yt-dlp` por modo y calidad.
 - Tests de integración de la API con el `FakeEngine`, sin red.
+- Los tests de backend corren en el contenedor Linux y en CI; no dependen de macOS.
 - Descargas reales contra YouTube solo como E2E manual opt-in (`pytest -m network`).
 - La UI se prueba con servicios mockeados; el E2E de navegador queda fuera del MVP.
+- Los smoke tests de los ejecutables corren en los runners macOS y Windows de GitHub Actions.
 - Criterio de no-regresión: la suite por defecto nunca depende de red.
 
 No hay código previo; estos tests establecen la convención del repo.
@@ -223,7 +237,7 @@ No hay código previo; estos tests establecen la convención del repo.
 ## Out of Scope
 
 - Ícono de bandeja del sistema.
-- Selector de carpeta y destinos distintos de `~/Downloads`.
+- Selector de carpeta en la UI y destinos distintos de `~/Downloads` en producción. El override por entorno es solo para desarrollo.
 - Cookies, cuentas, videos privados, con edad o con login.
 - Subtítulos, incrustar miniatura/metadatos, recorte por tiempo y flags extra de `yt-dlp`.
 - SponsorBlock y límites de velocidad o de red.
@@ -232,10 +246,14 @@ No hay código previo; estos tests establecen la convención del repo.
 - Firma, notarización e instaladores.
 - Auto-actualización del ejecutable.
 - Acceso remoto o desde otros dispositivos.
+- Docker como runtime del producto.
+- Soporte de Linux para usuarios finales.
 
 ## Further Notes
 
-- Validaciones técnicas abiertas que deben resolverse con spikes antes de comprometer la implementación: proveedor de `ffmpeg` por arquitectura y viabilidad de `--merge-output-format mp4` sin recodificar.
+- Validaciones técnicas abiertas que deben resolverse con spikes antes de comprometer la implementación: proveedor de `ffmpeg` por arquitectura, viabilidad de `--merge-output-format mp4` sin recodificar, y build nativo en GitHub Actions.
 - Cerrar la pestaña del navegador no detiene la app; el botón "Cerrar aplicación" es el mecanismo previsto en el MVP.
 - La actualización del Engine no interrumpe jobs activos: se aplica al siguiente proceso.
-- El siguiente paso de la suite es `to-tickets`, tomando esta spec como fuente.
+- Docker se usa solo en desarrollo y CI. La decisión y sus consecuencias están en el ADR-0008.
+- En desarrollo, las rutas de `DOWNLOAD_DIR` y `DATA_DIR` son las del contenedor; "abrir carpeta" queda como acción del host.
+- La implementación se organiza en los tickets de `.scratch/youtube-downloader-mvp/issues/`.

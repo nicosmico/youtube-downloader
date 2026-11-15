@@ -9,6 +9,6 @@
 - [ ] El preview de playlist lista las entradas sin descargar.
 - [ ] Todas las entradas vienen seleccionadas por defecto y se pueden deseleccionar.
 - [ ] Encolar crea un `Batch` y un job por entrada seleccionada.
-- [ ] Los archivos se guardan en `~/Downloads/<playlist_title>/`.
+- [ ] Los archivos se guardan en `DOWNLOAD_DIR/<playlist_title>/` (por defecto `~/Downloads`).
 - [ ] Los jobs de un batch son independientes entre sí.
 - [ ] Tests de integración con `FakeEngine` para preview y descarga de playlists.

@@ -34,6 +34,8 @@ El ejecutable levanta un servidor local, sirve la SPA de Angular y abre el naveg
 | Frontend | Angular, servido como estáticos |
 | Motor | `yt-dlp` + `ffmpeg`/`ffprobe` (binarios externos) |
 | Transporte | REST + Server-Sent Events |
+| Desarrollo | Docker Compose sobre OrbStack |
+| Empaquetado | GitHub Actions (`macos-latest`, `windows-latest`) |
 
 ## Documentación
 
@@ -46,19 +48,27 @@ El ejecutable levanta un servidor local, sirve la SPA de Angular y abre el naveg
 ## Estructura planeada
 
 ```
-backend/     FastAPI, runner, Engine Manager, SQLite
-frontend/    workspace Angular
-packaging/   PyInstaller y scripts de build
-docs/        ADRs y documentación de agentes
-.scratch/    spec y tickets locales
+backend/          FastAPI, runner, Engine Manager, SQLite
+frontend/         workspace Angular
+packaging/        PyInstaller y scripts de build
+compose.yaml      entorno de desarrollo
+.github/workflows tests y builds nativos
+docs/              ADRs y documentación de agentes
+.scratch/          spec y tickets locales
 ```
 
 ## Desarrollo
 
-Todavía no hay código. Requisitos previstos: Python 3.11+ y Node 20+. `ffmpeg` no hace falta instalarlo: lo gestiona la app.
+Todavía no hay código. El backend y los tests correrán en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24, que ya está instalado, o un contenedor opcional. `ffmpeg` no se instala: lo gestiona la app.
+
+El contenedor publica el puerto en `127.0.0.1`, monta `~/Downloads` y el directorio de datos, y arranca con `OPEN_BROWSER=0`; el navegador se abre desde el host.
 
 Los comandos de arranque se añadirán con el walking skeleton (ticket 02).
 
+## Empaquetado
+
+Los ejecutables se construyen en **GitHub Actions**: `macos-latest` produce el `.app` y `windows-latest` el `.exe`. Docker no participa en el build nativo porque PyInstaller no cross-compila. Cada runner publica el artefacto listo para probar en una máquina limpia.
+
 ## Fuera de alcance del MVP
 
-Cookies y contenido privado, selector de carpeta, ícono de bandeja, subtítulos, recorte por tiempo, flags extra de `yt-dlp`, SponsorBlock, firma/notarización y acceso remoto.
+Cookies y contenido privado, selector de carpeta, ícono de bandeja, subtítulos, recorte por tiempo, flags extra de `yt-dlp`, SponsorBlock, firma/notarización, acceso remoto, Docker como runtime del producto y soporte de Linux para usuarios finales.

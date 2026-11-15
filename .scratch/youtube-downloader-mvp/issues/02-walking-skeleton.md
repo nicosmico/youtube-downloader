@@ -1,14 +1,16 @@
-# 02: Walking skeleton
+# 02: Walking skeleton en Docker
 
-**What to build:** El ejecutable arranca, elige un puerto libre, sirve el shell de Angular, escribe `runtime.json`, abre el navegador y expone `/api/health`. Una segunda ejecución reutiliza la instancia existente. La UI incluye un botón para cerrar la aplicación de forma ordenada. Desde este ticket se aplican la validación de `Host` local y la cabecera requerida en endpoints mutantes.
+**What to build:** El esqueleto ejecutable del producto corriendo en Docker Compose: FastAPI sirve el shell de Angular, expone `/api/health`, aplica `Single Instance`, apagado ordenado y validaciones de seguridad. El host abre el navegador en el puerto publicado. GitHub Actions ejecuta la suite con la misma imagen. Todavía no hay binario nativo; eso llega en los tickets de empaquetado.
 
-**Blocked by:** 01 (Spike — Engine y empaquetado).
+**Blocked by:** 01 (Spike — Engine, Docker y empaquetado).
 
 **Status:** ready-for-agent
 
-- [ ] Ejecutar la app abre el navegador con el shell de Angular.
-- [ ] Una segunda ejecución abre la instancia existente y termina sin levantar otro servidor.
+- [ ] `docker compose up` levanta el backend y sirve el shell de Angular en el puerto publicado.
+- [ ] El host abre el navegador y ve el shell; el contenedor corre con `OPEN_BROWSER=0`.
 - [ ] `/api/health` responde versión, estado del Engine y puerto.
-- [ ] "Cerrar aplicación" apaga el servidor y elimina `runtime.json`.
+- [ ] Una segunda instancia reutiliza la existente o se documenta el comportamiento en Compose.
+- [ ] "Cerrar aplicación" apaga el servidor y limpia `runtime.json`.
 - [ ] Peticiones con `Host` no local o mutaciones sin la cabecera de la app son rechazadas.
-- [ ] Tests de integración verdes sin red.
+- [ ] GitHub Actions corre los tests en el mismo contenedor y queda verde.
+- [ ] Los tests corren sin Python instalado en el host.
