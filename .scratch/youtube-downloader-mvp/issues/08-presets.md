@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Opciones nivel 1).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Los presets persisten entre reinicios.
 - [x] Aplicar un preset configura modo y calidad en un clic.
@@ -26,3 +26,5 @@
 - **Verificación**: 494 pytest, ruff, 150 Vitest y build en verde. Real con `docker compose up --build` y curl: seeds, crear (nombre recortado), duplicado `409` (también con otra capitalización), combinación inválida `422`, renombrar a nombre existente `409`, cambiar formato, `404`, borrar `204`; tras `docker compose restart` los cambios persisten. La UI solo se probó con tests de componente (no en navegador).
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (494 backend, 150 frontend, ruff, build). Probado en el navegador integrado: aplicar `MP3` cambia a audio con MP3; guardar `mp3` muestra "Ya existe un preset con ese nombre. Elige otro."; guardar `Video 720p` lo añade; borrarlo desde "Gestionar" pide confirmación y lo quita. Spec actualizada con el seed en cada arranque y los códigos de presets.
+
+**2026-11-15 — Resuelto.** CI `43765191613` y Native `43765191600` verdes.
