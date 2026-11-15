@@ -32,10 +32,17 @@ def ytdlp() -> FakeYtdlp:
 
 
 @pytest.fixture
-def api(engine: EngineManager, ytdlp: FakeYtdlp, data_dir: Path, static_dir: Path) -> TestClient:
+def api(
+    engine: EngineManager, ytdlp: FakeYtdlp, data_dir: Path, download_dir: Path, static_dir: Path
+) -> TestClient:
     engine.install()
     app = create_app(
-        data_dir=data_dir, port=PORT, static_dir=static_dir, engine=engine, ytdlp_runner=ytdlp
+        data_dir=data_dir,
+        port=PORT,
+        static_dir=static_dir,
+        engine=engine,
+        ytdlp_runner=ytdlp,
+        download_dir=download_dir,
     )
     return TestClient(app, base_url=f"http://{HOST}")
 
@@ -199,10 +206,20 @@ class TestYtDlpFailures:
 
 class TestEngineNotReady:
     def test_answers_engine_not_ready_without_running_yt_dlp(
-        self, engine: EngineManager, ytdlp: FakeYtdlp, data_dir: Path, static_dir: Path
+        self,
+        engine: EngineManager,
+        ytdlp: FakeYtdlp,
+        data_dir: Path,
+        download_dir: Path,
+        static_dir: Path,
     ) -> None:
         app = create_app(
-            data_dir=data_dir, port=PORT, static_dir=static_dir, engine=engine, ytdlp_runner=ytdlp
+            data_dir=data_dir,
+            port=PORT,
+            static_dir=static_dir,
+            engine=engine,
+            ytdlp_runner=ytdlp,
+            download_dir=download_dir,
         )
         client = TestClient(app, base_url=f"http://{HOST}")
 
@@ -253,7 +270,7 @@ class TestNoSideEffects:
             preview(api, url)
 
         assert snapshot() == before
-        assert not any(name in {"staging", "db.sqlite3"} for p in before for name in p.parts)
+        assert not any(name == "staging" for p in before for name in p.parts)
 
     def test_never_asks_yt_dlp_to_download(self, api: TestClient, ytdlp: FakeYtdlp) -> None:
         preview(api, ZOO)

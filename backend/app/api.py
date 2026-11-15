@@ -14,6 +14,7 @@ from app import APP_ID, __version__
 from app.engine import EngineManager, UpdateOutcome
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
+from app.opener import FolderOpener, OpenUnavailable
 from app.preview import PreviewFailure, PreviewService
 from app.runtime import remove_runtime
 
@@ -44,6 +45,8 @@ def build_router(
     request_shutdown: Callable[[], None],
     engine: EngineManager,
     previews: PreviewService,
+    download_dir: Path,
+    open_folder: FolderOpener,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -82,6 +85,24 @@ def build_router(
         except PreviewFailure as exc:
             f = exc.failure
             raise ApiError(f.status, f.code, f.message) from None
+
+    @router.post("/system/open-downloads")
+    def open_downloads() -> dict[str, str]:
+        """Host action: the dev container (Linux) cannot open Finder, so it answers 501."""
+        try:
+            download_dir.mkdir(parents=True, exist_ok=True)
+            open_folder(download_dir)
+        except OpenUnavailable:
+            raise ApiError(
+                501,
+                "open_unavailable",
+                "Esta acción solo funciona en la aplicación de escritorio (macOS o Windows).",
+            ) from None
+        except OSError:
+            raise ApiError(
+                500, "open_failed", "No se pudo abrir la carpeta de descargas."
+            ) from None
+        return {"status": "opened"}
 
     @router.post("/system/shutdown", status_code=202)
     def shutdown(background: BackgroundTasks) -> dict[str, str]:

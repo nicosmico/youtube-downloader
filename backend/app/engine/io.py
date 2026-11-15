@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
 
 from app import APP_ID, __version__
 
 TIMEOUT_SECONDS = 30
+
+log = logging.getLogger("app.engine")
 
 
 class FetchError(Exception):
@@ -47,6 +51,30 @@ class Fetcher(Protocol):
 class Runner(Protocol):
     def __call__(self, args: Sequence[str], timeout: float = TIMEOUT_SECONDS) -> str:
         """Run a command and return its stdout; raise ProcessError (ProcessTimeout) on failure."""
+        ...
+
+
+class ProcessHandle(Protocol):
+    """A running process the caller may stop (cancel, ticket 10): TERM first, KILL after a grace."""
+
+    def terminate(self) -> None: ...
+
+    def kill(self) -> None: ...
+
+
+class Streamer(Protocol):
+    def __call__(
+        self,
+        args: Sequence[str],
+        on_stdout: Callable[[str], None],
+        on_stderr: Callable[[str], None],
+        on_start: Callable[[ProcessHandle], None] | None = None,
+    ) -> int:
+        """Run a command, feeding its output line by line from both streams as they arrive.
+
+        Blocking, with no time limit; returns the exit code. Raises ProcessError if the process
+        cannot be started.
+        """
         ...
 
 
@@ -125,3 +153,76 @@ def _kill_tree(proc: subprocess.Popen) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
     with contextlib.suppress(OSError):
         proc.kill()
+
+
+def _popen_options() -> dict:
+    if sys.platform == "win32":
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    return {"start_new_session": True}  # own process group: the whole tree can be stopped
+
+
+class _PopenHandle:
+    def __init__(self, proc: subprocess.Popen) -> None:
+        self._proc = proc
+
+    def terminate(self) -> None:
+        if self._proc.poll() is not None:
+            return
+        if sys.platform == "win32":
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.run(
+                ["taskkill", "/PID", str(self._proc.pid), "/T"],
+                capture_output=True,
+                creationflags=flags,
+            )
+        else:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(self._proc.pid, signal.SIGTERM)
+
+    def kill(self) -> None:
+        _kill_tree(self._proc)
+
+
+def stream_process(
+    args: Sequence[str],
+    on_stdout: Callable[[str], None],
+    on_stderr: Callable[[str], None],
+    on_start: Callable[[ProcessHandle], None] | None = None,
+) -> int:
+    """Blocking; call it off the event loop. Both pipes are read concurrently (no deadlock)."""
+    try:
+        proc = subprocess.Popen(
+            list(args),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **_popen_options(),
+        )
+    except OSError as exc:
+        raise ProcessError(str(exc)) from exc
+
+    def pump(pipe, callback: Callable[[str], None]) -> None:
+        for line in pipe:
+            try:
+                callback(line.rstrip("\r\n"))
+            except Exception:  # a broken listener must not stop draining the pipe
+                log.exception("Error handling a process output line")
+
+    readers = [
+        threading.Thread(target=pump, args=(proc.stdout, on_stdout), daemon=True),
+        threading.Thread(target=pump, args=(proc.stderr, on_stderr), daemon=True),
+    ]
+    try:
+        for reader in readers:
+            reader.start()
+        if on_start is not None:
+            on_start(_PopenHandle(proc))
+        code = proc.wait()
+        for reader in readers:
+            reader.join()
+        return code
+    except BaseException:
+        _kill_tree(proc)
+        raise

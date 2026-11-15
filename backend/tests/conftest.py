@@ -8,7 +8,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.engine import EngineManager
+from app.events import EventBroadcaster
 from app.main import create_app
+from tests.fake_engine import FakeEngine
 from tests.fakes import TARGET, YTDLP_OLD, FakeFetcher, FakeRunner, fake_archives
 
 PORT = 54321
@@ -40,6 +42,11 @@ def data_dir(tmp_path: Path) -> Path:
     path = tmp_path / "data"
     path.mkdir()
     return path
+
+
+@pytest.fixture
+def download_dir(tmp_path: Path) -> Path:
+    return tmp_path / "downloads"
 
 
 @pytest.fixture
@@ -105,7 +112,11 @@ def engine(make_engine: Callable[..., EngineManager]) -> EngineManager:
 
 @pytest.fixture
 def make_client(
-    data_dir: Path, static_dir: Path, shutdown: ShutdownRecorder, engine: EngineManager
+    data_dir: Path,
+    download_dir: Path,
+    static_dir: Path,
+    shutdown: ShutdownRecorder,
+    engine: EngineManager,
 ) -> Callable[..., TestClient]:
     def factory(**kwargs) -> TestClient:
         app = create_app(
@@ -114,6 +125,7 @@ def make_client(
             request_shutdown=shutdown,
             static_dir=static_dir,
             engine=engine,
+            download_dir=download_dir,
         )
         return TestClient(app, base_url=f"http://{HOST}", **kwargs)
 
@@ -123,3 +135,64 @@ def make_client(
 @pytest.fixture
 def client(make_client: Callable[..., TestClient]) -> TestClient:
     return make_client()
+
+
+# -- jobs ---------------------------------------------------------------------------------------
+
+
+class RecordingBroadcaster(EventBroadcaster):
+    """Keeps every published event instead of queueing it for SSE clients."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[tuple[str, object]] = []
+
+    def publish(self, name: str, data: object) -> None:
+        self.events.append((name, data))
+
+    def named(self, name: str) -> list:
+        return [data for n, data in self.events if n == name]
+
+
+@pytest.fixture
+def fake_engine() -> FakeEngine:
+    return FakeEngine()
+
+
+@pytest.fixture
+def events() -> RecordingBroadcaster:
+    return RecordingBroadcaster()
+
+
+@pytest.fixture
+def make_jobs_client(
+    data_dir: Path,
+    download_dir: Path,
+    static_dir: Path,
+    engine: EngineManager,
+    fake_engine: FakeEngine,
+    events: RecordingBroadcaster,
+) -> Callable[..., TestClient]:
+    """App over the FakeEngine. By default jobs run inline (synchronously) in the request."""
+
+    def factory(*, ready: bool = True, **kwargs) -> TestClient:
+        if ready:
+            engine.install()
+        options = {
+            "data_dir": data_dir,
+            "port": PORT,
+            "static_dir": static_dir,
+            "engine": engine,
+            "download_dir": download_dir,
+            "streamer": fake_engine,
+            "broadcaster": events,
+            "spawn_job": lambda fn: fn(),
+        }
+        return TestClient(create_app(**{**options, **kwargs}), base_url=f"http://{HOST}")
+
+    return factory
+
+
+@pytest.fixture
+def jobs_client(make_jobs_client: Callable[..., TestClient]) -> TestClient:
+    return make_jobs_client()
