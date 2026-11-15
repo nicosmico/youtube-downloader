@@ -1,0 +1,156 @@
+<section class="presets" aria-labelledby="presets-heading" data-testid="presets">
+  <div class="bar">
+    <span id="presets-heading" class="label">{{ texts.heading }}</span>
+    <div class="chips" role="group" [attr.aria-labelledby]="'presets-heading'">
+      @for (preset of presets(); track preset.id) {
+        <button
+          type="button"
+          class="chip"
+          data-testid="preset-apply"
+          [attr.data-preset-id]="preset.id"
+          [title]="texts.applyHint + ': ' + describe(preset)"
+          (click)="apply(preset)"
+        >
+          {{ preset.name }}
+        </button>
+      } @empty {
+        <span class="meta" data-testid="presets-empty">{{ texts.empty }}</span>
+      }
+    </div>
+  </div>
+
+  <div class="actions">
+    @if (!saving()) {
+      <button type="button" class="action" data-testid="preset-save-open" (click)="startSave()">
+        {{ texts.save }}
+      </button>
+    }
+    @if (canManage()) {
+      <button
+        type="button"
+        class="action"
+        data-testid="preset-manage"
+        [attr.aria-expanded]="managing()"
+        (click)="toggleManage()"
+      >
+        {{ managing() ? texts.closeManage : texts.manage }}
+      </button>
+    }
+  </div>
+
+  @if (saving()) {
+    <form
+      class="inline"
+      data-testid="preset-save-form"
+      (submit)="$event.preventDefault(); save(nameInput.value)"
+      (keydown.escape)="cancelSave()"
+    >
+      <label class="field">
+        <span class="label">{{ texts.nameLabel }}</span>
+        <input
+          #nameInput
+          type="text"
+          autocomplete="off"
+          data-testid="preset-name-input"
+          [attr.maxlength]="maxLength"
+        />
+      </label>
+      <button type="submit" class="action" data-testid="preset-save" [disabled]="busy()">
+        {{ texts.confirmSave }}
+      </button>
+      <button type="button" class="action" data-testid="preset-save-cancel" (click)="cancelSave()">
+        {{ texts.cancel }}
+      </button>
+    </form>
+  }
+
+  @if (managing()) {
+    <ul class="manage" data-testid="preset-list">
+      @for (preset of presets(); track preset.id) {
+        <li data-testid="preset-row" [attr.data-preset-id]="preset.id">
+          @if (isEditing(preset, 'rename')) {
+            <form
+              class="inline"
+              (submit)="$event.preventDefault(); rename(preset, renameInput.value)"
+              (keydown.escape)="cancelEdit()"
+            >
+              <input
+                #renameInput
+                type="text"
+                autocomplete="off"
+                data-testid="preset-rename-input"
+                [attr.aria-label]="texts.nameLabel"
+                [attr.maxlength]="maxLength"
+                [value]="preset.name"
+              />
+              <button
+                type="submit"
+                class="action"
+                data-testid="preset-rename-save"
+                [disabled]="busy()"
+              >
+                {{ texts.confirmRename }}
+              </button>
+              <button
+                type="button"
+                class="action"
+                data-testid="preset-edit-cancel"
+                (click)="cancelEdit()"
+              >
+                {{ texts.cancel }}
+              </button>
+            </form>
+          } @else if (isEditing(preset, 'delete')) {
+            <span data-testid="preset-delete-question" role="alertdialog">
+              {{ texts.deleteQuestion }} «{{ preset.name }}»?
+            </span>
+            <button
+              type="button"
+              class="action danger"
+              data-testid="preset-delete-confirm"
+              [disabled]="busy()"
+              (click)="remove(preset)"
+            >
+              {{ texts.confirmDelete }}
+            </button>
+            <button
+              type="button"
+              class="action"
+              data-testid="preset-edit-cancel"
+              (click)="cancelEdit()"
+            >
+              {{ texts.cancel }}
+            </button>
+          } @else {
+            <span class="name">
+              <strong data-testid="preset-name">{{ preset.name }}</strong>
+              <span class="meta">{{ describe(preset) }}</span>
+            </span>
+            <button
+              type="button"
+              class="action"
+              data-testid="preset-rename"
+              [attr.aria-label]="texts.rename + ' ' + preset.name"
+              (click)="startEdit(preset, 'rename')"
+            >
+              {{ texts.rename }}
+            </button>
+            <button
+              type="button"
+              class="action"
+              data-testid="preset-delete"
+              [attr.aria-label]="texts.delete + ' ' + preset.name"
+              (click)="startEdit(preset, 'delete')"
+            >
+              {{ texts.delete }}
+            </button>
+          }
+        </li>
+      }
+    </ul>
+  }
+
+  @if (error(); as message) {
+    <p class="error" role="alert" data-testid="preset-error">{{ message }}</p>
+  }
+</section>

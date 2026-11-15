@@ -56,6 +56,12 @@
                 {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
               </p>
             }
+            <app-presets
+              [mode]="mode()"
+              [quality]="quality()"
+              [audioFormat]="audioFormat()"
+              (applied)="applyPreset(media, $event)"
+            />
             <fieldset class="field modes" data-testid="mode-switch">
               <legend class="label">{{ texts.preview.mode }}</legend>
               <label>

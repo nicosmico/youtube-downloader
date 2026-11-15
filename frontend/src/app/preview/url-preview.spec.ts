@@ -7,9 +7,10 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
-import { ENGINE_READY, MEDIA } from '../../testing/fixtures';
+import { ENGINE_READY, MEDIA, PRESET_480, PRESET_BEST, PRESET_MP3 } from '../../testing/fixtures';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
 import { JobsService } from '../core/jobs.service';
+import { PresetsService } from '../core/presets.service';
 import { DEBOUNCE_MS, UrlPreview, formatDuration, looksLikeUrl } from './url-preview';
 
 const URL_A = 'https://www.youtube.com/watch?v=Jt5fgKBqZSY';
@@ -547,6 +548,67 @@ describe('UrlPreview', () => {
 
       expect(el('download-button')).toBeNull();
       http.expectNone('/api/jobs');
+    });
+  });
+
+  describe('presets', () => {
+    const chip = (id: string) =>
+      root().querySelector(`[data-testid=preset-apply][data-preset-id=${id}]`) as HTMLElement;
+    const apply = async (id: string) => {
+      chip(id).click();
+      await settle();
+    };
+
+    beforeEach(async () => {
+      TestBed.inject(PresetsService).presets.set([PRESET_480, PRESET_BEST, PRESET_MP3]);
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+    });
+
+    it('applies a video preset in one click: mode and quality', async () => {
+      await apply('p3');
+
+      expect(fixture.componentInstance.mode()).toBe('video');
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+    });
+
+    it('applies an audio preset in one click: mode and format', async () => {
+      await apply('p2');
+
+      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
+      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('mp3');
+    });
+
+    it('switches back from audio to video with a video preset', async () => {
+      await apply('p2');
+      await apply('p3');
+
+      expect(el<HTMLInputElement>('mode-video')!.checked).toBe(true);
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+    });
+
+    it('falls back to "best" when the video cannot offer the preset quality', async () => {
+      await type(URL_B, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), {
+        ...MEDIA,
+        url: URL_B,
+        availableQualities: ['best'],
+        maxQuality: 'best',
+      });
+
+      await apply('p3');
+
+      expect(fixture.componentInstance.quality()).toBe('best');
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('best');
+    });
+
+    it('downloads with what the preset set', async () => {
+      await apply('p3');
+      el<HTMLButtonElement>('download-button')!.click();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.body).toMatchObject({ mode: 'video', quality: '480p' });
+      req.flush({ batchId: null, jobs: [] });
     });
   });
 
