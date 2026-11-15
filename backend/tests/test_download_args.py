@@ -7,18 +7,19 @@ from pathlib import Path
 import pytest
 
 from app.engine import EngineManager
-from app.jobs.arguments import VIDEO_SORT, UnsupportedJob, download_args
+from app.jobs.arguments import AUDIO_FORMAT_SELECTOR, VIDEO_SORT, UnsupportedJob, download_args
 from app.jobs.models import Job, JobStatus
 
 URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 
-def job(quality: str | None = "best", mode: str = "video") -> Job:
+def job(quality: str | None = "best", mode: str = "video", audio_format: str | None = None) -> Job:
     return Job(
         id="j1",
         url=URL,
         mode=mode,
         quality=quality,
+        audio_format=audio_format,
         status=JobStatus.DOWNLOADING,
         created_at="2026-11-15T12:00:00.000000+00:00",
     )
@@ -73,6 +74,51 @@ def test_a_missing_quality_means_best(engine: EngineManager, tmp_path: Path) -> 
     assert value_after(download_args(engine, job(None), tmp_path), "-S") == VIDEO_SORT["best"]
 
 
-def test_audio_is_not_supported_yet(engine: EngineManager, tmp_path: Path) -> None:
+def test_video_has_no_audio_flags(engine: EngineManager, tmp_path: Path) -> None:
+    args = download_args(engine, job("720p"), tmp_path)
+
+    for flag in ("-x", "--audio-format", "--audio-quality", "-f"):
+        assert flag not in args
+
+
+@pytest.mark.parametrize(
+    ("audio_format", "selector"),
+    [
+        ("m4a", "ba[acodec^=mp4a]/ba"),
+        ("opus", "ba[acodec=opus]/ba"),
+        ("mp3", "ba"),
+    ],
+)
+def test_audio_selects_the_native_stream_and_extracts(
+    engine: EngineManager, tmp_path: Path, audio_format: str, selector: str
+) -> None:
+    args = download_args(engine, job(None, "audio", audio_format), tmp_path / "staging")
+
+    assert value_after(args, "-f") == selector
+    assert "-x" in args
+    assert value_after(args, "--audio-quality") == "0"
+    assert value_after(args, "--audio-format") == audio_format
+    assert "--merge-output-format" not in args
+    assert "-S" not in args
+    # the shared download contract is the same as for video
+    assert value_after(args, "-P") == str(tmp_path / "staging")
+    assert args[-1] == URL
+    assert [args[i + 1] for i, a in enumerate(args) if a == "--print"] == [
+        "before_dl:TOTAL%(filesize,filesize_approx)j",
+        "after_move:filepath",
+    ]
+
+
+def test_every_audio_format_of_the_spec_has_a_selector() -> None:
+    assert set(AUDIO_FORMAT_SELECTOR) == {"mp3", "m4a", "opus"}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [job(None, "audio", None), job(None, "audio", "flac"), job(mode="gif")],
+)
+def test_an_unknown_mode_or_audio_format_is_unsupported(
+    engine: EngineManager, tmp_path: Path, bad: Job
+) -> None:
     with pytest.raises(UnsupportedJob):
-        download_args(engine, job(mode="audio"), tmp_path)
+        download_args(engine, bad, tmp_path)

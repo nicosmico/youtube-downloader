@@ -74,18 +74,15 @@ class TestCreate:
             "finishedAt",
         }
 
-    def test_the_url_is_normalized_and_the_quality_defaults_to_best(
-        self, jobs_client: TestClient
-    ) -> None:
+    def test_the_url_is_normalized(self, jobs_client: TestClient) -> None:
         response = jobs_client.post(
             "/api/jobs",
-            json={"url": "youtu.be/jNQXAC9IVRw?si=abc", "mode": "video"},
+            json={"url": "youtu.be/jNQXAC9IVRw?si=abc", "mode": "video", "quality": "best"},
             headers=APP_HEADERS,
         )
 
         job = response.json()["jobs"][0]
         assert job["url"] == ZOO
-        assert job["quality"] == "best"
 
     @pytest.mark.parametrize(
         ("url", "code"),
@@ -107,19 +104,84 @@ class TestCreate:
         assert jobs_client.get("/api/jobs").json()["jobs"] == []
         assert fake_engine.calls == []
 
-    def test_audio_is_refused_until_ticket_07(
-        self, jobs_client: TestClient, fake_engine: FakeEngine
+    @pytest.mark.parametrize("audio_format", ["mp3", "m4a", "opus"])
+    def test_an_audio_job_keeps_its_format_and_has_no_quality(
+        self, make_jobs_client, audio_format: str
     ) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+
+        response = client.post(
+            "/api/jobs",
+            json={"url": ZOO, "mode": "audio", "audioFormat": audio_format},
+            headers=APP_HEADERS,
+        )
+
+        assert response.status_code == 200
+        job = response.json()["jobs"][0]
+        assert (job["mode"], job["audioFormat"], job["quality"]) == ("audio", audio_format, None)
+        assert get_job(client, job["id"])["audioFormat"] == audio_format
+
+    @pytest.mark.parametrize("quality", ["best", "2160p", "1080p", "720p", "480p"])
+    def test_a_video_job_keeps_its_quality_and_has_no_audio_format(
+        self, make_jobs_client, quality: str
+    ) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+
+        job = enqueue(client, quality=quality).json()["jobs"][0]
+
+        assert (job["mode"], job["quality"], job["audioFormat"]) == ("video", quality, None)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"mode": "video", "quality": None},
+            {"mode": "video", "quality": "720p", "audioFormat": "mp3"},
+            {"mode": "audio", "audioFormat": "mp3", "quality": "720p"},
+            {"mode": "audio", "audioFormat": None},
+            {"mode": "audio", "audioFormat": None, "quality": "best"},
+        ],
+    )
+    def test_invalid_combinations_are_refused_before_anything_is_queued(
+        self, jobs_client: TestClient, fake_engine: FakeEngine, body: dict
+    ) -> None:
+        payload = {"url": ZOO, "quality": None, "audioFormat": None, **body}
+        payload = {k: v for k, v in payload.items() if v is not None}
+
+        response = jobs_client.post("/api/jobs", json=payload, headers=APP_HEADERS)
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_options"
+        assert response.json()["message"]
+        assert jobs_client.get("/api/jobs").json()["jobs"] == []
+        assert fake_engine.calls == []
+
+    def test_an_unknown_audio_format_is_a_validation_error(self, jobs_client: TestClient) -> None:
         response = jobs_client.post(
             "/api/jobs",
-            json={"url": ZOO, "mode": "audio", "audioFormat": "mp3"},
+            json={"url": ZOO, "mode": "audio", "audioFormat": "flac"},
             headers=APP_HEADERS,
         )
 
         assert response.status_code == 422
-        assert response.json()["code"] == "audio_unsupported"
-        assert response.json()["message"]
-        assert fake_engine.calls == []
+        assert response.json()["code"] == "validation_error"
+
+    def test_an_audio_job_runs_with_the_audio_arguments(
+        self, jobs_client: TestClient, fake_engine: FakeEngine
+    ) -> None:
+        fake_engine.default.ext = "m4a"
+        fake_engine.default.streams = [("zoo.f140.m4a", 1000)]
+        fake_engine.default.postprocessors = ("FixupM4a", "ExtractAudio", "MoveFiles")
+
+        job = jobs_client.post(
+            "/api/jobs",
+            json={"url": ZOO, "mode": "audio", "audioFormat": "m4a"},
+            headers=APP_HEADERS,
+        ).json()["jobs"][0]
+
+        wait_for(lambda: get_job(jobs_client, job["id"])["status"] == "completed")
+        (args,) = fake_engine.calls
+        assert args[args.index("--audio-format") + 1] == "m4a"
+        assert get_job(jobs_client, job["id"])["outputPath"].endswith("Me at the zoo.m4a")
 
     def test_an_unknown_quality_is_a_validation_error(self, jobs_client: TestClient) -> None:
         response = enqueue(jobs_client, quality="4k")

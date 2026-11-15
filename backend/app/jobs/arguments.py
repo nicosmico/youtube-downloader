@@ -16,6 +16,13 @@ VIDEO_SORT = {
     "720p": "res:720,vcodec:h264,acodec:aac",
     "480p": "res:480,vcodec:h264,acodec:aac",
 }
+# Spec "Runner y yt-dlp": the `-f` picks the native audio stream; `-x` only re-encodes when the
+# stream is not already in the requested format (mp3 always is).
+AUDIO_FORMAT_SELECTOR = {
+    "m4a": "ba[acodec^=mp4a]/ba",
+    "opus": "ba[acodec=opus]/ba",
+    "mp3": "ba",
+}
 OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
 
 
@@ -23,14 +30,23 @@ class UnsupportedJob(Exception):
     """The job asks for something this build cannot download."""
 
 
+def _mode_args(job: Job) -> list[str]:
+    if job.mode == "audio":
+        fmt = job.audio_format or ""
+        selector = AUDIO_FORMAT_SELECTOR.get(fmt)
+        if selector is None:
+            raise UnsupportedJob(f"audio format {job.audio_format}")
+        return ["-f", selector, "-x", "--audio-quality", "0", "--audio-format", fmt]
+    if job.mode == "video":
+        sort = VIDEO_SORT.get(job.quality or "best")
+        if sort is None:
+            raise UnsupportedJob(f"quality {job.quality}")
+        return ["-S", sort, "--merge-output-format", "mp4"]
+    raise UnsupportedJob(job.mode)
+
+
 def download_args(engine: EngineManager, job: Job, staging: Path) -> list[str]:
     """Arguments for one video. The URL is last (the fake engine of the tests relies on it)."""
-    if job.mode != "video":
-        # TICKET-07: audio mode (-x --audio-quality 0 --audio-format <fmt>, `-f` per AudioFormat).
-        raise UnsupportedJob(job.mode)
-    sort = VIDEO_SORT.get(job.quality or "best")
-    if sort is None:
-        raise UnsupportedJob(f"quality {job.quality}")
     return [
         *ytdlp_base_args(engine),
         "--no-playlist",
@@ -50,9 +66,6 @@ def download_args(engine: EngineManager, job: Job, staging: Path) -> list[str]:
         str(staging),
         "-o",
         OUTPUT_TEMPLATE,
-        "-S",
-        sort,
-        "--merge-output-format",
-        "mp4",
+        *_mode_args(job),
         job.url,
     ]

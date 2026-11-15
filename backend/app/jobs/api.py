@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
@@ -20,12 +20,31 @@ MAX_TITLE = 300
 
 
 class CreateJob(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     url: str
     mode: Literal["video", "audio"]
     quality: Literal["best", "2160p", "1080p", "720p", "480p"] | None = None
+    audio_format: Literal["mp3", "m4a", "opus"] | None = Field(default=None, alias="audioFormat")
     # Spec addition: the client sends the title of the MediaPreview it already showed, so the
     # Queue has something to display before yt-dlp runs.
     title: str | None = Field(default=None, max_length=MAX_TITLE)
+
+
+def _check_options(body: CreateJob) -> None:
+    """Video takes a `quality` and no `audioFormat`; audio the opposite (spec: "API REST")."""
+    if body.mode == "video":
+        if body.quality is None:
+            raise ApiError(422, "invalid_options", "Elige una calidad para descargar el video.")
+        if body.audio_format is not None:
+            raise ApiError(
+                422, "invalid_options", "El formato de audio solo se puede usar en modo audio."
+            )
+    else:
+        if body.audio_format is None:
+            raise ApiError(422, "invalid_options", "Elige un formato para descargar el audio.")
+        if body.quality is not None:
+            raise ApiError(422, "invalid_options", "La calidad solo se puede usar en modo video.")
 
 
 def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
@@ -33,11 +52,7 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
 
     @router.post("", dependencies=[Depends(require_engine_ready)])
     def create_job(body: CreateJob) -> dict[str, Any]:
-        if body.mode == "audio":
-            # TICKET-07: audio mode (`audioFormat`) and the validation of invalid combinations.
-            raise ApiError(
-                422, "audio_unsupported", "La descarga de audio todavía no está disponible."
-            )
+        _check_options(body)
         try:
             classified = classify_url(body.url)
         except UrlRejected as exc:
@@ -51,7 +66,11 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
             )
         title = (body.title or "").strip() or None
         job = queue.enqueue(
-            url=classified.url, mode="video", quality=body.quality or "best", title=title
+            url=classified.url,
+            mode=body.mode,
+            quality=body.quality,
+            audio_format=body.audio_format,
+            title=title,
         )
         return {"batchId": None, "jobs": [job.to_dict()]}
 

@@ -42,8 +42,8 @@ class Harness:
             clock=self.clock,
         )
 
-    def run(self) -> Job:
-        self.repo.create(url=URL, mode="video", quality="best")
+    def run(self, **options: str | None) -> Job:
+        self.repo.create(url=URL, **({"mode": "video", "quality": "best"} | options))
         (job,) = self.repo.claim_queued(1)
         return self.runner.run(job)
 
@@ -185,3 +185,35 @@ def test_without_the_announced_total_it_falls_back_to_the_aggregation(harness: H
 
     assert job.status.value == "completed"
     assert job.total_bytes == 5000
+
+
+@pytest.mark.parametrize(
+    ("audio_format", "streams", "postprocessors"),
+    [
+        ("m4a", [("zoo.f140.m4a", 1000)], ("FixupM4a", "ExtractAudio", "MoveFiles")),
+        ("opus", [("zoo.f251.webm", 800)], ("ExtractAudio", "MoveFiles")),
+        ("mp3", [("zoo.f140.m4a", 1000)], ("ExtractAudio", "MoveFiles")),
+    ],
+)
+def test_an_audio_job_goes_through_processing_and_completes(
+    harness: Harness,
+    audio_format: str,
+    streams: list[tuple[str, int | None]],
+    postprocessors: tuple[str, ...],
+) -> None:
+    harness.fake.default.ext = audio_format
+    harness.fake.default.streams = streams
+    harness.fake.default.postprocessors = postprocessors
+    advancing(harness, 1.0)
+
+    job = harness.run(mode="audio", audio_format=audio_format, quality=None)
+
+    statuses = harness.statuses(job.id)
+    assert statuses.index("processing") > max(
+        i for i, s in enumerate(statuses) if s == "downloading"
+    )
+    assert statuses[-1] == "completed"
+    assert job.progress_percent == 100.0
+    assert Path(job.output_path or "").name == f"Me at the zoo.{audio_format}"
+    (args,) = harness.fake.calls
+    assert args[args.index("--audio-format") + 1] == audio_format
