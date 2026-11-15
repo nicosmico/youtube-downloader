@@ -1,9 +1,11 @@
 <main class="shell">
   <h1>{{ texts.appTitle }}</h1>
 
-  @if (shutdownState() === 'done') {
+  @if (shutdownState() === 'done' || shutdownState() === 'closedIdle') {
     <section class="card" role="status">
-      <h2>{{ texts.shutdown.done }}</h2>
+      <h2 data-testid="closed-title">
+        {{ shutdownState() === 'closedIdle' ? texts.shutdown.idle : texts.shutdown.done }}
+      </h2>
       <p>{{ texts.shutdown.doneHint }}</p>
     </section>
   } @else {

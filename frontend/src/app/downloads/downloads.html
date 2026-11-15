@@ -14,26 +14,55 @@
     <p class="meta" data-testid="downloads-empty">{{ texts.downloads.empty }}</p>
   }
 
-  @for (item of items(); track item.kind === 'batch' ? item.batchId : item.job.id) {
-    @if (item.kind === 'batch') {
-      <section class="batch" data-testid="batch" [attr.aria-label]="item.title">
-        <header>
-          <h3 data-testid="batch-title">{{ item.title }}</h3>
-          <span class="status" data-testid="batch-summary">{{ summary(item) }}</span>
-        </header>
-        @for (job of item.jobs; track job.id) {
-          <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: job }" />
-        }
-      </section>
-    } @else {
-      <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: item.job }" />
-    }
+  @if (queueItems().length > 0) {
+    <section class="list" data-testid="queue-section" aria-labelledby="queue-heading">
+      <h3 id="queue-heading" class="section">{{ texts.downloads.queueHeading }}</h3>
+      <ng-container *ngTemplateOutlet="itemList; context: { $implicit: queueItems() }" />
+    </section>
   }
+
+  @if (historyItems().length > 0) {
+    <section class="list" data-testid="history-section" aria-labelledby="history-heading">
+      <h3 id="history-heading" class="section">{{ texts.downloads.historyHeading }}</h3>
+      <p class="meta" data-testid="history-hint">{{ texts.downloads.historyHint }}</p>
+      <ng-container *ngTemplateOutlet="itemList; context: { $implicit: historyItems() }" />
+    </section>
+  }
+
+  @if (jobsService.hasMoreHistory()) {
+    <button
+      type="button"
+      class="action"
+      data-testid="load-more"
+      [disabled]="jobsService.loadingMore()"
+      (click)="jobsService.loadMore()"
+    >
+      {{ jobsService.loadingMore() ? texts.downloads.loadingMore : texts.downloads.loadMore }}
+    </button>
+  }
+
+  <ng-template #itemList let-items>
+    @for (item of items; track item.kind === 'batch' ? item.batchId : item.job.id) {
+      @if (item.kind === 'batch') {
+        <section class="batch" data-testid="batch" [attr.aria-label]="item.title">
+          <header>
+            <h4 data-testid="batch-title">{{ item.title }}</h4>
+            <span class="status" data-testid="batch-summary">{{ summary(item) }}</span>
+          </header>
+          @for (job of item.jobs; track job.id) {
+            <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: job }" />
+          }
+        </section>
+      } @else {
+        <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: item.job }" />
+      }
+    }
+  </ng-template>
 
   <ng-template #jobCard let-job>
     <article class="job" data-testid="job-card" [attr.data-status]="job.status">
       <header>
-        <h3 data-testid="job-title">{{ title(job) }}</h3>
+        <h4 data-testid="job-title">{{ title(job) }}</h4>
         <span class="status" [class]="job.status" data-testid="job-status">
           {{ statusLabel(job) }}
         </span>
@@ -117,9 +146,37 @@
       }
 
       @if (job.status === 'completed') {
+        <button
+          type="button"
+          class="action"
+          data-testid="reveal-job"
+          [disabled]="isBusy(job)"
+          (click)="reveal(job)"
+        >
+          {{ isBusy(job) ? texts.downloads.revealing : revealLabel() }}
+        </button>
         <button type="button" class="action" data-testid="open-folder" (click)="openFolder()">
           {{ texts.downloads.openFolder }}
         </button>
+      }
+
+      @if (canRemove(job)) {
+        <button
+          type="button"
+          class="action"
+          data-testid="remove-job"
+          [title]="texts.downloads.removeTooltip"
+          [disabled]="isBusy(job)"
+          (click)="remove(job)"
+        >
+          {{ texts.downloads.remove }}
+        </button>
+      }
+
+      @if (revealError(); as failure) {
+        @if (failure.jobId === job.id) {
+          <p class="error" role="alert" data-testid="reveal-error">{{ failure.text }}</p>
+        }
       }
     </article>
   </ng-template>

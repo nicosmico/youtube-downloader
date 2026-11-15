@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { EventStreamService, eventData } from './event-stream.service';
 import { Quality } from './preview.service';
@@ -70,7 +70,16 @@ export class EnqueueError extends Error {
   }
 }
 
-const REHYDRATE_LIMIT = 200;
+/** Jobs the Queue is working on or has waiting; every other status is the History. */
+export const IN_PROGRESS_STATUSES: readonly JobStatus[] = ['queued', 'downloading', 'processing'];
+const HISTORY_STATUSES = 'completed,failed,canceled,interrupted';
+
+export function isInProgress(job: Job): boolean {
+  return IN_PROGRESS_STATUSES.includes(job.status);
+}
+
+const QUEUE_LIMIT = 200;
+const HISTORY_PAGE = 50;
 
 /** Live list of jobs: REST for commands and rehydration, SSE (`job.updated`) for changes. */
 @Injectable({ providedIn: 'root' })
@@ -81,6 +90,10 @@ export class JobsService {
 
   /** Newest first. */
   readonly jobs = signal<Job[]>([]);
+  /** `before` cursor of the next page of the History; null when it is all loaded. */
+  private readonly historyCursor = signal<string | null>(null);
+  readonly hasMoreHistory = computed(() => this.historyCursor() !== null);
+  readonly loadingMore = signal(false);
   /** Jobs running and waiting, from `queue.updated` (also sent as a snapshot on connect). */
   readonly queue = signal<QueueCounts>({ active: 0, queued: 0 });
 
@@ -92,15 +105,69 @@ export class JobsService {
     this.connected = true;
     this.stream.on('open', () => this.refresh());
     this.stream.on('job.updated', (event) => this.upsert(eventData<Job>(event)));
+    this.stream.on('job.removed', (event) => this.drop(eventData<{ id: string }>(event).id));
     this.stream.on('queue.updated', (event) => this.queue.set(eventData<QueueCounts>(event)));
     this.stream.connect();
   }
 
+  /**
+   * Fetches the Queue (everything unfinished) and the first page of the History again. The
+   * pages of the History loaded with `loadMore` are dropped: the list starts over.
+   */
   refresh(): void {
-    this.http.get<JobPage>('/api/jobs', { params: { limit: REHYDRATE_LIMIT } }).subscribe({
-      next: (page) => this.jobs.set(sortNewestFirst(page.jobs)),
-      error: () => undefined,
-    });
+    this.http
+      .get<JobPage>('/api/jobs', {
+        params: { status: IN_PROGRESS_STATUSES.join(','), limit: QUEUE_LIMIT },
+      })
+      .subscribe({
+        next: (page) => this.replace(page.jobs, isInProgress),
+        error: () => undefined,
+      });
+    this.http
+      .get<JobPage>('/api/jobs', { params: { status: HISTORY_STATUSES, limit: HISTORY_PAGE } })
+      .subscribe({
+        next: (page) => {
+          this.replace(page.jobs, (job) => !isInProgress(job));
+          this.historyCursor.set(page.nextBefore);
+        },
+        error: () => undefined,
+      });
+  }
+
+  /** The next (older) page of the History. */
+  loadMore(): void {
+    const before = this.historyCursor();
+    if (before === null || this.loadingMore()) {
+      return;
+    }
+    this.loadingMore.set(true);
+    this.http
+      .get<JobPage>('/api/jobs', {
+        params: { status: HISTORY_STATUSES, limit: HISTORY_PAGE, before },
+      })
+      .subscribe({
+        next: (page) => {
+          page.jobs.forEach((job) => this.upsert(job));
+          this.historyCursor.set(page.nextBefore);
+          this.loadingMore.set(false);
+        },
+        error: () => this.loadingMore.set(false),
+      });
+  }
+
+  /** Takes a finished job out of the History. The downloaded file stays on disk. */
+  remove(jobId: string): Observable<unknown> {
+    return this.http.delete(`/api/jobs/${encodeURIComponent(jobId)}`).pipe(
+      tap(() => this.drop(jobId)),
+      catchError((error: unknown) => this.failed(error)),
+    );
+  }
+
+  /** Shows the file of a completed job in Finder/Explorer (host action). */
+  reveal(jobId: string): Observable<unknown> {
+    return this.http
+      .post(`/api/jobs/${encodeURIComponent(jobId)}/reveal`, {})
+      .pipe(catchError((error: unknown) => throwError(() => toEnqueueError(error))));
   }
 
   /**
@@ -140,11 +207,23 @@ export class JobsService {
   private command(jobId: string, action: 'cancel' | 'retry'): Observable<Job> {
     return this.http.post<Job>(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {}).pipe(
       tap((job) => this.upsert(job)),
-      catchError((error: unknown) => {
-        this.refresh(); // the job probably changed under the user's feet (409): show the truth
-        return throwError(() => toEnqueueError(error));
-      }),
+      catchError((error: unknown) => this.failed(error)),
     );
+  }
+
+  /** The job probably changed under the user's feet (409): show the truth. */
+  private failed(error: unknown): Observable<never> {
+    this.refresh();
+    return throwError(() => toEnqueueError(error));
+  }
+
+  /** Replaces the jobs of one group (Queue or History) with a fresh page. */
+  private replace(fresh: Job[], inGroup: (job: Job) => boolean): void {
+    this.jobs.update((jobs) => sortNewestFirst([...jobs.filter((j) => !inGroup(j)), ...fresh]));
+  }
+
+  private drop(jobId: string): void {
+    this.jobs.update((jobs) => jobs.filter((j) => j.id !== jobId));
   }
 
   private upsert(job: Job): void {

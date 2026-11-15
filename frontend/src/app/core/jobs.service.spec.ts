@@ -6,6 +6,7 @@ import { appHeaderInterceptor } from './api.interceptor';
 import { EVENT_SOURCE_FACTORY } from './event-stream.service';
 import { EnqueueError, Job, JobsService } from './jobs.service';
 import { JOB } from '../../testing/fixtures';
+import { flushRehydration } from '../../testing/rehydration';
 
 describe('JobsService', () => {
   let service: JobsService;
@@ -28,23 +29,130 @@ describe('JobsService', () => {
 
   afterEach(() => http.verify());
 
-  it('rehydrates from GET /api/jobs on every (re)connect', () => {
+  it('rehydrates the Queue and the History from GET /api/jobs on every (re)connect', () => {
     service.connect();
     service.connect();
     expect(FakeEventSource.instances).toHaveLength(1);
 
     stream().open();
-    const first = http.expectOne((r) => r.url === '/api/jobs');
-    expect(first.request.params.get('limit')).toBe('200');
-    first.flush({ jobs: [JOB], nextBefore: null });
+    const requests = http.match((r) => r.url === '/api/jobs');
+    const byStatus = (status: string) =>
+      requests.find((r) => r.request.params.get('status') === status);
+    expect(byStatus('queued,downloading,processing')?.request.params.get('limit')).toBe('200');
+    expect(byStatus('completed,failed,canceled,interrupted')?.request.params.get('limit')).toBe(
+      '50',
+    );
+    flushRehydration(http, { queue: [JOB] }, requests);
     expect(service.jobs().map((j) => j.id)).toEqual(['job1']);
 
     // the connection dropped; the job finished in the meantime
     stream().open();
+    flushRehydration(http, { history: [{ ...JOB, status: 'completed' }] });
+    expect(service.jobs()).toHaveLength(1);
+    expect(service.jobs()[0].status).toBe('completed');
+  });
+
+  it('removes a job on job.removed', () => {
+    service.connect();
+    service.jobs.set([JOB, { ...JOB, id: 'job2', createdAt: '2026-11-15T12:00:05.000000+00:00' }]);
+
+    stream().emit('job.removed', { id: 'job2' });
+
+    expect(service.jobs().map((j) => j.id)).toEqual(['job1']);
+  });
+
+  it('loads older History pages with the cursor until there are no more', () => {
+    service.connect();
+    stream().open();
+    const first = { ...JOB, id: 'h1', status: 'completed' as const };
+    flushRehydration(http, { history: [first], nextBefore: 'h1' });
+    expect(service.hasMoreHistory()).toBe(true);
+
+    service.loadMore();
+    service.loadMore(); // already loading: ignored
+    const req = http.expectOne((r) => r.url === '/api/jobs');
+    expect(req.request.params.get('before')).toBe('h1');
+    expect(req.request.params.get('status')).toBe('completed,failed,canceled,interrupted');
+    expect(service.loadingMore()).toBe(true);
+    req.flush({
+      jobs: [{ ...first, id: 'h0', createdAt: '2026-11-15T11:00:00.000000+00:00' }],
+      nextBefore: null,
+    });
+
+    expect(service.jobs().map((j) => j.id)).toEqual(['h1', 'h0']);
+    expect(service.hasMoreHistory()).toBe(false);
+    expect(service.loadingMore()).toBe(false);
+    service.loadMore();
+    http.expectNone((r) => r.url === '/api/jobs');
+  });
+
+  it('starts the History over on reconnect (extra pages are dropped)', () => {
+    service.connect();
+    stream().open();
+    flushRehydration(http, {
+      history: [{ ...JOB, id: 'h1', status: 'completed' }],
+      nextBefore: 'h1',
+    });
+    service.loadMore();
     http
       .expectOne((r) => r.url === '/api/jobs')
-      .flush({ jobs: [{ ...JOB, status: 'completed' }], nextBefore: null });
-    expect(service.jobs()[0].status).toBe('completed');
+      .flush({
+        jobs: [
+          { ...JOB, id: 'h0', status: 'completed', createdAt: '2026-11-15T11:00:00.000000+00:00' },
+        ],
+        nextBefore: null,
+      });
+
+    stream().open();
+    flushRehydration(http, {
+      history: [{ ...JOB, id: 'h1', status: 'completed' }],
+      nextBefore: 'h1',
+    });
+
+    expect(service.jobs().map((j) => j.id)).toEqual(['h1']);
+    expect(service.hasMoreHistory()).toBe(true);
+  });
+
+  it('removes from the History with DELETE and takes the job out of the list', () => {
+    service.jobs.set([{ ...JOB, status: 'completed' }]);
+    service.remove(JOB.id).subscribe();
+
+    const req = http.expectOne(`/api/jobs/${JOB.id}`);
+    expect(req.request.method).toBe('DELETE');
+    expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+    req.flush({ status: 'removed' });
+
+    expect(service.jobs()).toEqual([]);
+  });
+
+  it('shows the truth again when the removal is refused (409)', () => {
+    service.jobs.set([{ ...JOB, status: 'completed' }]);
+    let error: unknown;
+    service.remove(JOB.id).subscribe({ error: (e) => (error = e) });
+
+    http
+      .expectOne(`/api/jobs/${JOB.id}`)
+      .flush({ code: 'job_not_removable', message: 'x' }, { status: 409, statusText: 'x' });
+    flushRehydration(http, { queue: [{ ...JOB, status: 'queued' }] });
+
+    expect((error as EnqueueError).code).toBe('job_not_removable');
+    expect(service.jobs()[0].status).toBe('queued');
+  });
+
+  it('asks the server to reveal a file and surfaces its Spanish message on failure', () => {
+    let error: unknown;
+    service.reveal(JOB.id).subscribe({ error: (e) => (error = e) });
+
+    const req = http.expectOne(`/api/jobs/${JOB.id}/reveal`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+    req.flush(
+      { code: 'file_missing', message: 'El archivo ya no está en su carpeta.' },
+      { status: 404, statusText: 'x' },
+    );
+
+    expect((error as EnqueueError).code).toBe('file_missing');
+    expect((error as EnqueueError).message).toBe('El archivo ya no está en su carpeta.');
   });
 
   it('applies job.updated: updates a job in place and adds new ones, newest first', () => {
@@ -174,7 +282,7 @@ describe('JobsService', () => {
     http
       .expectOne(`/api/jobs/${JOB.id}/retry`)
       .flush({ code: 'job_not_retryable', message: 'No' }, { status: 409, statusText: 'x' });
-    http.expectOne('/api/jobs?limit=200').flush({ jobs: [JOB], nextBefore: null });
+    flushRehydration(http, { queue: [JOB] });
 
     expect((error as EnqueueError).code).toBe('job_not_retryable');
     expect(service.jobs()).toEqual([JOB]);

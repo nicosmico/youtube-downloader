@@ -21,7 +21,7 @@
   gap: 0.75rem;
   align-items: baseline;
 }
-.job h3 {
+.job h4 {
   margin: 0;
   font-size: 1rem;
   overflow-wrap: anywhere;
@@ -83,7 +83,7 @@ button.action {
   gap: 0.75rem;
   align-items: baseline;
 }
-.batch > header h3 {
+.batch > header h4 {
   margin: 0;
   font-size: 1.05rem;
   overflow-wrap: anywhere;
@@ -105,4 +105,9 @@ button.action:disabled {
 }
 .confirm button.action {
   margin-top: 0;
+}
+
+.section {
+  margin: 1rem 0 0.25rem;
+  font-size: 1rem;
 }

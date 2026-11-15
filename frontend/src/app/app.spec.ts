@@ -6,7 +6,9 @@ import { FakeEventSource } from '../testing/fake-event-source';
 import { appHeaderInterceptor } from './core/api.interceptor';
 import { EVENT_SOURCE_FACTORY, EngineInfo } from './core/engine.service';
 import { PresetsService } from './core/presets.service';
+import { SystemService } from './core/system.service';
 import { PRESET_BEST, PRESET_MP3 } from '../testing/fixtures';
+import { flushRehydration } from '../testing/rehydration';
 
 const HEALTH = {
   app: 'youtube-downloader',
@@ -74,7 +76,7 @@ describe('App', () => {
     await fixture.whenStable();
     stream().open();
     http.expectOne('/api/system/engine').flush({ ...ENGINE, status: 'missing' });
-    http.expectOne((r) => r.url === '/api/jobs').flush({ jobs: [], nextBefore: null });
+    flushRehydration(http);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -193,5 +195,39 @@ describe('App', () => {
 
     expect(text()).toContain('La aplicación se cerró');
     expect(el('button')).toBeNull();
+  });
+  it('shows the idle-closed screen when the server announces an idle shutdown', async () => {
+    http.expectOne('/api/health').flush(HEALTH);
+    await fixture.whenStable();
+
+    stream().emit('shutdown', { reason: 'idle' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el('[data-testid=closed-title]')?.textContent).toContain(
+      'La aplicación se cerró por inactividad',
+    );
+    expect(text()).toContain('Ya puedes cerrar esta pestaña');
+    expect(el('button')).toBeNull();
+    expect(stream().closed).toBe(true); // the browser must not keep reconnecting
+  });
+
+  it('shows the plain closed screen for other shutdown reasons', async () => {
+    http.expectOne('/api/health').flush(HEALTH);
+    await fixture.whenStable();
+
+    stream().emit('shutdown', { reason: 'user' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el('[data-testid=closed-title]')?.textContent).toContain('La aplicación se cerró');
+    expect(el('[data-testid=closed-title]')?.textContent).not.toContain('inactividad');
+  });
+
+  it('labels the reveal button from the platform that /api/health reports', async () => {
+    http.expectOne('/api/health').flush({ ...HEALTH, platform: 'darwin' });
+    await fixture.whenStable();
+
+    expect(TestBed.inject(SystemService).platform()).toBe('darwin');
   });
 });

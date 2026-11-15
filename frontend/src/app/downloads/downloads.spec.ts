@@ -5,7 +5,9 @@ import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
 import { EVENT_SOURCE_FACTORY } from '../core/event-stream.service';
 import { JOB } from '../../testing/fixtures';
+import { flushRehydration } from '../../testing/rehydration';
 import { Job, JobsService } from '../core/jobs.service';
+import { SystemService } from '../core/system.service';
 import { Downloads, formatBytes, groupJobs } from './downloads';
 
 describe('Downloads', () => {
@@ -244,9 +246,7 @@ describe('Downloads', () => {
   it('rehydrates on reconnect', async () => {
     jobs.connect();
     FakeEventSource.instances[0].open();
-    http
-      .expectOne((r) => r.url === '/api/jobs')
-      .flush({ jobs: [{ ...JOB, status: 'failed', error: 'Falló.' }], nextBefore: null });
+    flushRehydration(http, { history: [{ ...JOB, status: 'failed', error: 'Falló.' }] });
     await settle();
 
     expect(el('job-error')?.textContent).toContain('Falló.');
@@ -292,14 +292,14 @@ describe('batches', () => {
   it('groups the jobs of a batch under its title, in playlist order, with an aggregate', async () => {
     await show(
       batchJob(3, { id: 'c', status: 'queued' }),
-      batchJob(1, { id: 'a', status: 'completed' }),
+      batchJob(1, { id: 'a', status: 'processing' }),
       batchJob(2, { id: 'b', status: 'downloading', progressPercent: 40 }),
     );
 
     expect(all('batch')).toHaveLength(1);
     expect(all('batch-title')[0].textContent).toContain('Mi playlist');
-    expect(all('batch-summary')[0].textContent).toContain('1/3 completadas');
-    expect(all('batch-summary')[0].textContent).toContain('1 en curso');
+    expect(all('batch-summary')[0].textContent).toContain('0/3 completadas');
+    expect(all('batch-summary')[0].textContent).toContain('2 en curso');
     const cards = all('job-card');
     expect(cards).toHaveLength(3);
     expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
@@ -497,14 +497,274 @@ describe('Downloads cancel and retry', () => {
     http
       .expectOne('/api/jobs/job0/cancel')
       .flush({ code: 'job_not_cancelable', message: 'x' }, { status: 409, statusText: 'x' });
-    http
-      .expectOne('/api/jobs?limit=200')
-      .flush({ jobs: [{ ...JOB, id: 'job0', status: 'completed' }], nextBefore: null });
+    flushRehydration(http, { history: [{ ...JOB, id: 'job0', status: 'completed' }] });
     await settle();
 
     expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
     expect(el('job-status')?.textContent).toContain('Completada');
     expect(el('cancel-job')).toBeNull();
+  });
+});
+
+describe('Downloads history', () => {
+  let fixture: ComponentFixture<Downloads>;
+  let http: HttpTestingController;
+  let jobs: JobsService;
+  let system: SystemService;
+
+  const root = () => fixture.nativeElement as HTMLElement;
+  const all = (testId: string) =>
+    Array.from(root().querySelectorAll<HTMLElement>(`[data-testid=${testId}]`));
+  const el = (testId: string) => all(testId)[0] ?? null;
+  const within = (section: string, testId: string) =>
+    Array.from(el(section)?.querySelectorAll<HTMLElement>(`[data-testid=${testId}]`) ?? []);
+  const settle = async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const click = async (testId: string, index = 0) => {
+    all(testId)[index].click();
+    await settle();
+  };
+  const show = async (...list: Partial<Job>[]) => {
+    jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+  };
+
+  beforeEach(async () => {
+    FakeEventSource.reset();
+    await TestBed.configureTestingModule({
+      imports: [Downloads],
+      providers: [
+        provideHttpClient(withInterceptors([appHeaderInterceptor])),
+        provideHttpClientTesting(),
+        { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    jobs = TestBed.inject(JobsService);
+    system = TestBed.inject(SystemService);
+    fixture = TestBed.createComponent(Downloads);
+    await settle();
+  });
+
+  afterEach(() => http.verify());
+
+  it('splits "En curso" from "Historial"', async () => {
+    await show(
+      { status: 'downloading', title: 'A' },
+      { status: 'queued', title: 'B' },
+      { status: 'processing', title: 'C' },
+      { status: 'completed', title: 'D' },
+      { status: 'failed', title: 'E' },
+      { status: 'canceled', title: 'F' },
+      { status: 'interrupted', title: 'G' },
+    );
+
+    const titles = (section: string) =>
+      within(section, 'job-title').map((t) => t.textContent?.trim());
+    expect(titles('queue-section')).toEqual(['A', 'B', 'C']);
+    expect(titles('history-section')).toEqual(['D', 'E', 'F', 'G']);
+    expect(el('queue-section')?.textContent).toContain('En curso');
+    expect(el('history-section')?.textContent).toContain('Historial');
+  });
+
+  it('hides a section that has nothing and keeps the "nothing yet" text for an empty list', async () => {
+    await show({ status: 'completed' });
+    expect(el('queue-section')).toBeNull();
+    expect(el('history-section')).not.toBeNull();
+
+    await show({ status: 'queued' });
+    expect(el('history-section')).toBeNull();
+    expect(el('queue-section')).not.toBeNull();
+
+    await show();
+    expect(el('downloads-empty')).not.toBeNull();
+  });
+
+  it('moves a job from the Queue to the History when it finishes, and back on retry', async () => {
+    await show({ status: 'downloading' });
+    expect(within('queue-section', 'job-card')).toHaveLength(1);
+
+    jobs.jobs.set([{ ...JOB, id: 'job0', status: 'failed', error: 'x' }]);
+    await settle();
+    expect(el('queue-section')).toBeNull();
+    expect(within('history-section', 'job-card')).toHaveLength(1);
+
+    await click('retry-job');
+    http
+      .expectOne('/api/jobs/job0/retry')
+      .flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
+    await settle();
+    expect(within('queue-section', 'job-card')).toHaveLength(1);
+    expect(el('history-section')).toBeNull();
+  });
+
+  it('keeps the Batch grouping in both sections', async () => {
+    const entry = (n: number, status: Job['status']): Partial<Job> => ({
+      batchId: 'b1',
+      batchTitle: 'Mi playlist',
+      batchEntryCount: 3,
+      playlistIndex: n,
+      title: `Video ${n}`,
+      status,
+    });
+    await show(entry(1, 'completed'), entry(2, 'completed'), entry(3, 'downloading'));
+
+    expect(within('queue-section', 'batch')).toHaveLength(1);
+    expect(within('queue-section', 'job-title').map((t) => t.textContent?.trim())).toEqual([
+      'Video 3',
+    ]);
+    expect(within('history-section', 'batch')).toHaveLength(1);
+    expect(within('history-section', 'batch-summary')[0].textContent).toContain('2/3 completadas');
+    expect(within('history-section', 'job-title').map((t) => t.textContent?.trim())).toEqual([
+      'Video 1',
+      'Video 2',
+    ]);
+  });
+
+  it('says that removing from the History keeps the file', async () => {
+    await show({ status: 'completed' });
+
+    expect(el('history-hint')?.textContent).toContain('no borra el archivo');
+    expect(el('remove-job')?.getAttribute('title')).toContain('el archivo descargado no se borra');
+  });
+
+  it.each(['completed', 'failed', 'canceled', 'interrupted'] as const)(
+    'offers "Quitar del historial" for a %s job, which sends DELETE without asking',
+    async (status) => {
+      await show({ status, title: 'A' }, { status: 'completed', title: 'B' });
+
+      await click('remove-job', 0);
+
+      const req = http.expectOne('/api/jobs/job0');
+      expect(req.request.method).toBe('DELETE');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      req.flush({ status: 'removed' });
+      await settle();
+      expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['B']);
+    },
+  );
+
+  it('does not offer to remove queued or running jobs', async () => {
+    await show({ status: 'queued' }, { status: 'downloading' }, { status: 'processing' });
+
+    expect(el('remove-job')).toBeNull();
+  });
+
+  it('shows an error and the real state when a removal fails', async () => {
+    await show({ status: 'completed' });
+
+    await click('remove-job');
+    http
+      .expectOne('/api/jobs/job0')
+      .flush({ code: 'job_not_removable', message: 'x' }, { status: 409, statusText: 'x' });
+    flushRehydration(http, { queue: [{ ...JOB, id: 'job0', status: 'queued' }] });
+    await settle();
+
+    expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+    expect(el('remove-job')).toBeNull();
+  });
+
+  it('removes a job another tab removed (job.removed)', async () => {
+    jobs.connect();
+    await show({ status: 'completed' });
+
+    FakeEventSource.instances[0].emit('job.removed', { id: 'job0' });
+    await settle();
+
+    expect(el('job-card')).toBeNull();
+    expect(el('downloads-empty')).not.toBeNull();
+  });
+
+  describe('reveal', () => {
+    it('only completed jobs have the button, labelled for the platform', async () => {
+      await show({ status: 'completed' }, { status: 'failed' }, { status: 'queued' });
+      expect(all('reveal-job')).toHaveLength(1);
+      expect(el('reveal-job')?.textContent).toContain('Mostrar archivo');
+
+      system.platform.set('darwin');
+      await settle();
+      expect(el('reveal-job')?.textContent).toContain('Mostrar en Finder');
+
+      system.platform.set('win32');
+      await settle();
+      expect(el('reveal-job')?.textContent).toContain('Mostrar en el Explorador');
+    });
+
+    it('asks the server and is disabled while it works', async () => {
+      await show({ status: 'completed' });
+
+      await click('reveal-job');
+      const req = http.expectOne('/api/jobs/job0/reveal');
+      expect(req.request.method).toBe('POST');
+      expect((el('reveal-job') as HTMLButtonElement).disabled).toBe(true);
+      req.flush({ status: 'revealed' });
+      await settle();
+
+      expect((el('reveal-job') as HTMLButtonElement).disabled).toBe(false);
+      expect(el('reveal-error')).toBeNull();
+    });
+
+    it.each([
+      [404, 'file_missing', 'El archivo ya no está en su carpeta: se movió o se eliminó.'],
+      [501, 'open_unavailable', 'Esta acción solo funciona en la aplicación de escritorio.'],
+    ])('shows the server message on %d', async (status, code, message) => {
+      await show({ status: 'completed', title: 'A' }, { status: 'completed', title: 'B' });
+
+      await click('reveal-job', 0);
+      http.expectOne('/api/jobs/job0/reveal').flush({ code, message }, { status, statusText: 'x' });
+      await settle();
+
+      expect(all('reveal-error')).toHaveLength(1);
+      expect(el('reveal-error')?.textContent).toContain(message);
+      expect(el('reveal-error')?.getAttribute('role')).toBe('alert');
+      expect((el('reveal-job') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('falls back to a generic message when the server cannot be reached', async () => {
+      await show({ status: 'completed' });
+
+      await click('reveal-job');
+      http.expectOne('/api/jobs/job0/reveal').error(new ProgressEvent('error'));
+      await settle();
+
+      expect(el('reveal-error')?.textContent).toContain('No se pudo mostrar el archivo.');
+    });
+  });
+
+  describe('load more', () => {
+    const history = (id: string, createdAt: string): Job => ({
+      ...JOB,
+      id,
+      status: 'completed',
+      title: id,
+      createdAt,
+    });
+
+    it('is offered only while the server has an older page', async () => {
+      jobs.connect();
+      FakeEventSource.instances[0].open();
+      flushRehydration(http, {
+        history: [history('h2', '2026-11-15T12:00:02.000000+00:00')],
+        nextBefore: 'h2',
+      });
+      await settle();
+      expect(el('load-more')?.textContent).toContain('Cargar más');
+
+      await click('load-more');
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(req.request.params.get('before')).toBe('h2');
+      expect((el('load-more') as HTMLButtonElement).disabled).toBe(true);
+      req.flush({
+        jobs: [history('h1', '2026-11-15T12:00:01.000000+00:00')],
+        nextBefore: null,
+      });
+      await settle();
+
+      expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['h2', 'h1']);
+      expect(el('load-more')).toBeNull();
+    });
   });
 });
 

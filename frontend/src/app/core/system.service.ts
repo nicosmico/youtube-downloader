@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, tap } from 'rxjs';
 import { EngineInfo } from './engine.service';
 
 export interface Health {
@@ -8,14 +8,21 @@ export interface Health {
   version: string;
   engine: EngineInfo;
   port: number;
+  /** `process.platform`-like: `darwin`, `win32` or `linux`. */
+  platform?: string;
 }
 
 @Injectable({ providedIn: 'root' })
 export class SystemService {
   private readonly http = inject(HttpClient);
 
+  /** Where the server runs (from `/api/health`); null until known. Labels host actions. */
+  readonly platform = signal<string | null>(null);
+
   health(): Observable<Health> {
-    return this.http.get<Health>('/api/health');
+    return this.http
+      .get<Health>('/api/health')
+      .pipe(tap((health) => this.platform.set(health.platform ?? null)));
   }
 
   /** Host action: the server opens the Downloads folder in Finder/Explorer. */

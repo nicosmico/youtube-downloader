@@ -2,7 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Job, JobsService } from '../core/jobs.service';
+import { Job, JobsService, isInProgress } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
 import { TEXTS } from '../core/texts';
 import { formatDuration } from '../preview/url-preview';
@@ -85,7 +85,26 @@ export class Downloads {
   private readonly system = inject(SystemService);
 
   protected readonly texts = TEXTS;
-  protected readonly items = computed(() => groupJobs(this.jobsService.jobs()));
+  /** "En curso": queued, downloading and processing jobs. */
+  protected readonly queueItems = computed(() =>
+    groupJobs(this.jobsService.jobs().filter(isInProgress)),
+  );
+  /** "Historial": the finished ones, newest first. */
+  protected readonly historyItems = computed(() =>
+    groupJobs(this.jobsService.jobs().filter((job) => !isInProgress(job))),
+  );
+  /** Label of the reveal button: the file manager of the server's platform. */
+  protected readonly revealLabel = computed(() => {
+    const labels = TEXTS.downloads.reveal;
+    const platform = this.system.platform();
+    return platform === 'darwin'
+      ? labels.darwin
+      : platform === 'win32'
+        ? labels.win32
+        : labels.other;
+  });
+  /** Why showing the file of a job failed (the server's Spanish message). */
+  protected readonly revealError = signal<{ jobId: string; text: string } | null>(null);
   /** Job whose cancellation awaits the user's confirmation (only running jobs ask). */
   protected readonly confirming = signal<string | null>(null);
   /** Jobs with a cancel or retry request in flight. */
@@ -159,6 +178,10 @@ export class Downloads {
     return job.status === 'failed' || job.status === 'canceled' || job.status === 'interrupted';
   }
 
+  protected canRemove(job: Job): boolean {
+    return !isInProgress(job);
+  }
+
   protected isBusy(job: Job): boolean {
     return this.busy().has(job.id);
   }
@@ -185,7 +208,32 @@ export class Downloads {
     this.send(job, this.jobsService.retry(job.id));
   }
 
-  private send(job: Job, request: Observable<Job>): void {
+  protected remove(job: Job): void {
+    this.send(job, this.jobsService.remove(job.id));
+  }
+
+  protected reveal(job: Job): void {
+    this.revealError.set(null);
+    this.busy.update((ids) => new Set(ids).add(job.id));
+    const done = () =>
+      this.busy.update((ids) => {
+        const rest = new Set(ids);
+        rest.delete(job.id);
+        return rest;
+      });
+    this.jobsService.reveal(job.id).subscribe({
+      next: done,
+      error: (error: { message?: string }) => {
+        done();
+        this.revealError.set({
+          jobId: job.id,
+          text: error.message || TEXTS.downloads.revealFailed,
+        });
+      },
+    });
+  }
+
+  private send(job: Job, request: Observable<unknown>): void {
     this.actionMessage.set(null);
     this.busy.update((ids) => new Set(ids).add(job.id));
     const done = () =>
