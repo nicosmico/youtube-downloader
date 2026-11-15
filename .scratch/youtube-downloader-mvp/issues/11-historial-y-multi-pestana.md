@@ -4,7 +4,7 @@
 
 **Blocked by:** 10 (Cancelar y reintentar).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] El `History` sobrevive al reinicio y separa terminales de jobs en cola o en curso.
 - [x] Quitar un job del `History` no borra el archivo; quitar uno no terminal responde `409`.
@@ -28,3 +28,5 @@
   - **Fuera de alcance:** el evento `shutdown` con motivos `user` y `signal` no se emite todavía (la UI ya los trata como cierre normal).
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (679 backend ×2, 213 frontend, ruff, build). El cierre desde la UI no avisaba a las demás pestañas (solo se emitía `shutdown` con `idle`): ahora el botón publica `shutdown {reason: "user"}`, con test. Probado en el navegador integrado con dos pestañas: secciones e historial correctos, y al pulsar "Cerrar aplicación" en una, la otra muestra "La aplicación se cerró". Spec actualizada con códigos de `reveal`/`DELETE`, `platform` en `/api/health`, `IDLE_SHUTDOWN_SECONDS` y los motivos de `shutdown`.
+
+**2026-11-15 — Resuelto.** CI `43777018860` y Native `43777018879` verdes.
