@@ -17,6 +17,8 @@ class Settings:
     bind_host: str = "127.0.0.1"
     port: int = 0
     open_browser: bool = True
+    # Dev/CI only: use the Engine binaries found here as they are (no download, no pinned hashes).
+    engine_bin_dir: Path | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -28,6 +30,9 @@ class Settings:
             bind_host=env.get("BIND_HOST") or "127.0.0.1",
             port=int(env.get("PORT") or 0),
             open_browser=env.get("OPEN_BROWSER", "1") != "0",
+            engine_bin_dir=Path(env["ENGINE_BIN_DIR"]).expanduser()
+            if env.get("ENGINE_BIN_DIR")
+            else None,
         )
 
 

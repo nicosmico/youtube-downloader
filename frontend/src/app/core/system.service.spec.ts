@@ -27,7 +27,19 @@ describe('SystemService', () => {
 
     const req = http.expectOne('/api/health');
     expect(req.request.headers.has('X-Requested-With')).toBe(false);
-    const body = { app: 'youtube-downloader', version: '0.1.0', engine: { status: 'missing' }, port: 1 };
+    const body = {
+      app: 'youtube-downloader',
+      version: '0.1.0',
+      engine: {
+        status: 'missing',
+        message: null,
+        versions: { ytDlp: null, ffmpeg: null, ffprobe: null, deno: null },
+        updating: false,
+        lastUpdateCheck: null,
+        updateMessage: null,
+      },
+      port: 1,
+    };
     req.flush(body);
 
     expect(result).toEqual(body);

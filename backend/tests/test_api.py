@@ -14,12 +14,11 @@ def test_health_identifies_the_app(client: TestClient) -> None:
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "app": "youtube-downloader",
-        "version": __version__,
-        "engine": {"status": "missing"},
-        "port": PORT,
-    }
+    body = response.json()
+    assert body["app"] == "youtube-downloader"
+    assert body["version"] == __version__
+    assert body["port"] == PORT
+    assert body["engine"]["status"] == "missing"
 
 
 def test_unknown_api_route_uses_the_error_shape(client: TestClient) -> None:

@@ -13,8 +13,50 @@
         <p class="error" role="alert">{{ texts.health.unreachable }}</p>
       } @else {
         <p class="engine-status" data-testid="engine-status">{{ engineLabel() }}</p>
+        @if (engineService.engine(); as engine) {
+          @if (engine.status === 'ready') {
+            <p class="meta" data-testid="engine-versions">
+              @for (v of versionList(); track v.name; let last = $last) {
+                {{ v.name }} {{ v.value }}
+                @if (!last) {
+                  ·
+                }
+              }
+            </p>
+            @if (engine.updateMessage) {
+              <p class="error" role="alert">
+                {{ texts.engine.updateFailed }} {{ engine.updateMessage }}
+              </p>
+            }
+            <button
+              type="button"
+              class="action"
+              data-testid="engine-update"
+              [disabled]="engine.updating"
+              (click)="engineService.update()"
+            >
+              {{ engine.updating ? texts.engine.updating : texts.engine.update }}
+            </button>
+          }
+          @if (engine.status === 'error') {
+            <p class="error" role="alert" data-testid="engine-error">{{ engine.message }}</p>
+            <button
+              type="button"
+              class="action"
+              data-testid="engine-retry"
+              (click)="engineService.install()"
+            >
+              {{ texts.engine.retry }}
+            </button>
+          }
+        }
+        @if (engineService.actionError()) {
+          <p class="error" role="alert">{{ texts.engine.actionFailed }}</p>
+        }
         @if (health(); as h) {
-          <p class="meta">{{ texts.health.version }} {{ h.version }} · {{ texts.health.port }} {{ h.port }}</p>
+          <p class="meta">
+            {{ texts.health.version }} {{ h.version }} · {{ texts.health.port }} {{ h.port }}
+          </p>
         }
       }
     </section>

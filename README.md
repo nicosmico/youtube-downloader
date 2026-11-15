@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para descargar videos y audio de YouTube público, con interfaz web local y motor `yt-dlp` autogestionado.
 
-> **Estado:** walking skeleton (ticket 02): servidor, shell de Angular, Single Instance y apagado. Sin Engine ni descargas todavía.
+> **Estado:** walking skeleton (ticket 02) más Engine Manager (ticket 03): el servidor instala y actualiza `yt-dlp`, `ffmpeg`, `ffprobe` y Deno, y la UI muestra su estado. Sin descargas todavía.
 
 ## Qué hace (MVP)
 
@@ -74,12 +74,15 @@ docker compose down              # o el botón "Cerrar aplicación" de la UI
 
 Variables útiles: `PORT`, `HOST_DATA_DIR` y `HOST_DOWNLOAD_DIR` (carpetas del host que se montan en `/data` y `/downloads`).
 
+En el primer arranque con `./.dev-data/bin` vacío, la app descarga el Engine Linux (~240 MB) en segundo plano: `curl http://127.0.0.1:8765/api/system/engine` pasa de `installing` a `ready` y `./.dev-data/engine.json` guarda versión y SHA-256 de cada binario. Si falla (sin red, hash incorrecto), el estado es `error`; se reintenta con el botón "Reintentar" o con `POST /api/system/engine/install`. `ENGINE_BIN_DIR=<carpeta>` (carpeta montada en el contenedor) usa esos binarios tal cual, sin descargar ni fijar hashes: solo comprueba `--version`.
+
 Single Instance en Compose: el lock vive en el directorio de datos montado, así que un segundo contenedor con el mismo `HOST_DATA_DIR` falla con "Another instance is starting or stuck" (cada contenedor tiene su propia red y no puede alcanzar el puerto del otro). Fuera de Docker, el segundo `Launcher` abre el navegador en la instancia existente y termina.
 
 ### Tests y lint (backend)
 
 ```sh
-docker compose run --rm tests                      # pytest
+docker compose run --rm tests                      # pytest (sin red)
+docker compose run --rm tests pytest -m network    # opt-in: instala el Engine real en un directorio temporal
 docker compose run --rm tests ruff check .         # lint
 docker compose run --rm tests ruff format --check . # formato (sin --check aplica el formato)
 docker compose run --rm tests uv lock              # regenerar uv.lock tras cambiar dependencias

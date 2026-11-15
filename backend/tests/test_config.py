@@ -31,3 +31,9 @@ def test_environment_overrides() -> None:
     assert settings.open_browser is False
     assert settings.data_dir == Path("/data")
     assert settings.download_dir == Path("/downloads")
+
+
+def test_engine_bin_dir_is_optional_and_empty_means_unset() -> None:
+    assert Settings.from_env({}).engine_bin_dir is None
+    assert Settings.from_env({"ENGINE_BIN_DIR": ""}).engine_bin_dir is None
+    assert Settings.from_env({"ENGINE_BIN_DIR": "/engine"}).engine_bin_dir == Path("/engine")

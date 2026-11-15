@@ -60,9 +60,15 @@ def run(settings: Settings) -> int:
             if server_ref:
                 server_ref[0].should_exit = True
 
-        app = create_app(data_dir=settings.data_dir, port=port, request_shutdown=request_shutdown)
+        app = create_app(
+            data_dir=settings.data_dir,
+            port=port,
+            request_shutdown=request_shutdown,
+            engine_bin_dir=settings.engine_bin_dir,
+        )
         # log_config=None: no console under PyInstaller --noconsole; logging goes to a file.
-        server = uvicorn.Server(uvicorn.Config(app, log_config=None))
+        # timeout_graceful_shutdown: open SSE streams must not keep the server from stopping.
+        server = uvicorn.Server(uvicorn.Config(app, log_config=None, timeout_graceful_shutdown=3))
         server_ref.append(server)
 
         write_runtime(settings.data_dir, port)

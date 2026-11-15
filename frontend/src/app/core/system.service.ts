@@ -1,11 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { EngineInfo } from './engine.service';
 
 export interface Health {
   app: string;
   version: string;
-  engine: { status: string };
+  engine: EngineInfo;
   port: number;
 }
 

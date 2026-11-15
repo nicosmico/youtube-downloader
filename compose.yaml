@@ -13,6 +13,8 @@ services:
       OPEN_BROWSER: "0"
       DATA_DIR: /data
       DOWNLOAD_DIR: /downloads
+      # Optional: use Engine binaries from this (mounted) directory instead of downloading.
+      ENGINE_BIN_DIR: "${ENGINE_BIN_DIR:-}"
     ports:
       # Published on the host loopback only.
       - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"

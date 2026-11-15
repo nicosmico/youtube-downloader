@@ -21,7 +21,8 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra"
+addopts = "-ra -m 'not network'"
+markers = ["network: downloads the real Engine (opt-in: pytest -m network)"]
 
 [tool.ruff]
 line-length = 100

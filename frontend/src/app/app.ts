@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { SystemService } from './core/system.service';
-import { Health } from './core/system.service';
+import { EngineService } from './core/engine.service';
+import { Health, SystemService } from './core/system.service';
 import { TEXTS } from './core/texts';
 
 type ShutdownState = 'idle' | 'closing' | 'done' | 'failed';
@@ -12,6 +12,7 @@ type ShutdownState = 'idle' | 'closing' | 'done' | 'failed';
 })
 export class App implements OnInit {
   private readonly system = inject(SystemService);
+  protected readonly engineService = inject(EngineService);
 
   protected readonly texts = TEXTS;
   protected readonly health = signal<Health | null>(null);
@@ -19,6 +20,7 @@ export class App implements OnInit {
   protected readonly shutdownState = signal<ShutdownState>('idle');
 
   ngOnInit(): void {
+    this.engineService.connect();
     this.system.health().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.unreachable.set(true),
@@ -26,11 +28,21 @@ export class App implements OnInit {
   }
 
   protected engineLabel(): string {
-    const status = this.health()?.engine.status;
+    const status = this.engineService.engine()?.status;
     if (status === undefined) {
       return TEXTS.engine.loading;
     }
     return TEXTS.engine.status[status] ?? TEXTS.engine.unknownStatus;
+  }
+
+  protected versionList(): { name: string; value: string }[] {
+    const versions = this.engineService.engine()?.versions;
+    if (!versions) {
+      return [];
+    }
+    return (Object.keys(TEXTS.engine.versions) as (keyof typeof TEXTS.engine.versions)[])
+      .filter((key) => versions[key])
+      .map((key) => ({ name: TEXTS.engine.versions[key], value: versions[key] as string }));
   }
 
   protected shutdown(): void {
