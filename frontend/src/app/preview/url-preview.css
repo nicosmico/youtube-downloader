@@ -101,3 +101,61 @@ button.primary:disabled {
 .modes input {
   width: auto;
 }
+.entries {
+  flex: 1 1 100%;
+  margin-top: 0.5rem;
+}
+.entries h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+.entries-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.entries-bar .action {
+  margin-top: 0;
+}
+.entry-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid #ececf0;
+  border-radius: 0.5rem;
+}
+.entry-list li + li {
+  border-top: 1px solid #ececf0;
+}
+.entry-list label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+.entry-list label.unavailable {
+  cursor: not-allowed;
+  color: #8a8a92;
+}
+.entry-list input {
+  width: auto;
+  flex: none;
+}
+.entry-index {
+  flex: none;
+  min-width: 2rem;
+  color: #6b6b73;
+  font-variant-numeric: tabular-nums;
+}
+.entry-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reason {
+  margin: 0;
+}

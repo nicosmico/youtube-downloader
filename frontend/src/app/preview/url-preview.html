@@ -46,15 +46,31 @@
             @if (media.author) {
               <p class="meta" data-testid="preview-author">{{ media.author }}</p>
             }
-            @if (media.duration !== null) {
-              <p class="meta" data-testid="preview-duration">
-                {{ texts.preview.duration }}: {{ duration(media.duration) }}
+            @if (media.kind === 'video') {
+              @if (media.duration !== null) {
+                <p class="meta" data-testid="preview-duration">
+                  {{ texts.preview.duration }}: {{ duration(media.duration) }}
+                </p>
+              }
+              @if (media.maxResolution) {
+                <p class="meta" data-testid="preview-max">
+                  {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
+                </p>
+              }
+            } @else {
+              <p class="meta" data-testid="playlist-count">
+                {{ media.entryCount }}
+                {{
+                  media.entryCount === 1
+                    ? texts.preview.playlist.countOne
+                    : texts.preview.playlist.count
+                }}
               </p>
-            }
-            @if (media.maxResolution) {
-              <p class="meta" data-testid="preview-max">
-                {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
-              </p>
+              @if (media.truncated) {
+                <p class="meta" role="status" data-testid="playlist-truncated">
+                  {{ texts.preview.playlist.truncated }}
+                </p>
+              }
             }
             <app-presets
               [mode]="mode()"
@@ -129,10 +145,10 @@
               type="button"
               class="primary"
               data-testid="download-button"
-              [disabled]="!engineReady() || enqueuing()"
+              [disabled]="!canDownload(media)"
               (click)="download(media)"
             >
-              {{ enqueuing() ? texts.preview.enqueuing : texts.preview.download }}
+              {{ downloadLabel(media) }}
             </button>
             @if (enqueued()) {
               <p class="meta" role="status" data-testid="enqueued">{{ texts.preview.enqueued }}</p>
@@ -140,7 +156,7 @@
             @if (enqueueError(); as message) {
               <p class="error" role="alert" data-testid="enqueue-error">{{ message }}</p>
             }
-            @if (media.playlistUrl; as playlistUrl) {
+            @if (media.kind === 'video' && media.playlistUrl; as playlistUrl) {
               <button
                 type="button"
                 class="action"
@@ -151,6 +167,56 @@
               </button>
             }
           </div>
+          @if (media.kind === 'playlist') {
+            <section class="entries" aria-labelledby="entries-heading" data-testid="entries">
+              <h4 id="entries-heading">{{ texts.preview.playlist.entries }}</h4>
+              <div class="entries-bar">
+                <button
+                  type="button"
+                  class="action"
+                  data-testid="select-all"
+                  (click)="selectAllEntries(media)"
+                >
+                  {{ texts.preview.playlist.selectAll }}
+                </button>
+                <button
+                  type="button"
+                  class="action"
+                  data-testid="select-none"
+                  (click)="selectNoEntries()"
+                >
+                  {{ texts.preview.playlist.selectNone }}
+                </button>
+                <span class="meta" role="status" data-testid="selected-count">
+                  {{ selectedCount() }} / {{ media.entryCount }}
+                  {{ texts.preview.playlist.selected }}
+                </span>
+              </div>
+              <ul class="entry-list">
+                @for (entry of media.entries; track entry.index) {
+                  <li data-testid="entry" [attr.data-available]="entry.available">
+                    <label [class.unavailable]="!entry.available">
+                      <input
+                        type="checkbox"
+                        data-testid="entry-checkbox"
+                        [checked]="selected().has(entry.index)"
+                        [disabled]="!entry.available"
+                        (change)="toggleEntry(entry)"
+                      />
+                      <span class="entry-index">{{ entry.index }}</span>
+                      <span class="entry-title" data-testid="entry-title">{{ entry.title }}</span>
+                      @if (entry.duration !== null) {
+                        <span class="meta">{{ duration(entry.duration) }}</span>
+                      }
+                      @if (entry.unavailableReason; as reason) {
+                        <span class="meta reason" data-testid="entry-reason">{{ reason }}</span>
+                      }
+                    </label>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
         </article>
       }
     }

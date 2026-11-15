@@ -13,7 +13,14 @@ import {
 } from 'rxjs';
 import { EngineService } from '../core/engine.service';
 import { AudioFormat, DownloadOptions, EnqueueError, JobsService } from '../core/jobs.service';
-import { MediaPreview, PreviewError, PreviewService, Quality } from '../core/preview.service';
+import {
+  MediaPreview,
+  PlaylistEntry,
+  PlaylistPreview,
+  PreviewError,
+  PreviewService,
+  Quality,
+} from '../core/preview.service';
 import { Preset } from '../core/presets.service';
 import { TEXTS } from '../core/texts';
 import { Presets } from '../presets/presets';
@@ -88,6 +95,9 @@ export class UrlPreview {
   readonly mode = signal<Mode>('video');
   readonly quality = signal<Quality>('best');
   readonly audioFormat = signal<AudioFormat>(DEFAULT_AUDIO_FORMAT);
+  /** Playlist: positions (`index`) of the entries that will be downloaded. */
+  readonly selected = signal<ReadonlySet<number>>(new Set());
+  protected readonly selectedCount = computed(() => this.selected().size);
   protected readonly enqueuing = signal(false);
   protected readonly enqueued = signal(false);
   protected readonly enqueueError = signal<string | null>(null);
@@ -157,8 +167,52 @@ export class UrlPreview {
     return quality === '2160p' ? `${quality} (${TEXTS.preview.quality2160Hint})` : quality;
   }
 
+  /** A playlist has no formats to look at (`--flat-playlist`): every quality is offered. */
   protected isAvailable(preview: MediaPreview, quality: Quality): boolean {
-    return preview.availableQualities.includes(quality);
+    return preview.kind === 'playlist' || preview.availableQualities.includes(quality);
+  }
+
+  protected toggleEntry(entry: PlaylistEntry): void {
+    if (!entry.available) {
+      return;
+    }
+    this.selected.update((current) => {
+      const next = new Set(current);
+      if (!next.delete(entry.index)) {
+        next.add(entry.index);
+      }
+      return next;
+    });
+  }
+
+  protected selectAllEntries(playlist: PlaylistPreview): void {
+    this.selected.set(new Set(playlist.entries.filter((e) => e.available).map((e) => e.index)));
+  }
+
+  protected selectNoEntries(): void {
+    this.selected.set(new Set());
+  }
+
+  protected downloadLabel(media: MediaPreview): string {
+    const texts = TEXTS.preview;
+    if (this.enqueuing()) {
+      return texts.enqueuing;
+    }
+    if (media.kind === 'video') {
+      return texts.download;
+    }
+    const n = this.selectedCount();
+    return n === 1
+      ? texts.playlist.downloadOne
+      : texts.playlist.downloadMany.replace('{n}', String(n));
+  }
+
+  protected canDownload(media: MediaPreview): boolean {
+    return (
+      this.engineReady() &&
+      !this.enqueuing() &&
+      (media.kind === 'video' || this.selectedCount() > 0)
+    );
   }
 
   protected duration(seconds: number): string {
@@ -173,7 +227,7 @@ export class UrlPreview {
       return;
     }
     const quality = preset.quality ?? 'best';
-    this.quality.set(media.availableQualities.includes(quality) ? quality : 'best');
+    this.quality.set(this.isAvailable(media, quality) ? quality : 'best');
   }
 
   protected selectQuality(value: string): void {
@@ -181,7 +235,7 @@ export class UrlPreview {
   }
 
   protected download(media: MediaPreview): void {
-    if (!this.engineReady() || this.enqueuing()) {
+    if (!this.canDownload(media)) {
       return;
     }
     this.enqueuing.set(true);
@@ -191,7 +245,13 @@ export class UrlPreview {
       this.mode() === 'audio'
         ? { mode: 'audio', audioFormat: this.audioFormat() }
         : { mode: 'video', quality: this.quality() };
-    this.jobs.enqueue(media.url, options, media.title).subscribe({
+    const entries =
+      media.kind === 'playlist'
+        ? media.entries
+            .filter((e) => e.available && this.selected().has(e.index))
+            .map(({ id, url, index, title }) => ({ id, url, index, title }))
+        : undefined;
+    this.jobs.enqueue(media.url, options, media.title, entries).subscribe({
       next: () => {
         this.enqueuing.set(false);
         this.enqueued.set(true);
@@ -232,8 +292,11 @@ export class UrlPreview {
         this.preview.set(outcome.media);
         this.errorCode.set(null);
         // The pick is kept for the next video unless this one cannot offer that Quality.
-        if (!outcome.media.availableQualities.includes(this.quality())) {
+        if (!this.isAvailable(outcome.media, this.quality())) {
           this.quality.set('best');
+        }
+        if (outcome.media.kind === 'playlist') {
+          this.selectAllEntries(outcome.media);
         }
         this.status.set('ready');
         break;

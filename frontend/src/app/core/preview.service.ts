@@ -4,8 +4,8 @@ import { Observable, catchError, throwError } from 'rxjs';
 
 export type Quality = 'best' | '2160p' | '1080p' | '720p' | '480p';
 
-/** What `POST /api/preview` returns for a video (playlists arrive with ticket 09). */
-export interface MediaPreview {
+/** What `POST /api/preview` returns for a single video. */
+export interface VideoPreview {
   kind: 'video';
   id: string;
   url: string;
@@ -21,6 +21,36 @@ export interface MediaPreview {
   playlistUrl?: string;
 }
 
+/** One video of a playlist or channel, as listed by `--flat-playlist`. */
+export interface PlaylistEntry {
+  id: string;
+  url: string;
+  /** Position in the playlist, starting at 1. */
+  index: number;
+  title: string;
+  /** Seconds. */
+  duration: number | null;
+  available: boolean;
+  /** Spanish; only when `available` is false. */
+  unavailableReason?: string;
+}
+
+/** What `POST /api/preview` returns for a playlist or a channel (up to 500 entries). */
+export interface PlaylistPreview {
+  kind: 'playlist';
+  id: string;
+  url: string;
+  title: string;
+  author: string | null;
+  thumbnail: string | null;
+  entryCount: number;
+  /** The playlist has more than the 500 entries listed. */
+  truncated: boolean;
+  entries: PlaylistEntry[];
+}
+
+export type MediaPreview = VideoPreview | PlaylistPreview;
+
 /** Codes of the API plus `network` (no answer from the local server) and `unknown`. */
 export type PreviewErrorCode =
   | 'invalid_url'
@@ -31,7 +61,6 @@ export type PreviewErrorCode =
   | 'unavailable'
   | 'timeout'
   | 'preview_failed'
-  | 'playlist_unsupported'
   | 'engine_not_ready'
   | 'network'
   | 'unknown';
@@ -54,7 +83,6 @@ const API_CODES: ReadonlySet<string> = new Set<PreviewErrorCode>([
   'unavailable',
   'timeout',
   'preview_failed',
-  'playlist_unsupported',
   'engine_not_ready',
 ]);
 

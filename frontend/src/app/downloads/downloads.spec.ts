@@ -6,7 +6,7 @@ import { appHeaderInterceptor } from '../core/api.interceptor';
 import { EVENT_SOURCE_FACTORY } from '../core/event-stream.service';
 import { JOB } from '../../testing/fixtures';
 import { Job, JobsService } from '../core/jobs.service';
-import { Downloads, formatBytes } from './downloads';
+import { Downloads, formatBytes, groupJobs } from './downloads';
 
 describe('Downloads', () => {
   let fixture: ComponentFixture<Downloads>;
@@ -250,6 +250,116 @@ describe('Downloads', () => {
     await settle();
 
     expect(el('job-error')?.textContent).toContain('Falló.');
+  });
+});
+
+describe('batches', () => {
+  const batchJob = (n: number, extra: Partial<Job> = {}): Partial<Job> => ({
+    batchId: 'b1',
+    batchTitle: 'Mi playlist',
+    batchEntryCount: 3,
+    playlistIndex: n,
+    title: `Video ${n}`,
+    createdAt: `2026-11-15T12:00:0${n}.000000+00:00`,
+    ...extra,
+  });
+  let fixture: ComponentFixture<Downloads>;
+  let jobs: JobsService;
+  const root = () => fixture.nativeElement as HTMLElement;
+  const all = (testId: string) =>
+    Array.from(root().querySelectorAll<HTMLElement>(`[data-testid=${testId}]`));
+  const show = async (...list: Partial<Job>[]) => {
+    jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    FakeEventSource.reset();
+    await TestBed.configureTestingModule({
+      imports: [Downloads],
+      providers: [
+        provideHttpClient(withInterceptors([appHeaderInterceptor])),
+        provideHttpClientTesting(),
+        { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+      ],
+    }).compileComponents();
+    jobs = TestBed.inject(JobsService);
+    fixture = TestBed.createComponent(Downloads);
+    await fixture.whenStable();
+  });
+
+  it('groups the jobs of a batch under its title, in playlist order, with an aggregate', async () => {
+    await show(
+      batchJob(3, { id: 'c', status: 'queued' }),
+      batchJob(1, { id: 'a', status: 'completed' }),
+      batchJob(2, { id: 'b', status: 'downloading', progressPercent: 40 }),
+    );
+
+    expect(all('batch')).toHaveLength(1);
+    expect(all('batch-title')[0].textContent).toContain('Mi playlist');
+    expect(all('batch-summary')[0].textContent).toContain('1/3 completadas');
+    expect(all('batch-summary')[0].textContent).toContain('1 en curso');
+    const cards = all('job-card');
+    expect(cards).toHaveLength(3);
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
+      'Video 1',
+      'Video 2',
+      'Video 3',
+    ]);
+    expect(root().querySelectorAll('[data-testid=batch] [data-testid=job-card]')).toHaveLength(3);
+  });
+
+  it('keeps the jobs individual: each has its own status and error', async () => {
+    await show(
+      batchJob(1, { status: 'completed' }),
+      batchJob(2, { status: 'failed', error: 'El video es privado' }),
+      batchJob(3, { status: 'completed' }),
+    );
+
+    expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
+      'Completada',
+      'Fallida',
+      'Completada',
+    ]);
+    expect(all('job-error')).toHaveLength(1);
+    expect(all('batch-summary')[0].textContent).toContain('2/3 completadas');
+    expect(all('batch-summary')[0].textContent).toContain('1 con error');
+  });
+
+  it('shows single videos next to a batch, each at the place of its newest job', async () => {
+    await show(
+      { id: 'solo', title: 'Suelto', createdAt: '2026-11-15T12:00:09.000000+00:00' },
+      batchJob(2, { id: 'b2' }),
+      batchJob(1, { id: 'b1' }),
+    );
+
+    expect(all('batch')).toHaveLength(1);
+    expect(root().querySelector('[data-testid=batch] [data-testid=job-card]')).not.toBeNull();
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
+      'Suelto',
+      'Video 1',
+      'Video 2',
+    ]);
+    expect(root().querySelectorAll('[data-testid=batch]')[0].textContent).not.toContain('Suelto');
+  });
+
+  it('keeps separate batches apart', async () => {
+    await show(
+      batchJob(1, { id: 'x1' }),
+      batchJob(1, { id: 'y1', batchId: 'b2', batchTitle: 'Otra' }),
+    );
+
+    expect(all('batch-title').map((t) => t.textContent?.trim())).toEqual(['Mi playlist', 'Otra']);
+  });
+
+  it('groupJobs counts against the entries chosen, not only the jobs it knows', () => {
+    const items = groupJobs([
+      { ...JOB, ...batchJob(1, { status: 'completed' }), batchEntryCount: 10 } as Job,
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'batch', total: 10, completed: 1 });
   });
 });
 

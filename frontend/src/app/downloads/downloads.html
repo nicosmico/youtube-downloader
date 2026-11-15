@@ -14,7 +14,23 @@
     <p class="meta" data-testid="downloads-empty">{{ texts.downloads.empty }}</p>
   }
 
-  @for (job of jobsService.jobs(); track job.id) {
+  @for (item of items(); track item.kind === 'batch' ? item.batchId : item.job.id) {
+    @if (item.kind === 'batch') {
+      <section class="batch" data-testid="batch" [attr.aria-label]="item.title">
+        <header>
+          <h3 data-testid="batch-title">{{ item.title }}</h3>
+          <span class="status" data-testid="batch-summary">{{ summary(item) }}</span>
+        </header>
+        @for (job of item.jobs; track job.id) {
+          <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: job }" />
+        }
+      </section>
+    } @else {
+      <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: item.job }" />
+    }
+  }
+
+  <ng-template #jobCard let-job>
     <article class="job" data-testid="job-card" [attr.data-status]="job.status">
       <header>
         <h3 data-testid="job-title">{{ title(job) }}</h3>
@@ -55,7 +71,7 @@
         </button>
       }
     </article>
-  }
+  </ng-template>
 
   @if (folderMessage(); as message) {
     <p

@@ -7,7 +7,14 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
-import { ENGINE_READY, MEDIA, PRESET_480, PRESET_BEST, PRESET_MP3 } from '../../testing/fixtures';
+import {
+  ENGINE_READY,
+  MEDIA,
+  PLAYLIST,
+  PRESET_480,
+  PRESET_BEST,
+  PRESET_MP3,
+} from '../../testing/fixtures';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
 import { JobsService } from '../core/jobs.service';
 import { PresetsService } from '../core/presets.service';
@@ -274,7 +281,6 @@ describe('UrlPreview', () => {
       ['unavailable', 422, 'no está disponible'],
       ['timeout', 504, 'tardó demasiado'],
       ['preview_failed', 502, 'No se pudo obtener la información'],
-      ['playlist_unsupported', 422, 'playlists y canales todavía no'],
       ['engine_not_ready', 409, 'todavía no está listo'],
     ];
 
@@ -613,7 +619,7 @@ describe('UrlPreview', () => {
   });
 
   describe('"Ver playlist completa"', () => {
-    const PLAYLIST = 'https://www.youtube.com/playlist?list=PLabc123';
+    const FULL_LIST = 'https://www.youtube.com/playlist?list=PLabc123';
 
     it('shows only when the preview came from a list', async () => {
       await type(URL_A, 'insertFromPaste');
@@ -624,16 +630,203 @@ describe('UrlPreview', () => {
 
     it('fills the field with the playlist URL and previews it', async () => {
       await type(`${URL_A}&list=PLabc123`, 'insertFromPaste');
-      await answer(http.expectOne('/api/preview'), { ...MEDIA, playlistUrl: PLAYLIST });
+      await answer(http.expectOne('/api/preview'), { ...MEDIA, playlistUrl: FULL_LIST });
 
       expect(el('full-playlist')?.textContent).toContain('Ver playlist completa');
       el<HTMLButtonElement>('full-playlist')!.click();
       await settle();
 
-      expect(input().value).toBe(PLAYLIST);
+      expect(input().value).toBe(FULL_LIST);
       const req = http.expectOne('/api/preview');
-      expect(req.request.body).toEqual({ url: PLAYLIST });
-      await answer(req, { code: 'playlist_unsupported', message: '' }, 422);
+      expect(req.request.body).toEqual({ url: FULL_LIST });
+      await answer(req, PLAYLIST);
+
+      expect(el('entries')).not.toBeNull();
+    });
+  });
+
+  describe('playlist', () => {
+    const LIST_URL = 'https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12';
+    const checkboxes = () =>
+      Array.from(root().querySelectorAll<HTMLInputElement>('[data-testid=entry-checkbox]'));
+    const click = async (testId: string) => {
+      el<HTMLButtonElement>(testId)!.click();
+      await settle();
+    };
+    const show = async (playlist = PLAYLIST) => {
+      await type(LIST_URL, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), playlist);
+    };
+    const button = () => el<HTMLButtonElement>('download-button')!;
+
+    it('shows the title, the count and one row per entry', async () => {
+      await show();
+
+      expect(el('preview-title')?.textContent).toContain('Test Playlist');
+      expect(el('preview-author')?.textContent).toContain('GoogleVoice');
+      expect(el('playlist-count')?.textContent).toContain('4 videos');
+      expect(el('playlist-truncated')).toBeNull();
+      expect(el('preview-duration')).toBeNull();
+      expect(
+        Array.from(root().querySelectorAll('[data-testid=entry-title]')).map((t) =>
+          t.textContent?.trim(),
+        ),
+      ).toEqual(['The Google Story', 'Parisian Love', 'Video no disponible', 'Cake']);
+    });
+
+    it('selects the available entries by default and disables the others with the reason', async () => {
+      await show();
+
+      expect(checkboxes().map((c) => c.checked)).toEqual([true, true, false, true]);
+      expect(checkboxes().map((c) => c.disabled)).toEqual([false, false, true, false]);
+      expect(el('entry-reason')?.textContent).toContain('Video privado o eliminado');
+      expect(el('selected-count')?.textContent).toContain('3 / 4');
+      expect(button().textContent).toContain('Descargar 3 videos');
+    });
+
+    it('warns when the playlist was cut at 500', async () => {
+      await show({ ...PLAYLIST, truncated: true });
+
+      expect(el('playlist-truncated')?.textContent).toContain('Mostrando las primeras 500');
+    });
+
+    it('deselects and reselects an entry, updating the count and the button', async () => {
+      await show();
+
+      checkboxes()[0].click();
+      await settle();
+      expect(checkboxes().map((c) => c.checked)).toEqual([false, true, false, true]);
+      expect(el('selected-count')?.textContent).toContain('2 / 4');
+      expect(button().textContent).toContain('Descargar 2 videos');
+
+      checkboxes()[0].click();
+      await settle();
+      expect(el('selected-count')?.textContent).toContain('3 / 4');
+    });
+
+    it('"Ninguno" clears the selection and disables the button; "Seleccionar todo" restores the available ones', async () => {
+      await show();
+
+      await click('select-none');
+      expect(checkboxes().every((c) => !c.checked)).toBe(true);
+      expect(el('selected-count')?.textContent).toContain('0 / 4');
+      expect(button().disabled).toBe(true);
+
+      await click('select-all');
+      expect(checkboxes().map((c) => c.checked)).toEqual([true, true, false, true]);
+      expect(button().disabled).toBe(false);
+    });
+
+    it('says "Descargar 1 video" in the singular', async () => {
+      await show();
+      await click('select-none');
+
+      checkboxes()[1].click();
+      await settle();
+
+      expect(button().textContent?.trim()).toBe('Descargar 1 video');
+    });
+
+    it('offers every quality, none disabled', async () => {
+      await show();
+
+      const options = Array.from(
+        root().querySelectorAll<HTMLOptionElement>('[data-testid=quality-select] option'),
+      );
+      expect(options).toHaveLength(5);
+      expect(options.every((o) => !o.disabled)).toBe(true);
+      expect(el('preview-max')).toBeNull();
+    });
+
+    it('keeps a picked quality that a video would not offer', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+      const select = el<HTMLSelectElement>('quality-select')!;
+      select.value = '720p';
+      select.dispatchEvent(new Event('change'));
+      await settle();
+
+      await type(LIST_URL, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), PLAYLIST);
+
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('720p');
+    });
+
+    it('applies presets', async () => {
+      await show();
+      TestBed.inject(PresetsService).presets.set([PRESET_BEST, PRESET_MP3, PRESET_480]);
+      await settle();
+
+      Array.from(root().querySelectorAll<HTMLButtonElement>('[data-testid=preset-apply]'))
+        .find((b) => b.textContent?.includes('Ligero'))!
+        .click();
+      await settle();
+
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+    });
+
+    it('enqueues only the selected entries with the playlist title and the chosen options', async () => {
+      await show();
+      checkboxes()[1].click(); // drop "Parisian Love"
+      await settle();
+      el<HTMLInputElement>('mode-audio')!.click();
+      await settle();
+
+      button().click();
+      await settle();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.body).toEqual({
+        url: PLAYLIST.url,
+        mode: 'audio',
+        audioFormat: 'm4a',
+        title: 'Test Playlist',
+        entries: [
+          {
+            id: '00000000001',
+            url: 'https://www.youtube.com/watch?v=00000000001',
+            index: 1,
+            title: 'The Google Story',
+          },
+          {
+            id: '00000000004',
+            url: 'https://www.youtube.com/watch?v=00000000004',
+            index: 4,
+            title: 'Cake',
+          },
+        ],
+      });
+      await answer(req, { batchId: 'b1', jobs: [] });
+      expect(el('enqueued')).not.toBeNull();
+    });
+
+    it('never sends entries for a single video', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+
+      el<HTMLButtonElement>('download-button')!.click();
+      await settle();
+
+      expect('entries' in http.expectOne('/api/jobs').request.body).toBe(false);
+    });
+
+    it('shows a Spanish message when the server rejects the selection', async () => {
+      await show();
+
+      button().click();
+      await settle();
+      await answer(http.expectOne('/api/jobs'), { code: 'invalid_entry', message: 'x' }, 422);
+
+      expect(el('enqueue-error')?.textContent).toContain('no es un enlace de YouTube');
+    });
+
+    it('selects everything again for the next playlist', async () => {
+      await show();
+      await click('select-none');
+
+      await show({ ...PLAYLIST, id: 'other' });
+
+      expect(checkboxes().map((c) => c.checked)).toEqual([true, true, false, true]);
     });
   });
 });

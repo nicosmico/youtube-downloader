@@ -1,4 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Job, JobsService } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
@@ -18,9 +19,63 @@ export function formatBytes(bytes: number): string {
   return `${text} ${units[unit]}`;
 }
 
-/** One card per DownloadJob, live through `JobsService`. */
+/** A Batch with the jobs of its entries, in playlist order. */
+export interface BatchGroup {
+  kind: 'batch';
+  batchId: string;
+  title: string;
+  jobs: Job[];
+  /** Entries chosen when it was enqueued. */
+  total: number;
+  completed: number;
+  failed: number;
+  running: number;
+}
+
+export type ListItem = { kind: 'job'; job: Job } | BatchGroup;
+
+/** Jobs of a Batch gather under one heading, at the place of their newest job; the rest stay alone. */
+export function groupJobs(jobs: readonly Job[]): ListItem[] {
+  const items: ListItem[] = [];
+  const batches = new Map<string, BatchGroup>();
+  for (const job of jobs) {
+    if (!job.batchId) {
+      items.push({ kind: 'job', job });
+      continue;
+    }
+    let group = batches.get(job.batchId);
+    if (!group) {
+      group = {
+        kind: 'batch',
+        batchId: job.batchId,
+        title: job.batchTitle || TEXTS.downloads.untitledBatch,
+        jobs: [],
+        total: 0,
+        completed: 0,
+        failed: 0,
+        running: 0,
+      };
+      batches.set(job.batchId, group);
+      items.push(group);
+    }
+    group.jobs.push(job);
+  }
+  for (const group of batches.values()) {
+    group.jobs.sort((a, b) => (a.playlistIndex ?? 0) - (b.playlistIndex ?? 0));
+    group.total = Math.max(group.jobs[0].batchEntryCount ?? 0, group.jobs.length);
+    group.completed = group.jobs.filter((j) => j.status === 'completed').length;
+    group.failed = group.jobs.filter((j) => j.status === 'failed').length;
+    group.running = group.jobs.filter(
+      (j) => j.status === 'downloading' || j.status === 'processing',
+    ).length;
+  }
+  return items;
+}
+
+/** One card per DownloadJob, live through `JobsService`; a playlist groups its jobs. */
 @Component({
   selector: 'app-downloads',
+  imports: [NgTemplateOutlet],
   templateUrl: './downloads.html',
   styleUrl: './downloads.css',
 })
@@ -29,7 +84,21 @@ export class Downloads {
   private readonly system = inject(SystemService);
 
   protected readonly texts = TEXTS;
+  protected readonly items = computed(() => groupJobs(this.jobsService.jobs()));
   protected readonly folderMessage = signal<{ ok: boolean; text: string } | null>(null);
+
+  /** "3/10 completadas", plus the failed ones when there are any. */
+  protected summary(group: BatchGroup): string {
+    const texts = TEXTS.downloads;
+    const parts = [`${group.completed}/${group.total} ${texts.batchCompleted}`];
+    if (group.running > 0) {
+      parts.push(`${group.running} ${texts.batchActive}`);
+    }
+    if (group.failed > 0) {
+      parts.push(`${group.failed} ${texts.batchFailed}`);
+    }
+    return parts.join(' · ');
+  }
 
   protected statusLabel(job: Job): string {
     return TEXTS.downloads.status[job.status] ?? TEXTS.downloads.unknownStatus;

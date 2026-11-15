@@ -17,6 +17,9 @@ export type JobStatus =
 export interface Job {
   id: string;
   batchId: string | null;
+  /** Title and size of the Batch the job belongs to (null for a single video). */
+  batchTitle: string | null;
+  batchEntryCount: number | null;
   playlistIndex: number | null;
   url: string;
   title: string | null;
@@ -37,6 +40,14 @@ export interface Job {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+/** An Entry chosen from a playlist preview. */
+export interface EnqueueEntry {
+  id: string;
+  url: string;
+  index: number;
+  title: string;
 }
 
 export interface QueueCounts {
@@ -92,11 +103,22 @@ export class JobsService {
     });
   }
 
-  /** Enqueues one video; the new jobs show up in `jobs` right away. */
-  enqueue(url: string, options: DownloadOptions, title: string | null): Observable<Job[]> {
+  /**
+   * Enqueues one video, or a playlist when `entries` is given (one job per entry). The new jobs
+   * show up in `jobs` right away.
+   */
+  enqueue(
+    url: string,
+    options: DownloadOptions,
+    title: string | null,
+    entries?: EnqueueEntry[],
+  ): Observable<Job[]> {
     const body: Record<string, unknown> = { url, ...options };
     if (title) {
       body['title'] = title;
+    }
+    if (entries) {
+      body['entries'] = entries;
     }
     return this.http.post<{ batchId: string | null; jobs: Job[] }>('/api/jobs', body).pipe(
       tap((response) => response.jobs.forEach((job) => this.upsert(job))),
