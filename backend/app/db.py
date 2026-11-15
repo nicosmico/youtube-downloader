@@ -1,7 +1,6 @@
 """SQLite access (ADR-0004): one WAL connection shared by all threads, plus numbered migrations.
 
-`PRAGMA user_version` stores the last applied migration, so `migrate()` is idempotent. Presets
-(ticket 08) get their own migration; this file only holds what each ticket needs.
+`PRAGMA user_version` stores the last applied migration, so `migrate()` is idempotent.
 """
 
 from __future__ import annotations
@@ -49,6 +48,19 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
 
         CREATE INDEX jobs_status_created ON jobs (status, created_at);
+        """,
+    ),
+    (
+        2,
+        """
+        CREATE TABLE presets (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          mode TEXT NOT NULL CHECK (mode IN ('video','audio')),
+          quality TEXT,
+          audio_format TEXT,
+          created_at TEXT NOT NULL
+        );
         """,
     ),
 )

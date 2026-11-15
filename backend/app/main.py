@@ -31,6 +31,8 @@ from app.jobs.api import build_jobs_router
 from app.jobs.queue import start_thread
 from app.opener import FolderOpener, open_folder
 from app.paths import static_dir as default_static_dir
+from app.presets import PresetRepository
+from app.presets.api import build_presets_router
 from app.preview import PreviewService
 from app.security import LocalSecurityMiddleware
 from app.spa import mount_spa
@@ -61,6 +63,8 @@ def create_app(
     database = Database(data_dir / "db.sqlite3")
     database.migrate()
     repo = JobRepository(database)
+    presets = PresetRepository(database)
+    presets.seed_defaults()  # only when the table is empty
     staging = staging_root(data_dir)
     queue = JobQueue(
         repo=repo,
@@ -130,6 +134,7 @@ def create_app(
         )
     )
     app.include_router(build_jobs_router(queue=queue, repo=repo))
+    app.include_router(build_presets_router(repo=presets))
     app.include_router(
         build_events_router(
             broadcaster,

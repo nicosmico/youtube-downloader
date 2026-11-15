@@ -12,12 +12,12 @@ def tables(db: Database) -> set[str]:
     return {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
 
-def test_first_migration_creates_batches_and_jobs_in_wal_mode(tmp_path: Path) -> None:
+def test_migrations_create_batches_jobs_and_presets_in_wal_mode(tmp_path: Path) -> None:
     db = Database(tmp_path / "db.sqlite3")
 
-    assert db.migrate() == 1
+    assert db.migrate() == 2
 
-    assert {"batches", "jobs"} <= tables(db)
+    assert {"batches", "jobs", "presets"} <= tables(db)
     assert db.query("PRAGMA journal_mode")[0][0] == "wal"
     columns = {r["name"] for r in db.query("PRAGMA table_info(jobs)")}
     assert {"batch_id", "playlist_index", "audio_format", "output_path", "attempt"} <= columns
@@ -34,19 +34,19 @@ def test_migrate_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     db.close()
 
     again = Database(path)
-    assert again.migrate() == 1
-    assert again.migrate() == 1
+    assert again.migrate() == 2
+    assert again.migrate() == 2
     assert again.query("SELECT id FROM jobs")[0]["id"] == "a"
 
 
 def test_only_pending_migrations_run(tmp_path: Path) -> None:
     path = tmp_path / "db.sqlite3"
     Database(path).migrate()
-    extra = (*MIGRATIONS, (2, "CREATE TABLE extra (id TEXT); CREATE TABLE extra2 (id TEXT)"))
+    extra = (*MIGRATIONS, (3, "CREATE TABLE extra (id TEXT); CREATE TABLE extra2 (id TEXT)"))
 
     db = Database(path, extra)
 
-    assert db.migrate() == 2
+    assert db.migrate() == 3
     assert {"extra", "extra2"} <= tables(db)
 
 
