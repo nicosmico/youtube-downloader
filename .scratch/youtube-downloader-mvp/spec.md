@@ -85,7 +85,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 
 - Solo `youtube.com`, `www.youtube.com`, `m.youtube.com`, `music.youtube.com` y `youtu.be` (ADR-0006). Cualquier otro dominio se rechaza con `unsupported_site` sin invocar `yt-dlp`.
 - Una URL con `v=` (o `youtu.be/<id>`, `/shorts/<id>`) es un video, aunque lleve `list=`. En ese caso la respuesta incluye `playlistUrl` y la UI ofrece "ver playlist completa".
-- Una URL de lista (`/playlist?list=`) o de canal (`/@handle`, `/channel/…`, `/c/…`, `/user/…` y sus pestañas) es una `Playlist`.
+- Una URL de lista (`/playlist?list=`) o de canal (`/@handle`, `/channel/…`, `/c/…`, `/user/…` y sus pestañas) es una `Playlist`. Un canal sin pestaña de videos se normaliza a `…/videos`, porque su raíz devuelve las pestañas como sublistas; se respetan `videos`, `shorts`, `streams` y `live`.
 - Los mixes automáticos (`list=RD…`) se rechazan con `mix_playlist`.
 - Los directos y estrenos pendientes se rechazan con `live_content`: se aceptan `live_status` `not_live`, `was_live` o ausente; cualquier otro valor (`is_live`, `is_upcoming`, `post_live`, desconocido) se rechaza. Un estreno pendiente o un directo terminado sin grabación hacen fallar `yt-dlp -J` ("This live event will begin…"), y ese error de stderr también se traduce a `live_content`.
 - El preview de una `Playlist` lista como máximo 500 `Entry` (`--playlist-end 500`) y marca `truncated: true` si hay más.
@@ -199,7 +199,7 @@ Presets: nombre de 1 a 40 caracteres, único sin distinguir mayúsculas (`409 pr
 
 `MediaPreview` incluye `kind` (`video` o `playlist`), `id`, `url`, título, miniatura, duración, autor, `availableQualities`, `maxQuality`, `maxResolution` (lado menor máximo, en píxeles), `playlistUrl` si la URL de video venía de una lista, y para playlists `entries` y `truncated`. Cada `Entry` lleva `{id, url, index, title, duration, available, unavailableReason?}`.
 
-Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean de YouTube.
+Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean videos de YouTube (`422 invalid_entry`), que la selección no esté vacía (`422 no_entries`) y que no haya índices repetidos (`422 invalid_entries`). Cada job de un `Batch` incluye `batchTitle` y `batchEntryCount` para que la UI los agrupe. El preview de una playlist usa un tiempo límite de 90 s. Una `Entry` sin título en `--flat-playlist` se trata como no disponible.
 
 Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. `POST /api/jobs` exige `quality` en modo video y `audioFormat` en modo audio, y rechaza el campo del otro modo, con `422 invalid_options`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable` (`422`); `timeout` (`504`); `preview_failed` (`502`, cualquier otro fallo de `yt-dlp`, con mensaje saneado); `engine_not_ready` (`409`). El preview de video usa un tiempo límite de 30 s y, si se agota, mata el árbol de procesos.
 
@@ -251,7 +251,7 @@ Al conectar, el stream envía primero el estado actual (`engine.updated` y `queu
 
 - Cada `Attempt` descarga en `$DATA_DIR/staging/<job_id>/` (ADR-0010). Al terminar, la app mueve el archivo a la `Destination` y marca `completed`. Cancelar o fallar borra el staging del job; al arrancar se limpian los staging sin job activo.
 - Video suelto: `$DOWNLOAD_DIR/<nombre de yt-dlp>`.
-- Playlist: `$DOWNLOAD_DIR/<Batch.folder_name>/<NN> - <nombre de yt-dlp>`. `NN` es el `index` de la `Entry` con ceros a la izquierda según `entry_count` (mínimo dos dígitos). `folder_name` es el título de la playlist saneado con reglas válidas en macOS y Windows; si la carpeta ya existe se reutiliza.
+- Playlist: `$DOWNLOAD_DIR/<Batch.folder_name>/<NN> - <nombre de yt-dlp>`. `NN` es el `index` de la `Entry` con ceros a la izquierda según el mayor entre `entry_count` y el índice más alto elegido (mínimo dos dígitos). `folder_name` es el título de la playlist saneado con reglas válidas en macOS y Windows; si la carpeta ya existe se reutiliza.
 - Colisión: si el nombre final existe, se agrega ` (2)`, ` (3)`, etc. antes de la extensión. La elección del nombre y el movimiento ocurren bajo un lock para que dos jobs concurrentes no elijan el mismo.
 - El movimiento tolera volúmenes distintos (copia y borrado) cuando `rename` no es posible.
 - La ruta final se guarda en `outputPath`.

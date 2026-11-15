@@ -97,7 +97,7 @@ class TestConcurrencyAndFifo:
         ids = [harness.enqueue(n) for n in range(1, 6)]
 
         assert fake_engine.wait_started(2)
-        assert fake_engine.started == [url(1), url(2)]
+        assert sorted(fake_engine.started) == [url(1), url(2)]  # two threads: start order is racy
         assert [harness.status(i) for i in ids] == ["downloading"] * 2 + ["queued"] * 3
 
         # Free one slot at a time: the next job in line takes it, never a later one.
@@ -245,7 +245,7 @@ class TestShutdown:
         job = harness.repo.get(a)
         assert job is not None and job.error == INTERRUPTED and job.finished_at
         assert harness.status(waiting) == "queued"  # never started
-        assert fake_engine.started == [url(1), url(2)]
+        assert sorted(fake_engine.started) == [url(1), url(2)]  # two threads: start order is racy
         assert harness.queue.active_ids() == []
         assert not list(harness.staging.glob("*/*"))  # staging of the active jobs is gone
         assert harness.events.named("queue.updated")[-1] == {"active": 0, "queued": 1}
@@ -262,7 +262,7 @@ class TestShutdown:
         late = harness.enqueue(4)
 
         assert harness.status(waiting) == harness.status(late) == "queued"
-        assert fake_engine.started == [url(1), url(2)]
+        assert sorted(fake_engine.started) == [url(1), url(2)]  # two threads: start order is racy
 
     def test_kills_a_process_that_ignores_terminate(
         self, harness: Harness, fake_engine: FakeEngine
@@ -398,7 +398,7 @@ class TestEngineUpdatePause:
         assert engine.info().versions["yt-dlp"] == "2026.10.26"
         assert engine.info().update_pending is True
         assert get_job(client, ids[2])["status"] == "queued"
-        assert fake_engine.started == [url(1), url(2)]
+        assert sorted(fake_engine.started) == [url(1), url(2)]  # two threads: start order is racy
 
         # The last one finishes: swap, then the queue resumes with the new binary.
         fake_engine.release_url(url(2))

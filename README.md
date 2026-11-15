@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para descargar videos y audio de YouTube público, con interfaz web local y motor `yt-dlp` autogestionado.
 
-> **Estado:** walking skeleton (ticket 02) más Engine Manager (ticket 03): el servidor instala y actualiza `yt-dlp`, `ffmpeg`, `ffprobe` y Deno, y la UI muestra su estado. Sin descargas todavía.
+> **Estado:** MVP en construcción. Funcionan el Engine autogestionado, el preview, las descargas de video y audio, la cola persistente, los presets y las playlists; faltan cancelar y reintentar, el historial y los paquetes finales de macOS y Windows.
 
 ## Qué hace (MVP)
 
