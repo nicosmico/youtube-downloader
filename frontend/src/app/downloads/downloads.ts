@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
+import { Observable } from 'rxjs';
 import { Job, JobsService } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
 import { TEXTS } from '../core/texts';
@@ -85,6 +86,11 @@ export class Downloads {
 
   protected readonly texts = TEXTS;
   protected readonly items = computed(() => groupJobs(this.jobsService.jobs()));
+  /** Job whose cancellation awaits the user's confirmation (only running jobs ask). */
+  protected readonly confirming = signal<string | null>(null);
+  /** Jobs with a cancel or retry request in flight. */
+  protected readonly busy = signal<ReadonlySet<string>>(new Set());
+  protected readonly actionMessage = signal<string | null>(null);
   protected readonly folderMessage = signal<{ ok: boolean; text: string } | null>(null);
 
   /** "3/10 completadas", plus the failed ones when there are any. */
@@ -143,6 +149,58 @@ export class Downloads {
 
   protected eta(job: Job): string | null {
     return job.status === 'downloading' && job.eta !== null ? formatDuration(job.eta) : null;
+  }
+
+  protected canCancel(job: Job): boolean {
+    return job.status === 'queued' || this.showsProgress(job);
+  }
+
+  protected canRetry(job: Job): boolean {
+    return job.status === 'failed' || job.status === 'canceled' || job.status === 'interrupted';
+  }
+
+  protected isBusy(job: Job): boolean {
+    return this.busy().has(job.id);
+  }
+
+  /** A queued job is cancelled at once; a running one asks first (its progress is lost). */
+  protected cancel(job: Job): void {
+    if (this.showsProgress(job)) {
+      this.confirming.set(job.id);
+      return;
+    }
+    this.send(job, this.jobsService.cancel(job.id));
+  }
+
+  protected confirmCancel(job: Job): void {
+    this.confirming.set(null);
+    this.send(job, this.jobsService.cancel(job.id));
+  }
+
+  protected keepDownloading(): void {
+    this.confirming.set(null);
+  }
+
+  protected retry(job: Job): void {
+    this.send(job, this.jobsService.retry(job.id));
+  }
+
+  private send(job: Job, request: Observable<Job>): void {
+    this.actionMessage.set(null);
+    this.busy.update((ids) => new Set(ids).add(job.id));
+    const done = () =>
+      this.busy.update((ids) => {
+        const rest = new Set(ids);
+        rest.delete(job.id);
+        return rest;
+      });
+    request.subscribe({
+      next: done,
+      error: () => {
+        done();
+        this.actionMessage.set(TEXTS.downloads.actionFailed);
+      },
+    });
   }
 
   protected openFolder(): void {

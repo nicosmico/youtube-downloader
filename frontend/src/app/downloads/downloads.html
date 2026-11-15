@@ -38,6 +38,11 @@
           {{ statusLabel(job) }}
         </span>
       </header>
+      @if (job.attempt > 1) {
+        <p class="meta" data-testid="job-attempt">
+          {{ texts.downloads.attempt }} {{ job.attempt }}
+        </p>
+      }
       <p class="meta" data-testid="job-options">{{ options(job) }}</p>
 
       @if (showsProgress(job)) {
@@ -65,6 +70,52 @@
         <p class="error" role="alert" data-testid="job-error">{{ job.error }}</p>
       }
 
+      @if (canCancel(job)) {
+        @if (confirming() === job.id) {
+          <div class="confirm" role="group" [attr.aria-label]="texts.downloads.cancelConfirm">
+            <span data-testid="cancel-confirm-text">{{ texts.downloads.cancelConfirm }}</span>
+            <button
+              type="button"
+              class="action"
+              data-testid="cancel-confirm-yes"
+              (click)="confirmCancel(job)"
+            >
+              {{ texts.downloads.cancelConfirmYes }}
+            </button>
+            <button
+              type="button"
+              class="action"
+              data-testid="cancel-confirm-no"
+              (click)="keepDownloading()"
+            >
+              {{ texts.downloads.cancelConfirmNo }}
+            </button>
+          </div>
+        } @else {
+          <button
+            type="button"
+            class="action"
+            data-testid="cancel-job"
+            [disabled]="isBusy(job)"
+            (click)="cancel(job)"
+          >
+            {{ isBusy(job) ? texts.downloads.canceling : texts.downloads.cancel }}
+          </button>
+        }
+      }
+
+      @if (canRetry(job)) {
+        <button
+          type="button"
+          class="action"
+          data-testid="retry-job"
+          [disabled]="isBusy(job)"
+          (click)="retry(job)"
+        >
+          {{ isBusy(job) ? texts.downloads.retrying : texts.downloads.retry }}
+        </button>
+      }
+
       @if (job.status === 'completed') {
         <button type="button" class="action" data-testid="open-folder" (click)="openFolder()">
           {{ texts.downloads.openFolder }}
@@ -72,6 +123,10 @@
       }
     </article>
   </ng-template>
+
+  @if (actionMessage(); as text) {
+    <p class="error" role="alert" data-testid="action-message">{{ text }}</p>
+  }
 
   @if (folderMessage(); as message) {
     <p

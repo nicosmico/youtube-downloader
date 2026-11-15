@@ -127,6 +127,26 @@ export class JobsService {
     );
   }
 
+  /** Cancels a queued or running job. Resolves once it has ended (a running one is stopped). */
+  cancel(jobId: string): Observable<Job> {
+    return this.command(jobId, 'cancel');
+  }
+
+  /** A new Attempt of a failed, canceled or interrupted job, at the end of the queue. */
+  retry(jobId: string): Observable<Job> {
+    return this.command(jobId, 'retry');
+  }
+
+  private command(jobId: string, action: 'cancel' | 'retry'): Observable<Job> {
+    return this.http.post<Job>(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {}).pipe(
+      tap((job) => this.upsert(job)),
+      catchError((error: unknown) => {
+        this.refresh(); // the job probably changed under the user's feet (409): show the truth
+        return throwError(() => toEnqueueError(error));
+      }),
+    );
+  }
+
   private upsert(job: Job): void {
     this.jobs.update((jobs) => {
       const rest = jobs.filter((j) => j.id !== job.id);

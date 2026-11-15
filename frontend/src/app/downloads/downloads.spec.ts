@@ -363,6 +363,151 @@ describe('batches', () => {
   });
 });
 
+describe('Downloads cancel and retry', () => {
+  let fixture: ComponentFixture<Downloads>;
+  let http: HttpTestingController;
+  let jobs: JobsService;
+
+  const root = () => fixture.nativeElement as HTMLElement;
+  const el = (testId: string) => root().querySelector<HTMLElement>(`[data-testid=${testId}]`);
+  const click = async (testId: string) => {
+    (el(testId) as HTMLButtonElement).click();
+    await settle();
+  };
+  const settle = async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const show = async (...list: Partial<Job>[]) => {
+    jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+  };
+
+  beforeEach(async () => {
+    FakeEventSource.reset();
+    await TestBed.configureTestingModule({
+      imports: [Downloads],
+      providers: [
+        provideHttpClient(withInterceptors([appHeaderInterceptor])),
+        provideHttpClientTesting(),
+        { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    jobs = TestBed.inject(JobsService);
+    fixture = TestBed.createComponent(Downloads);
+    await settle();
+  });
+
+  afterEach(() => http.verify());
+
+  it.each([
+    ['queued', true, false],
+    ['downloading', true, false],
+    ['processing', true, false],
+    ['completed', false, false],
+    ['failed', false, true],
+    ['canceled', false, true],
+    ['interrupted', false, true],
+  ] as const)('%s: cancel=%s retry=%s', async (status, cancel, retry) => {
+    await show({ status });
+
+    expect(el('cancel-job') !== null).toBe(cancel);
+    expect(el('retry-job') !== null).toBe(retry);
+  });
+
+  it('labels a canceled job "Cancelada"', async () => {
+    await show({ status: 'canceled' });
+
+    expect(el('job-status')?.textContent).toContain('Cancelada');
+  });
+
+  it('shows the attempt only from the second one', async () => {
+    await show({ status: 'queued', attempt: 1 });
+    expect(el('job-attempt')).toBeNull();
+
+    await show({ status: 'queued', attempt: 2 });
+    expect(el('job-attempt')?.textContent?.trim()).toBe('Intento 2');
+  });
+
+  it('cancels a queued job at once, without asking', async () => {
+    await show({ status: 'queued' });
+
+    await click('cancel-job');
+
+    expect(el('cancel-confirm-text')).toBeNull();
+    const req = http.expectOne('/api/jobs/job0/cancel');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+    req.flush({ ...JOB, id: 'job0', status: 'canceled' });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('Cancelada');
+    expect(el('retry-job')).not.toBeNull();
+    expect(el('cancel-job')).toBeNull();
+  });
+
+  it('asks before cancelling a running job', async () => {
+    await show({ status: 'downloading' });
+
+    await click('cancel-job');
+    expect(el('cancel-confirm-text')?.textContent).toContain('¿Cancelar esta descarga?');
+    http.expectNone('/api/jobs/job0/cancel');
+
+    await click('cancel-confirm-yes');
+    const req = http.expectOne('/api/jobs/job0/cancel');
+    expect(el('cancel-confirm-text')).toBeNull();
+    expect((el('cancel-job') as HTMLButtonElement).disabled).toBe(true);
+    req.flush({ ...JOB, id: 'job0', status: 'canceled' });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('Cancelada');
+  });
+
+  it('keeps downloading when the confirmation is declined', async () => {
+    await show({ status: 'processing' });
+
+    await click('cancel-job');
+    await click('cancel-confirm-no');
+
+    http.expectNone('/api/jobs/job0/cancel');
+    expect(el('cancel-confirm-text')).toBeNull();
+    expect(el('cancel-job')).not.toBeNull();
+  });
+
+  it.each(['failed', 'canceled', 'interrupted'] as const)('retries a %s job', async (status) => {
+    await show({ status, error: 'boom' });
+
+    await click('retry-job');
+
+    const req = http.expectOne('/api/jobs/job0/retry');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+    req.flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('En cola');
+    expect(el('job-attempt')?.textContent).toContain('Intento 2');
+    expect(el('job-error')).toBeNull();
+    expect(el('retry-job')).toBeNull();
+  });
+
+  it('tells the user when the job could not be cancelled and shows its real state', async () => {
+    await show({ status: 'downloading' });
+
+    await click('cancel-job');
+    await click('cancel-confirm-yes');
+    http
+      .expectOne('/api/jobs/job0/cancel')
+      .flush({ code: 'job_not_cancelable', message: 'x' }, { status: 409, statusText: 'x' });
+    http
+      .expectOne('/api/jobs?limit=200')
+      .flush({ jobs: [{ ...JOB, id: 'job0', status: 'completed' }], nextBefore: null });
+    await settle();
+
+    expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+    expect(el('job-status')?.textContent).toContain('Completada');
+    expect(el('cancel-job')).toBeNull();
+  });
+});
+
 describe('formatBytes', () => {
   it.each([
     [0, '0 B'],

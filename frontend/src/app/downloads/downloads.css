@@ -38,6 +38,9 @@
 .status.interrupted {
   color: #8a5a00;
 }
+.status.canceled {
+  color: #6b6b73;
+}
 .status.failed {
   color: #b00020;
 }
@@ -88,4 +91,18 @@ button.action {
 .batch .job {
   margin-left: 1rem;
   border-top: 1px dashed #ececf0;
+}
+button.action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.confirm button.action {
+  margin-top: 0;
 }

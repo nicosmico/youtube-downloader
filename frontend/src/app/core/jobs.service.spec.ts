@@ -141,4 +141,42 @@ describe('JobsService', () => {
 
     expect((error as EnqueueError).code).toBe('network');
   });
+
+  it('cancels a job with the app header and stores the result', () => {
+    service.jobs.set([{ ...JOB, status: 'downloading' }]);
+    let result: Job | undefined;
+    service.cancel(JOB.id).subscribe((job) => (result = job));
+
+    const req = http.expectOne(`/api/jobs/${JOB.id}/cancel`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+    req.flush({ ...JOB, status: 'canceled' });
+
+    expect(result?.status).toBe('canceled');
+    expect(service.jobs()[0].status).toBe('canceled');
+  });
+
+  it('retries a job and stores the new attempt', () => {
+    service.jobs.set([{ ...JOB, status: 'failed' }]);
+    service.retry(JOB.id).subscribe();
+
+    const req = http.expectOne(`/api/jobs/${JOB.id}/retry`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ ...JOB, status: 'queued', attempt: 2 });
+
+    expect(service.jobs()[0]).toMatchObject({ status: 'queued', attempt: 2 });
+  });
+
+  it('reports the API code of a refused command and reloads the list', () => {
+    let error: unknown;
+    service.retry(JOB.id).subscribe({ error: (e) => (error = e) });
+
+    http
+      .expectOne(`/api/jobs/${JOB.id}/retry`)
+      .flush({ code: 'job_not_retryable', message: 'No' }, { status: 409, statusText: 'x' });
+    http.expectOne('/api/jobs?limit=200').flush({ jobs: [JOB], nextBefore: null });
+
+    expect((error as EnqueueError).code).toBe('job_not_retryable');
+    expect(service.jobs()).toEqual([JOB]);
+  });
 });
