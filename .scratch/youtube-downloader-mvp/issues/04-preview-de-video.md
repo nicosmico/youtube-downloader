@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 (Engine Manager).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Una URL de video público muestra metadatos y calidades coherentes.
 - [x] `watch?v=…&list=…` se trata como video e incluye `playlistUrl`.
@@ -46,3 +46,5 @@ Ejemplo (Short, recortado):
 ```
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (313 backend, 87 frontend, ruff, build). Probado en el navegador integrado con el Engine real: preview de "Me at the zoo" con `list=` (solo "Mejor disponible" por ser 240p), "Ver playlist completa" muestra el aviso provisional y una URL de Vimeo muestra "Solo se admiten enlaces de YouTube.". Spec actualizada con `maxResolution`, códigos HTTP del preview y reglas de calidades y `live_status`.
+
+**2026-11-15 — Resuelto.** CI verde en GitHub (run `43756359681`).

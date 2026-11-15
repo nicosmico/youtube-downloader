@@ -13,3 +13,4 @@
 - [ ] La UI impide enviar combinaciones inválidas y muestra el aviso de `2160p`.
 - [ ] Tests de contrato de los argumentos de `yt-dlp` por modo y calidad.
 - [ ] La selección se conserva al encolar.
+- [ ] Se elimina el rechazo provisional `audio_unsupported` del ticket 05 (marcado `TICKET-07` en el código).

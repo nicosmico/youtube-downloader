@@ -173,8 +173,8 @@ CREATE TABLE presets (
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Identificador y versión de la app, Engine (mismo objeto que `/api/system/engine`), puerto. |
 | `POST` | `/api/preview` | `{url}` → `MediaPreview`. |
-| `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, entries?}` → `{batchId \| null, jobs[]}`. |
-| `GET` | `/api/jobs` | Lista paginada con filtros `status`, `limit`, `before`. |
+| `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, title?, entries?}` → `{batchId \| null, jobs[]}`. `title` viene del `MediaPreview` del cliente. |
+| `GET` | `/api/jobs` | `{jobs, nextBefore}`, del más reciente al más antiguo. Filtros: `status` (lista separada por comas), `limit`, `before` (id de job). |
 | `GET` | `/api/jobs/{id}` | `DownloadJob`. |
 | `POST` | `/api/jobs/{id}/cancel` | Cancela job en cola o activo. |
 | `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`. |
@@ -188,7 +188,7 @@ CREATE TABLE presets (
 | `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
 | `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |
 | `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, o `409` (`engine_busy`, `engine_not_ready`, `engine_external` con `ENGINE_BIN_DIR`). |
-| `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer (acción del host). |
+| `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer. `200`, `501 open_unavailable` (sin abridor, p. ej. en Docker) o `500 open_failed`. |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
 `MediaPreview` incluye `kind` (`video` o `playlist`), `id`, `url`, título, miniatura, duración, autor, `availableQualities`, `maxQuality`, `maxResolution` (lado menor máximo, en píxeles), `playlistUrl` si la URL de video venía de una lista, y para playlists `entries` y `truncated`. Cada `Entry` lleva `{id, url, index, title, duration, available, unavailableReason?}`.
@@ -204,7 +204,7 @@ Los errores usan `{code, message, detail?}`. El `message` de los errores que ve 
 | `job.updated` | Alta, cambio de estado o progreso, con throttle de 1/s por job. |
 | `job.removed` | Job quitado del `History`. |
 | `engine.updated` | Cambio de estado o versión del Engine. |
-| `queue.updated` | Cambio en cola o jobs activos. |
+| `queue.updated` | Cambio en cola o jobs activos, con `{active, queued}`. |
 | `shutdown` | La app va a cerrarse, con el motivo (`user`, `signal`, `idle`). |
 
 Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignora.
@@ -214,7 +214,7 @@ Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignor
 - Todas las invocaciones, incluido el preview, pasan `--ffmpeg-location <bin>` y `--js-runtimes deno:<ruta absoluta de deno>`. Sin `--ffmpeg-location` el formato por defecto degrada a uno combinado de baja calidad; sin `--js-runtimes`, `yt-dlp` solo busca Deno en el `PATH`.
 - Preview de video: `yt-dlp -J --no-warnings --no-playlist <url>`.
 - Preview de playlist: `yt-dlp -J --flat-playlist --playlist-end 500 --no-warnings <url>`.
-- Descarga: `--no-playlist --newline --progress --no-overwrites --progress-template "download:PROGRESS%(progress)j" --progress-template "postprocess:POSTPROC%(progress)j" --print after_move:filepath -P <staging> -o "%(title)s.%(ext)s"`. `--print` implica `--quiet`, por eso se añade `--progress`; con `after_move` sí descarga.
+- Descarga: `--no-playlist --newline --progress --no-overwrites --progress-template "download:PROGRESS%(progress)j" --progress-template "postprocess:POSTPROC%(progress)j" --print "before_dl:TOTAL%(filesize,filesize_approx)j" --print after_move:filepath -P <staging> -o "%(title)s.%(ext)s"`. `--print` implica `--quiet`, por eso se añade `--progress`; con `after_move` sí descarga.
 - Video (ADR-0009), siempre con `--merge-output-format mp4` (mux con `-c copy`, sin recodificar):
 
 | Quality | `-S` |
@@ -235,7 +235,7 @@ Heartbeat cada 15 s como comentario SSE (`: heartbeat`), que `EventSource` ignor
 | `mp3` | `ba` | Siempre |
 
 - Progreso: las líneas `PROGRESS` salen por stdout y las `POSTPROC` por stderr; el runner lee ambos streams. La última línea de stdout es la ruta de `after_move:filepath`.
-- Con video y audio separados hay dos descargas seguidas, cada una con su `"status": "finished"`; ninguno marca el fin del job. El porcentaje del job suma los bytes de los streams terminados al del stream en curso (se distinguen por `filename`). `total_bytes` puede faltar y venir `total_bytes_estimate`.
+- Con video y audio separados hay dos descargas seguidas, cada una con su `"status": "finished"`; ninguno marca el fin del job. La línea `TOTAL` (antes de descargar) da el tamaño esperado de todos los streams y es el denominador del porcentaje, que solo llega a 100 al terminar el último. Si falta, se suman los bytes de los streams terminados al del stream en curso (se distinguen por `filename`). `total_bytes` puede faltar y venir `total_bytes_estimate`. El porcentaje nunca retrocede.
 - El job pasa a `processing` con el primer `POSTPROC` `started` cuyo `postprocessor` no sea `MoveFiles`. El `MoveFiles` de `yt-dlp` ocurre dentro del staging; `completed` solo llega tras el movimiento propio de la app (ADR-0010).
 - Cancelación: `terminate()` al grupo de procesos y `kill()` tras 5 s. En Windows se termina el árbol completo (Job Object o equivalente) y los subprocesos se lanzan con `CREATE_NO_WINDOW`.
 - Reintento: `attempt + 1` con carpeta de staging limpia.
