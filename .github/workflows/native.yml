@@ -1,0 +1,76 @@
+# Native packaging smoke (ticket 14): PyInstaller onedir of the real app on macOS arm64 and
+# Windows x64, then a smoke test of the built executable (Engine install, download, shutdown).
+name: Native
+
+on:
+  push:
+    branches: [main, "ticket/14-*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  native:
+    name: Native (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-arm64
+            exe: packaging/dist/youtube-downloader/youtube-downloader
+          - os: windows-latest
+            name: windows-x64
+            exe: packaging/dist/youtube-downloader/youtube-downloader.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Angular build (to backend/app/static)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - uses: astral-sh/setup-uv@v5
+      - name: Python and dependencies (uv.lock + PyInstaller)
+        working-directory: backend
+        run: uv sync --frozen --no-dev --group build --python 3.13
+      - name: Architecture
+        working-directory: backend
+        run: uv run --no-sync python -c "import platform,sys; print(platform.machine(), sys.version)"
+
+      - name: PyInstaller onedir
+        working-directory: backend
+        run: >
+          uv run --no-sync pyinstaller --noconfirm
+          --distpath ../packaging/dist --workpath ../packaging/build
+          ../packaging/youtube-downloader.spec
+      - name: Build size
+        run: du -sh packaging/dist/youtube-downloader
+      - name: Binary architecture (macOS)
+        if: runner.os == 'macOS'
+        run: file ${{ matrix.exe }}
+
+      - name: Smoke test (health, Engine ready, open folder, download, shutdown)
+        run: |
+          code=0
+          uv run --no-project python packaging/smoke.py "${{ matrix.exe }}" || code=$?
+          if [ "$code" = 10 ]; then
+            echo "::warning::Download skipped: YouTube's bot check blocked this runner's IP. Everything else passed."
+            code=0
+          fi
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: youtube-downloader-${{ matrix.name }}
+          path: packaging/dist/youtube-downloader
+          retention-days: 3
