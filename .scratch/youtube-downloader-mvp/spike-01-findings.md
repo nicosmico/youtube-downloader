@@ -15,10 +15,10 @@ Versiones validadas: `yt-dlp` 2026.10.26, Deno v2.9.8, FFmpeg 9.0.2.
 | `--progress` + `--print after_move:filepath` | OK | Con matices (ver "Progreso"). |
 | Fórmula `-S` por `Quality` | OK | Verificada con 3 videos (4K, Short vertical, 240p). |
 | `--merge-output-format mp4` sin recodificar; `m4a`/`opus` sin recodificar | OK | `-c copy` en los tres casos. |
-| `yt-dlp -U` en Windows con otro `yt-dlp.exe` en uso | PARCIAL | Análisis del código fuente + job de Actions preparado, sin ejecutar. |
+| `yt-dlp -U` en Windows con otro `yt-dlp.exe` en uso | OK | Confirmado en Actions: seguro para jobs activos, falla en el siguiente update si el `.old` sigue bloqueado. |
 | FastAPI hola mundo en Docker Compose | OK | Alcanzable en 127.0.0.1, rechazado en la IP LAN. |
-| PyInstaller `onedir` en `macos-latest` | PENDIENTE (GitHub) | Workflow preparado, no ejecutado. |
-| PyInstaller sin consola en `windows-latest` | PENDIENTE (GitHub) | Idem. |
+| PyInstaller `onedir` en `macos-latest` | OK | Run 43748951815. |
+| PyInstaller sin consola en `windows-latest` | OK | Run 43748951815. |
 | Hallazgos en spec/ADR | PENDIENTE | Ver "Cambios propuestos". El orquestador los aplica. |
 
 El build local de PyInstaller en macOS se omitió: `uv` no está en el host y no se instala nada. Como sustituto se construyó el `onedir` dentro de un contenedor Linux (Python 3.13 + uv): arranca con `--no-browser --port`, sirve `/api/health` y el `index.html` empaquetado (el `--add-data` y `sys._MEIPASS` funcionan; 33 MB). En `python:3.13-slim` PyInstaller exige `binutils` (no aplica a los runners de Actions).
@@ -154,7 +154,7 @@ Si el video no ofrece el códec nativo, el `/ba` de respaldo cae a recodificaci�
 
 ## `yt-dlp -U` en Windows con otra instancia en uso
 
-No se pudo ejecutar (sin Windows). Análisis de `yt_dlp/update.py` (tag 2026.10.26):
+Confirmado en un runner `windows-latest` (ver "GitHub Actions"). Análisis de `yt_dlp/update.py` (tag 2026.10.26):
 
 1. Descarga el asset completo en memoria, verifica SHA-256 contra `SHA2-256SUMS` y escribe `yt-dlp.exe.new`.
 2. `os.rename(yt-dlp.exe, yt-dlp.exe.old)` y `os.rename(yt-dlp.exe.new, yt-dlp.exe)`. Windows permite **renombrar** un ejecutable en uso, no sobrescribirlo ni borrarlo. Las instancias ya en ejecución siguen corriendo desde el `.old`.
@@ -181,9 +181,15 @@ Archivos: `spike/Dockerfile` (python:3.13-slim + `uv`), `spike/compose.yaml`, `s
 - Desde el host contra la IP LAN (`192.168.18.71:18765`): conexión rechazada (curl exit 7). `docker ps` muestra `127.0.0.1:18765->18765/tcp`.
 - Nota: `uv sync --no-install-project` con `pyproject.toml` sin `uv.lock` funciona; en el repo real conviene versionar `uv.lock` y usar `uv sync --frozen`.
 
-## GitHub Actions (preparado, no ejecutado)
+## GitHub Actions
 
-`spike/.github-workflow-spike-01.yml` (copiar a `.github/workflows/` en una rama de prueba; es `workflow_dispatch`):
+Ejecutado en el run `43748951815` (push a `spike/01`, workflow `.github/workflows/spike-01.yml`):
+
+- `build (macos-latest)`: OK. `onedir` arm64 arranca con `--no-browser --port 18765` y responde `/api/health` y `/`.
+- `build (windows-latest)`: OK. El `.exe` con `--noconsole` arranca sin colgarse (con `log_config=None` en uvicorn) y responde `/api/health` y `/`.
+- `update-windows`: confirma el análisis de `update.py`. Con una instancia de 2025.11.12 descargando, `-U` a 2026.10.26 sale con 0, deja `yt-dlp.exe.old` y la instancia vieja sigue viva. El segundo update, con el `.old` aún bloqueado, falla con `ERROR: Unable to remove the old version` (exit 100). El job queda en rojo porque el script no tolera ese exit, que es justamente el resultado esperado.
+
+Diseño del workflow:
 
 - Job `build`, matriz `macos-latest` / `windows-latest`: `astral-sh/setup-uv`, `uv sync --group build --python 3.13`, `pyinstaller --onedir` con `--add-data "app/static<sep>static"` (separador `:` en macOS y `;` en Windows), `--noconsole` en Windows, comprobación `file` de la arquitectura en macOS, arranque con `--no-browser --port 18765`, sondeo de `/api/health` (30 s) y de `/`, y subida del artefacto.
 - Job `update-windows`: descarga `yt-dlp.exe` 2025.11.12, mantiene una instancia ocupada con un servidor local lento, ejecuta `-U` y un segundo `--update-to`, mostrando el estado del `.old` y de la instancia viva.
@@ -215,4 +221,3 @@ Glosario: ningún cambio.
 1. Proveedor de ffmpeg para Windows: Gyan (recomendado, estable, 109 MB) o BtbN (spec actual, 195 MB, requiere espejo propio para pin estable).
 2. Actualización en Windows: `-U` nativo con las limitaciones descritas, o rename-swap propio (recomendado).
 3. Qué hacer si falta Deno o falla `deno --version`: bloquear el Engine en `error` (recomendado) o permitir descargas degradadas.
-4. Ejecutar el workflow del spike en GitHub (la restricción del encargo prohíbe hacerlo desde aquí).
