@@ -15,4 +15,6 @@ Para una misma resolución YouTube ofrece H.264, VP9 y AV1. VP9 y AV1 suelen pes
 ## Consequences
 
 - Un archivo `2160p` puede requerir un reproductor como VLC en algunos equipos; la UI lo indica junto a esa opción.
-- La selección se expresa con orden de formatos de `yt-dlp` (`-S`) y no con filtros, y sus argumentos quedan cubiertos por tests de contrato.
+- La selección se expresa con orden de formatos de `yt-dlp` (`-S "res:<N>,vcodec:h264,acodec:aac"`, sin `<N>` para `best`) y no con filtros, y sus argumentos quedan cubiertos por tests de contrato. La tabla completa está en la spec.
+- Validado en el spike 01: a 1080p o menos se obtiene H.264 + AAC; en 1440p y 2160p, sin H.264 disponible, se obtiene VP9 antes que AV1, con audio AAC y mux a `.mp4` sin recodificar.
+- `res` se mide sobre el lado menor, así que un Short vertical 1080x1920 con `1080p` conserva su resolución.

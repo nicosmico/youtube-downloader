@@ -92,15 +92,23 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 ### Engine
 
 - Binarios externos en `$DATA_DIR/bin`: `yt-dlp`, `ffmpeg`, `ffprobe` y `deno`. `ENGINE_BIN_DIR` permite sobrescribir esa ruta en desarrollo y CI.
-- `yt-dlp` se obtiene del release oficial (`yt-dlp_macos`, `yt-dlp.exe` o `yt-dlp_linux`), que ya incluye `yt-dlp-ejs`.
-- Deno se obtiene del release oficial para `aarch64-apple-darwin`, `x86_64-pc-windows-msvc` y `x86_64-unknown-linux-gnu`, en una versión fijada en el código. `yt-dlp` lo recibe explícitamente con su opción de runtimes JavaScript (flag exacta a confirmar en el spike).
-- `ffmpeg`/`ffprobe` se obtienen de un build estático por plataforma, en una versión fijada. Proveedor a confirmar en el spike; candidatos: ffmpeg.martin-riedl.de para macOS arm64 y BtbN para Windows x64 y Linux.
-- Plataformas de producción: macOS arm64 y Windows x64. Los binarios Linux solo se usan en desarrollo y CI.
-- Cada binario se descarga a un archivo temporal, se verifica por SHA-256 (`yt-dlp` contra el `SHA2-256SUMS` de su release; el resto contra hashes fijados en el código), recibe permiso de ejecución en macOS y se activa con `rename` atómico.
-- Verificación con `yt-dlp --version`, `ffmpeg -version`, `ffprobe -version` y `deno --version`.
+- Plataformas de producción: macOS arm64 y Windows x64. Los binarios Linux solo se usan en desarrollo (arm64, Docker en Apple Silicon) y CI (x64).
+- Fuentes, validadas en el spike (versiones de referencia: `yt-dlp` 2026.10.26, Deno 2.9.8, FFmpeg 9.0.2):
+
+| Binario | macOS arm64 | Windows x64 | Linux arm64 / x64 | Hash |
+| :--- | :--- | :--- | :--- | :--- |
+| `yt-dlp` | `yt-dlp_macos` | `yt-dlp.exe` | `yt-dlp_linux_aarch64` / `yt-dlp_linux` | `SHA2-256SUMS` del release (dinámico) |
+| Deno | `deno-aarch64-apple-darwin.zip` | `deno-x86_64-pc-windows-msvc.zip` | `deno-aarch64-unknown-linux-gnu.zip` / `deno-x86_64-unknown-linux-gnu.zip` | Fijado en el código |
+| `ffmpeg`, `ffprobe` | martin-riedl, un zip por binario | Gyan essentials (`GyanD/codexffmpeg`), un zip con ambos en `bin/` | martin-riedl, un zip por binario | Fijado en el código |
+
+- El `yt-dlp` oficial ya incluye `yt-dlp-ejs`. BtbN se descarta para Windows porque borra sus releases antiguos y el hash fijado dejaría de ser descargable.
+- Cada binario se descarga a un archivo temporal, se verifica por SHA-256, recibe permiso de ejecución en macOS y se activa con `rename` atómico. Al arrancar se borran restos `.old` y `.new`.
+- Verificación con `yt-dlp --version`, `ffmpeg -version`, `ffprobe -version` y `deno --version`. Si cualquiera falla, incluido Deno, el Engine queda en `error`: no se descarga en modo degradado.
 - Estados: `missing → installing → ready | error`.
-- Actualización de `yt-dlp` con `-U` al arrancar si `engine.json` tiene más de 24 h, cada 24 h mientras la app está abierta, o manualmente desde la UI. Si `-U` falla, se reinstala el release. `ffmpeg`, `ffprobe` y Deno solo cambian con una nueva versión de la app.
-- `engine.json` en `$DATA_DIR` guarda versión y hash de cada binario y la fecha del último chequeo de `yt-dlp`.
+- Actualización de `yt-dlp` al arrancar si `engine.json` tiene más de 24 h, cada 24 h mientras la app está abierta, o manualmente desde la UI. No se usa `-U`: la app consulta el último release, descarga el binario nuevo a un temporal, lo verifica contra `SHA2-256SUMS` y lo intercambia con el actual (el viejo pasa a `.old` y se borra).
+- Durante la actualización la `Queue` deja de despachar jobs nuevos, espera a que terminen los activos, intercambia el binario y reanuda. Así ningún proceso retiene el binario viejo, que en Windows impediría borrarlo.
+- `ffmpeg`, `ffprobe` y Deno solo cambian con una nueva versión de la app.
+- `engine.json` en `$DATA_DIR` guarda versión y hash de cada binario y la fecha del último chequeo de `yt-dlp`; se reescribe tras cada actualización.
 - Las descargas quedan bloqueadas hasta que el Engine esté `ready`.
 
 ### Dominio y persistencia
@@ -201,14 +209,32 @@ Heartbeat cada 15 s.
 
 ### Runner y `yt-dlp`
 
-- Todas las invocaciones pasan `--ffmpeg-location` y la ruta de Deno del `Engine`.
+- Todas las invocaciones, incluido el preview, pasan `--ffmpeg-location <bin>` y `--js-runtimes deno:<ruta absoluta de deno>`. Sin `--ffmpeg-location` el formato por defecto degrada a uno combinado de baja calidad; sin `--js-runtimes`, `yt-dlp` solo busca Deno en el `PATH`.
 - Preview de video: `yt-dlp -J --no-warnings --no-playlist <url>`.
 - Preview de playlist: `yt-dlp -J --flat-playlist --playlist-end 500 --no-warnings <url>`.
-- Descarga: `--no-playlist --newline --progress --no-overwrites --progress-template "download:PROGRESS%(progress)j" --print after_move:filepath -P <staging> -o "%(title)s.%(ext)s"`. `--print` implica `--quiet`, por eso se añade `--progress`.
-- Video (ADR-0009): orden de formatos `-S "res:H,vcodec:h264,acodec:aac"` con `--merge-output-format mp4`; `best` usa `res` sin tope. `res` mide el lado menor, así que un video vertical respeta la `Quality` elegida. Fórmula exacta a confirmar en el spike.
-- Audio: `-x --audio-quality 0 --audio-format <mp3|m4a|opus>`. Para `m4a` y `opus` se prefiere el stream nativo equivalente para no recodificar.
-- Progreso: se parsean las líneas que empiezan con `PROGRESS` y contienen el JSON de `%(progress)j`.
-- La fase de post-procesado (merge, extracción de audio) se reporta como `processing`.
+- Descarga: `--no-playlist --newline --progress --no-overwrites --progress-template "download:PROGRESS%(progress)j" --progress-template "postprocess:POSTPROC%(progress)j" --print after_move:filepath -P <staging> -o "%(title)s.%(ext)s"`. `--print` implica `--quiet`, por eso se añade `--progress`; con `after_move` sí descarga.
+- Video (ADR-0009), siempre con `--merge-output-format mp4` (mux con `-c copy`, sin recodificar):
+
+| Quality | `-S` |
+| :--- | :--- |
+| `best` | `res,vcodec:h264,acodec:aac` |
+| `2160p` | `res:2160,vcodec:h264,acodec:aac` |
+| `1080p` | `res:1080,vcodec:h264,acodec:aac` |
+| `720p` | `res:720,vcodec:h264,acodec:aac` |
+| `480p` | `res:480,vcodec:h264,acodec:aac` |
+
+  `res` mide el lado menor, así que un video vertical respeta la `Quality`. Si el video no llega al tope, se toma su máximo.
+- Audio, siempre con `-x --audio-quality 0 --audio-format <fmt>`:
+
+| AudioFormat | `-f` | Recodifica |
+| :--- | :--- | :--- |
+| `m4a` | `ba[acodec^=mp4a]/ba` | No, salvo que falte AAC |
+| `opus` | `ba[acodec=opus]/ba` | No, salvo que falte Opus |
+| `mp3` | `ba` | Siempre |
+
+- Progreso: las líneas `PROGRESS` salen por stdout y las `POSTPROC` por stderr; el runner lee ambos streams. La última línea de stdout es la ruta de `after_move:filepath`.
+- Con video y audio separados hay dos descargas seguidas, cada una con su `"status": "finished"`; ninguno marca el fin del job. El porcentaje del job suma los bytes de los streams terminados al del stream en curso (se distinguen por `filename`). `total_bytes` puede faltar y venir `total_bytes_estimate`.
+- El job pasa a `processing` con el primer `POSTPROC` `started` cuyo `postprocessor` no sea `MoveFiles`. El `MoveFiles` de `yt-dlp` ocurre dentro del staging; `completed` solo llega tras el movimiento propio de la app (ADR-0010).
 - Cancelación: `terminate()` al grupo de procesos y `kill()` tras 5 s. En Windows se termina el árbol completo (Job Object o equivalente) y los subprocesos se lanzan con `CREATE_NO_WINDOW`.
 - Reintento: `attempt + 1` con carpeta de staging limpia.
 - Los mensajes de error se sanean antes de exponerlos.
@@ -233,7 +259,7 @@ Heartbeat cada 15 s.
 ### Entorno de desarrollo
 
 - Backend y tests corren en Docker Compose sobre Linux, usando OrbStack en macOS. No se requiere Python en el host.
-- Python 3.13 con `uv` dentro del contenedor; `ruff` para lint y formato; `pytest` para tests.
+- Python 3.13 con `uv` dentro del contenedor; `uv.lock` versionado y la imagen construida con `uv sync --frozen`; `ruff` para lint y formato; `pytest` para tests.
 - El build de Angular puede correr con Node local (ya instalado) o en un contenedor opcional.
 - El contenedor escucha en `0.0.0.0:<PORT>`, Compose publica ese puerto en `127.0.0.1` del host, monta `~/Downloads` y `$DATA_DIR`, y arranca con `OPEN_BROWSER=0`. El host abre el navegador.
 - Los tests de backend se ejecutan en el mismo contenedor que CI.
@@ -241,7 +267,8 @@ Heartbeat cada 15 s.
 
 ### Empaquetado
 
-- PyInstaller `onedir`, con los estáticos de Angular incluidos.
+- PyInstaller `onedir`, con los estáticos de Angular incluidos vía `--add-data` (separador `:` en macOS y `;` en Windows) y resueltos en ejecución con `sys._MEIPASS`.
+- En Windows (`--noconsole`, sin stdout), uvicorn arranca con `log_config=None`; el logging de la app escribe a archivo en `$DATA_DIR`.
 - macOS: `.app` arm64 con firma ad-hoc, distribuido en `.zip`. Mínimo macOS 13.
 - Windows: carpeta con `.exe` x64 sin consola, distribuida en `.zip`. Windows 10/11.
 - Los builds se ejecutan en GitHub Actions con matriz `macos-latest` y `windows-latest`; Docker no participa en el empaquetado nativo.
@@ -257,7 +284,7 @@ Seams acordados:
 1. **Backend — API HTTP.** FastAPI con `TestClient`, directorio de datos temporal, SQLite temporal y un `FakeEngine` que reemplaza a `yt-dlp` en el borde de subprocess. Cubre preview, alta de jobs, cola, concurrencia, persistencia, cancelación, reintento, reconciliación de interrumpidos, staging y movimiento final, SSE, `Idle Shutdown` y validaciones de seguridad.
 2. **Frontend — servicios y componentes Angular.** HTTP y SSE mockeados. Cubre renderizado de preview, selección de playlist, opciones, progreso, presets, `History` y rehidratación al reconectar.
 
-El `FakeEngine` debe poder: devolver JSON de preview de video, playlist, directo y entradas no disponibles; emitir líneas `PROGRESS` predecibles; simular post-procesado; escribir el archivo final en staging e imprimir su ruta; fallar con un mensaje; y quedarse colgado para probar cancelación.
+El `FakeEngine` debe poder: devolver JSON de preview de video, playlist, directo y entradas no disponibles; emitir líneas `PROGRESS` predecibles por stdout, incluidas dos descargas seguidas (video y audio); simular post-procesado con líneas `POSTPROC` por stderr; escribir el archivo final en staging e imprimir su ruta; fallar con un mensaje; y quedarse colgado para probar cancelación.
 
 Decisiones de prueba:
 
@@ -295,9 +322,9 @@ No hay código previo; estos tests establecen la convención del repo.
 
 ## Further Notes
 
-- Validaciones técnicas que resuelve el spike (ticket 01) antes de comprometer la implementación: proveedor de `ffmpeg` para macOS arm64; flag de `yt-dlp` para indicar la ruta de Deno; que `--progress` mantenga el progreso con `--print`; la fórmula `-S` para `Quality` con preferencia H.264 y videos verticales; `m4a` y `opus` sin recodificar; `yt-dlp -U` en Windows con otra instancia de `yt-dlp.exe` en uso; y build nativo en GitHub Actions.
+- Las validaciones técnicas del spike (ticket 01) están en `spike-01-findings.md`; sus conclusiones ya están incorporadas en esta spec.
 - Cerrar la pestaña del navegador no detiene la app de inmediato; "Cerrar aplicación" la cierra en el acto y `Idle Shutdown` la cierra tras 10 minutos de inactividad.
-- La actualización del Engine no interrumpe jobs activos: se aplica al siguiente proceso.
+- La actualización del Engine no interrumpe jobs activos: pausa el despacho, espera a que terminen y luego intercambia el binario.
 - Docker se usa solo en desarrollo y CI. La decisión y sus consecuencias están en el ADR-0008.
 - En desarrollo, las rutas de `DOWNLOAD_DIR` y `DATA_DIR` son las del contenedor; "abrir carpeta" queda como acción del host.
 - La implementación se organiza en los tickets de `.scratch/youtube-downloader-mvp/issues/`.
