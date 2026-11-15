@@ -1,0 +1,34 @@
+<main class="shell">
+  <h1>{{ texts.appTitle }}</h1>
+
+  @if (shutdownState() === 'done') {
+    <section class="card" role="status">
+      <h2>{{ texts.shutdown.done }}</h2>
+      <p>{{ texts.shutdown.doneHint }}</p>
+    </section>
+  } @else {
+    <section class="card" aria-labelledby="engine-heading">
+      <h2 id="engine-heading">{{ texts.engine.heading }}</h2>
+      @if (unreachable()) {
+        <p class="error" role="alert">{{ texts.health.unreachable }}</p>
+      } @else {
+        <p class="engine-status" data-testid="engine-status">{{ engineLabel() }}</p>
+        @if (health(); as h) {
+          <p class="meta">{{ texts.health.version }} {{ h.version }} · {{ texts.health.port }} {{ h.port }}</p>
+        }
+      }
+    </section>
+
+    <button
+      type="button"
+      class="danger"
+      [disabled]="shutdownState() === 'closing'"
+      (click)="shutdown()"
+    >
+      {{ shutdownState() === 'closing' ? texts.shutdown.closing : texts.shutdown.button }}
+    </button>
+    @if (shutdownState() === 'failed') {
+      <p class="error" role="alert">{{ texts.shutdown.failed }}</p>
+    }
+  }
+</main>

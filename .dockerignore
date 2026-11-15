@@ -1,0 +1,12 @@
+.git
+.scratch
+docs
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+frontend/.angular
+frontend/dist
+# Angular output is always rebuilt inside the image
+backend/app/static

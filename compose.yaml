@@ -1,0 +1,31 @@
+# Development environment (ADR-0008). The product itself never runs in Docker.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: app
+    init: true
+    environment:
+      # Dev only: inside the container the server must listen on 0.0.0.0 at a fixed port.
+      BIND_HOST: 0.0.0.0
+      PORT: "${PORT:-8765}"
+      OPEN_BROWSER: "0"
+      DATA_DIR: /data
+      DOWNLOAD_DIR: /downloads
+    ports:
+      # Published on the host loopback only.
+      - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"
+    volumes:
+      - "${HOST_DATA_DIR:-${HOME}/.youtube-downloader}:/data"
+      - "${HOST_DOWNLOAD_DIR:-${HOME}/Downloads}:/downloads"
+
+  # `docker compose run --rm tests [command]` runs pytest (default), ruff, etc.
+  tests:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: backend
+    volumes:
+      - ./backend:/srv/backend

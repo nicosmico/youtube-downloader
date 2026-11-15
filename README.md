@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para descargar videos y audio de YouTube público, con interfaz web local y motor `yt-dlp` autogestionado.
 
-> **Estado:** diseño cerrado, implementación no iniciada. La spec y los tickets están listos.
+> **Estado:** walking skeleton (ticket 02): servidor, shell de Angular, Single Instance y apagado. Sin Engine ni descargas todavía.
 
 ## Qué hace (MVP)
 
@@ -59,11 +59,45 @@ docs/              ADRs y documentación de agentes
 
 ## Desarrollo
 
-Todavía no hay código. El backend y los tests correrán en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24, que ya está instalado, o un contenedor opcional. Ni `ffmpeg` ni Deno se instalan: los gestiona la app.
+El backend y los tests corren en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24 local. Ni `ffmpeg` ni Deno se instalan: los gestiona la app.
 
-Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`); Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y el directorio de datos, y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
+Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y `~/.youtube-downloader` y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
 
-Los comandos de arranque se añadirán con el walking skeleton (ticket 02).
+### Arrancar la app
+
+```sh
+docker compose up --build        # imagen multi-stage: compila Angular y lo sirve FastAPI
+open http://127.0.0.1:8765/      # macOS; el puerto se cambia con PORT=9000 docker compose up
+curl http://127.0.0.1:8765/api/health
+docker compose down              # o el botón "Cerrar aplicación" de la UI
+```
+
+Variables útiles: `PORT`, `HOST_DATA_DIR` y `HOST_DOWNLOAD_DIR` (carpetas del host que se montan en `/data` y `/downloads`).
+
+Single Instance en Compose: el lock vive en el directorio de datos montado, así que un segundo contenedor con el mismo `HOST_DATA_DIR` falla con "Another instance is starting or stuck" (cada contenedor tiene su propia red y no puede alcanzar el puerto del otro). Fuera de Docker, el segundo `Launcher` abre el navegador en la instancia existente y termina.
+
+### Tests y lint (backend)
+
+```sh
+docker compose run --rm tests                      # pytest
+docker compose run --rm tests ruff check .         # lint
+docker compose run --rm tests ruff format --check . # formato (sin --check aplica el formato)
+docker compose run --rm tests uv lock              # regenerar uv.lock tras cambiar dependencias
+```
+
+CI ejecuta exactamente estos comandos. `./backend` se monta en el contenedor `tests`, así que los cambios se ven sin reconstruir; reconstruye (`docker compose build tests`) solo si cambian las dependencias.
+
+### Frontend
+
+```sh
+cd frontend
+npm ci
+npm start             # ng serve en :4200, con proxy de /api a 127.0.0.1:8765 (requiere docker compose up)
+npm run test:ci       # Vitest + jsdom, sin navegador
+npm run build         # escribe en backend/app/static (ignorado por git)
+```
+
+`npm run build` deja la SPA lista para el `Launcher` fuera de Docker; la imagen de Compose siempre compila su propia copia.
 
 ## Empaquetado
 
