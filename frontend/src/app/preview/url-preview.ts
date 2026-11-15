@@ -12,12 +12,16 @@ import {
   timer,
 } from 'rxjs';
 import { EngineService } from '../core/engine.service';
-import { EnqueueError, JobsService } from '../core/jobs.service';
+import { AudioFormat, DownloadOptions, EnqueueError, JobsService } from '../core/jobs.service';
 import { MediaPreview, PreviewError, PreviewService, Quality } from '../core/preview.service';
 import { TEXTS } from '../core/texts';
 
 export const DEBOUNCE_MS = 500;
 export const QUALITIES: readonly Quality[] = ['best', '2160p', '1080p', '720p', '480p'];
+export const AUDIO_FORMATS: readonly AudioFormat[] = ['m4a', 'mp3', 'opus'];
+/** `m4a`: YouTube's own AAC stream is saved as is (no re-encoding, no loss) and plays everywhere. */
+export const DEFAULT_AUDIO_FORMAT: AudioFormat = 'm4a';
+export type Mode = 'video' | 'audio';
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
 type Outcome =
@@ -68,6 +72,7 @@ export class UrlPreview {
 
   protected readonly texts = TEXTS;
   protected readonly qualities = QUALITIES;
+  protected readonly audioFormats = AUDIO_FORMATS;
   protected readonly url = signal('');
   protected readonly status = signal<Status>('idle');
   protected readonly preview = signal<MediaPreview | null>(null);
@@ -76,8 +81,10 @@ export class UrlPreview {
     const code = this.errorCode();
     return code ? (TEXTS.preview.errors[code] ?? TEXTS.preview.errors['unknown']) : null;
   });
-  /** The Quality picked in the selector; "Descargar" enqueues with it. */
+  /** What the user picked; "Descargar" enqueues with it. It survives previewing the next URL. */
+  readonly mode = signal<Mode>('video');
   readonly quality = signal<Quality>('best');
+  readonly audioFormat = signal<AudioFormat>(DEFAULT_AUDIO_FORMAT);
   protected readonly enqueuing = signal(false);
   protected readonly enqueued = signal(false);
   protected readonly enqueueError = signal<string | null>(null);
@@ -128,6 +135,18 @@ export class UrlPreview {
     this.schedule(playlistUrl, true);
   }
 
+  protected audioFormatLabel(format: AudioFormat): string {
+    return TEXTS.preview.audioFormats[format];
+  }
+
+  protected selectMode(mode: Mode): void {
+    this.mode.set(mode);
+  }
+
+  protected selectAudioFormat(value: string): void {
+    this.audioFormat.set(value as AudioFormat);
+  }
+
   protected qualityLabel(quality: Quality): string {
     if (quality === 'best') {
       return TEXTS.preview.qualityBest;
@@ -154,7 +173,11 @@ export class UrlPreview {
     this.enqueuing.set(true);
     this.enqueued.set(false);
     this.enqueueError.set(null);
-    this.jobs.enqueue(media.url, this.quality(), media.title).subscribe({
+    const options: DownloadOptions =
+      this.mode() === 'audio'
+        ? { mode: 'audio', audioFormat: this.audioFormat() }
+        : { mode: 'video', quality: this.quality() };
+    this.jobs.enqueue(media.url, options, media.title).subscribe({
       next: () => {
         this.enqueuing.set(false);
         this.enqueued.set(true);
@@ -194,7 +217,10 @@ export class UrlPreview {
       case 'ready':
         this.preview.set(outcome.media);
         this.errorCode.set(null);
-        this.quality.set('best');
+        // The pick is kept for the next video unless this one cannot offer that Quality.
+        if (!outcome.media.availableQualities.includes(this.quality())) {
+          this.quality.set('best');
+        }
         this.status.set('ready');
         break;
     }

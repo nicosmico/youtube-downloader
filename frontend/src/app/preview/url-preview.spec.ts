@@ -230,6 +230,27 @@ describe('UrlPreview', () => {
       expect(fixture.componentInstance.quality()).toBe('720p');
     });
 
+    it('shows the hint next to 2160p and a notice while it is selected', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), {
+        ...MEDIA,
+        availableQualities: ['best', '2160p', '1080p'],
+        maxQuality: '2160p',
+      });
+
+      expect(el('quality-2160-hint')).toBeNull();
+      const select = el<HTMLSelectElement>('quality-select')!;
+      select.value = '2160p';
+      select.dispatchEvent(new Event('change'));
+      await settle();
+
+      expect(el('quality-2160-hint')?.textContent).toContain('VLC');
+      select.value = '720p';
+      select.dispatchEvent(new Event('change'));
+      await settle();
+      expect(el('quality-2160-hint')).toBeNull();
+    });
+
     it('clears the card when the field is emptied', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), MEDIA);
@@ -399,6 +420,102 @@ describe('UrlPreview', () => {
           .jobs()
           .map((j) => j.id),
       ).toEqual(['job1']);
+    });
+
+    const pickMode = async (mode: 'video' | 'audio') => {
+      el<HTMLInputElement>(`mode-${mode}`)!.click();
+      await settle();
+    };
+    const pick = async (testId: string, value: string) => {
+      const select = el<HTMLSelectElement>(testId)!;
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      await settle();
+    };
+
+    it('starts in video mode with the quality selector and no audio selector', () => {
+      expect(el<HTMLInputElement>('mode-video')!.checked).toBe(true);
+      expect(el('quality-select')).not.toBeNull();
+      expect(el('audio-format-select')).toBeNull();
+    });
+
+    it('switches to audio: the AudioFormat selector replaces the Quality one', async () => {
+      await pickMode('audio');
+
+      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
+      expect(el('quality-select')).toBeNull();
+      const options = Array.from(
+        root().querySelectorAll<HTMLOptionElement>('[data-testid=audio-format-select] option'),
+      );
+      expect(options.map((o) => o.value).sort()).toEqual(['m4a', 'mp3', 'opus']);
+      expect(options.every((o) => !o.disabled)).toBe(true);
+      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('m4a');
+    });
+
+    it.each(['mp3', 'm4a', 'opus'])('enqueues audio as %s without a quality', async (format) => {
+      await pickMode('audio');
+      await pick('audio-format-select', format);
+
+      button().click();
+      await settle();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.body).toEqual({
+        url: MEDIA.url,
+        mode: 'audio',
+        audioFormat: format,
+        title: MEDIA.title,
+      });
+      await answer(req, {
+        batchId: null,
+        jobs: [{ ...JOB, mode: 'audio', quality: null, audioFormat: format }],
+      });
+    });
+
+    it('never sends the audio format of an earlier pick in video mode', async () => {
+      await pickMode('audio');
+      await pick('audio-format-select', 'opus');
+      await pickMode('video');
+      await pick('quality-select', '480p');
+
+      button().click();
+      await settle();
+
+      expect(http.expectOne('/api/jobs').request.body).toEqual({
+        url: MEDIA.url,
+        mode: 'video',
+        quality: '480p',
+        title: MEDIA.title,
+      });
+    });
+
+    it('keeps mode, quality and format when the next URL is previewed', async () => {
+      await pick('quality-select', '480p');
+      await pickMode('audio');
+      await pick('audio-format-select', 'mp3');
+
+      await type(URL_B, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), { ...MEDIA, url: URL_B, id: 'jNQXAC9IVRw' });
+
+      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
+      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('mp3');
+      await pickMode('video');
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+    });
+
+    it('falls back to "best" when the next video cannot offer the kept quality', async () => {
+      await pick('quality-select', '1080p');
+
+      await type(URL_B, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), {
+        ...MEDIA,
+        url: URL_B,
+        availableQualities: ['best'],
+        maxQuality: 'best',
+        maxResolution: 240,
+      });
+
+      expect(fixture.componentInstance.quality()).toBe('best');
     });
 
     it('shows a Spanish error when the server refuses', async () => {

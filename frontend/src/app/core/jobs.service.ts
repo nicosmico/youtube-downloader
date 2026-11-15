@@ -4,6 +4,12 @@ import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { EventStreamService, eventData } from './event-stream.service';
 import { Quality } from './preview.service';
 
+export type AudioFormat = 'mp3' | 'm4a' | 'opus';
+
+/** What to download: video takes a Quality, audio an AudioFormat; never both. */
+export type DownloadOptions =
+  { mode: 'video'; quality: Quality } | { mode: 'audio'; audioFormat: AudioFormat };
+
 export type JobStatus =
   'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'canceled' | 'interrupted';
 
@@ -16,7 +22,7 @@ export interface Job {
   title: string | null;
   mode: 'video' | 'audio';
   quality: Quality | null;
-  audioFormat: string | null;
+  audioFormat: AudioFormat | null;
   status: JobStatus;
   progressPercent: number;
   downloadedBytes: number | null;
@@ -87,8 +93,8 @@ export class JobsService {
   }
 
   /** Enqueues one video; the new jobs show up in `jobs` right away. */
-  enqueue(url: string, quality: Quality, title: string | null): Observable<Job[]> {
-    const body: Record<string, unknown> = { url, mode: 'video', quality };
+  enqueue(url: string, options: DownloadOptions, title: string | null): Observable<Job[]> {
+    const body: Record<string, unknown> = { url, ...options };
     if (title) {
       body['title'] = title;
     }

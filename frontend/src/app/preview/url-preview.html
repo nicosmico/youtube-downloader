@@ -56,23 +56,69 @@
                 {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
               </p>
             }
-            <label class="field">
-              <span class="label">{{ texts.preview.quality }}</span>
-              <select
-                data-testid="quality-select"
-                (change)="selectQuality($any($event.target).value)"
-              >
-                @for (q of qualities; track q) {
-                  <option
-                    [value]="q"
-                    [selected]="q === quality()"
-                    [disabled]="!isAvailable(media, q)"
-                  >
-                    {{ qualityLabel(q) }}
-                  </option>
-                }
-              </select>
-            </label>
+            <fieldset class="field modes" data-testid="mode-switch">
+              <legend class="label">{{ texts.preview.mode }}</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="video"
+                  data-testid="mode-video"
+                  [checked]="mode() === 'video'"
+                  (change)="selectMode('video')"
+                />
+                {{ texts.preview.modeVideo }}
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="mode"
+                  value="audio"
+                  data-testid="mode-audio"
+                  [checked]="mode() === 'audio'"
+                  (change)="selectMode('audio')"
+                />
+                {{ texts.preview.modeAudio }}
+              </label>
+            </fieldset>
+            @if (mode() === 'video') {
+              <label class="field">
+                <span class="label">{{ texts.preview.quality }}</span>
+                <select
+                  data-testid="quality-select"
+                  (change)="selectQuality($any($event.target).value)"
+                >
+                  @for (q of qualities; track q) {
+                    <option
+                      [value]="q"
+                      [selected]="q === quality()"
+                      [disabled]="!isAvailable(media, q)"
+                    >
+                      {{ qualityLabel(q) }}
+                    </option>
+                  }
+                </select>
+              </label>
+              @if (quality() === '2160p') {
+                <p class="meta" data-testid="quality-2160-hint">
+                  {{ texts.preview.quality2160Notice }}
+                </p>
+              }
+            } @else {
+              <label class="field">
+                <span class="label">{{ texts.preview.audioFormat }}</span>
+                <select
+                  data-testid="audio-format-select"
+                  (change)="selectAudioFormat($any($event.target).value)"
+                >
+                  @for (f of audioFormats; track f) {
+                    <option [value]="f" [selected]="f === audioFormat()">
+                      {{ audioFormatLabel(f) }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
             <button
               type="button"
               class="primary"

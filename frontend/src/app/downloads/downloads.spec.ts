@@ -58,6 +58,18 @@ describe('Downloads', () => {
     expect(el('downloads-empty')).toBeNull();
   });
 
+  it.each([
+    [{ mode: 'video', quality: 'best', audioFormat: null }, 'Video · Mejor disponible'],
+    [{ mode: 'video', quality: '720p', audioFormat: null }, 'Video · 720p'],
+    [{ mode: 'audio', quality: null, audioFormat: 'mp3' }, 'Audio · MP3'],
+    [{ mode: 'audio', quality: null, audioFormat: 'm4a' }, 'Audio · M4A'],
+    [{ mode: 'audio', quality: null, audioFormat: 'opus' }, 'Audio · Opus'],
+  ] as const)('shows what was requested: %j', async (options, label) => {
+    await show({ ...options });
+
+    expect(el('job-options')?.textContent?.trim()).toBe(label);
+  });
+
   it('uses a generic title when the job has none', async () => {
     await show({ title: null });
 

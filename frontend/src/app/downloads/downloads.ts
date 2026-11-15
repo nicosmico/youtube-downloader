@@ -39,6 +39,19 @@ export class Downloads {
     return job.title || TEXTS.downloads.untitled;
   }
 
+  /** What was requested: "Video · 720p" or "Audio · MP3". */
+  protected options(job: Job): string {
+    const texts = TEXTS.downloads;
+    if (job.mode === 'audio') {
+      const format = job.audioFormat
+        ? (texts.audioFormats[job.audioFormat] ?? job.audioFormat)
+        : '';
+      return format ? `${texts.modeAudio} · ${format}` : texts.modeAudio;
+    }
+    const quality = job.quality === 'best' ? texts.qualityBest : job.quality;
+    return quality ? `${texts.modeVideo} · ${quality}` : texts.modeVideo;
+  }
+
   protected showsProgress(job: Job): boolean {
     return job.status === 'downloading' || job.status === 'processing';
   }

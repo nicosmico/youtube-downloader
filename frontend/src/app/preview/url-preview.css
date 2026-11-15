@@ -87,3 +87,17 @@ button.primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.modes {
+  border: 0;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+.modes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 1rem;
+}
+.modes input {
+  width: auto;
+}

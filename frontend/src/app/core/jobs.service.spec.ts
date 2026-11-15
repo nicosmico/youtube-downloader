@@ -72,7 +72,9 @@ describe('JobsService', () => {
 
   it('enqueues a video with the app header and adds the job to the list', () => {
     let result: Job[] = [];
-    service.enqueue(JOB.url, '480p', 'Me at the zoo').subscribe((jobs) => (result = jobs));
+    service
+      .enqueue(JOB.url, { mode: 'video', quality: '480p' }, 'Me at the zoo')
+      .subscribe((jobs) => (result = jobs));
 
     const req = http.expectOne('/api/jobs');
     expect(req.request.method).toBe('POST');
@@ -89,8 +91,24 @@ describe('JobsService', () => {
     expect(service.jobs()).toEqual([JOB]);
   });
 
+  it('enqueues audio with its format and no quality', () => {
+    service.enqueue(JOB.url, { mode: 'audio', audioFormat: 'opus' }, 'Me at the zoo').subscribe();
+
+    const req = http.expectOne('/api/jobs');
+    expect(req.request.body).toEqual({
+      url: JOB.url,
+      mode: 'audio',
+      audioFormat: 'opus',
+      title: 'Me at the zoo',
+    });
+    req.flush({
+      batchId: null,
+      jobs: [{ ...JOB, mode: 'audio', quality: null, audioFormat: 'opus' }],
+    });
+  });
+
   it('omits the title when there is none', () => {
-    service.enqueue(JOB.url, 'best', null).subscribe();
+    service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, null).subscribe();
 
     const req = http.expectOne('/api/jobs');
     expect(req.request.body).toEqual({ url: JOB.url, mode: 'video', quality: 'best' });
@@ -99,7 +117,9 @@ describe('JobsService', () => {
 
   it('turns API errors into EnqueueError with the code', () => {
     let error: unknown;
-    service.enqueue(JOB.url, 'best', null).subscribe({ error: (e) => (error = e) });
+    service
+      .enqueue(JOB.url, { mode: 'video', quality: 'best' }, null)
+      .subscribe({ error: (e) => (error = e) });
 
     http
       .expectOne('/api/jobs')
@@ -113,7 +133,9 @@ describe('JobsService', () => {
 
   it('reports a missing server as `network`', () => {
     let error: unknown;
-    service.enqueue(JOB.url, 'best', null).subscribe({ error: (e) => (error = e) });
+    service
+      .enqueue(JOB.url, { mode: 'video', quality: 'best' }, null)
+      .subscribe({ error: (e) => (error = e) });
 
     http.expectOne('/api/jobs').error(new ProgressEvent('error'));
 
