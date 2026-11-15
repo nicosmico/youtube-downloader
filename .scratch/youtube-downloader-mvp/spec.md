@@ -122,7 +122,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - `completed` solo se marca cuando el archivo final está en la `Destination`.
 - Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted` ("La aplicación se cerró durante la descarga") y se borra su staging; no se reanudan solos. Los `queued` sí se reanudan, en orden.
 - El apagado deja de despachar, termina los árboles de procesos activos (terminate, 3 s, kill, 2 s) y marca esos jobs `interrupted`.
-- Concurrencia máxima: 2. Selección FIFO por `created_at`.
+- Concurrencia máxima: 2. Selección FIFO por `queued_at` (momento de entrada en la cola), que un reintento renueva para mandar el job al final; `created_at` no cambia.
 - Solo los jobs en estado terminal se pueden quitar del `History`; borrar uno activo o en cola responde `409`.
 - Persistencia en SQLite con WAL en `$DATA_DIR/db.sqlite3` y migraciones numeradas:
 
@@ -180,8 +180,8 @@ CREATE TABLE presets (
 | `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, title?, entries?}` → `{batchId \| null, jobs[]}`. `title` viene del `MediaPreview` del cliente. |
 | `GET` | `/api/jobs` | `{jobs, nextBefore}`, del más reciente al más antiguo. Filtros: `status` (lista separada por comas), `limit`, `before` (id de job). |
 | `GET` | `/api/jobs/{id}` | `DownloadJob`. |
-| `POST` | `/api/jobs/{id}/cancel` | Cancela job en cola o activo. |
-| `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`. |
+| `POST` | `/api/jobs/{id}/cancel` | Cancela job en cola o activo y espera a que termine (hasta ~7 s). `409 job_not_cancelable` si ya es terminal. |
+| `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`, al final de la cola. `409 job_not_retryable` en otros estados. |
 | `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer (acción del host). |
 | `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409` si no es terminal. |
 | `GET` | `/api/events` | Stream SSE. |
@@ -244,7 +244,8 @@ Al conectar, el stream envía primero el estado actual (`engine.updated` y `queu
 - Con video y audio separados hay dos descargas seguidas, cada una con su `"status": "finished"`; ninguno marca el fin del job. La línea `TOTAL` (antes de descargar) da el tamaño esperado de todos los streams y es el denominador del porcentaje, que solo llega a 100 al terminar el último. Si falta, se suman los bytes de los streams terminados al del stream en curso (se distinguen por `filename`). `total_bytes` puede faltar y venir `total_bytes_estimate`. El porcentaje nunca retrocede.
 - El job pasa a `processing` con el primer `POSTPROC` `started` cuyo `postprocessor` no sea `MoveFiles`. El `MoveFiles` de `yt-dlp` ocurre dentro del staging; `completed` solo llega tras el movimiento propio de la app (ADR-0010).
 - Cancelación: `terminate()` al grupo de procesos y `kill()` tras 5 s. En Windows se termina el árbol completo (Job Object o equivalente) y los subprocesos se lanzan con `CREATE_NO_WINDOW`.
-- Reintento: `attempt + 1` con carpeta de staging limpia.
+- Reintento: `attempt + 1` con carpeta de staging limpia; se reinician progreso, error y ruta, y se conservan batch, índice y opciones.
+- Carrera entre cancelar y terminar: decide el proceso. Si `yt-dlp` salió con 0 antes de que el TERM surtiera efecto, el job queda `completed` y la cancelación responde `409`; cualquier otra salida tras pedir la cancelación deja el job `canceled`.
 - Los mensajes de error se sanean antes de exponerlos.
 
 ### Archivos
