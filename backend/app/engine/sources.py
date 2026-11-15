@@ -9,14 +9,19 @@ against the GitHub API `digest` where available. yt-dlp is dynamic: its hash com
 from __future__ import annotations
 
 import platform
+import re
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 DENO_VERSION = "2.9.8"
 FFMPEG_VERSION = "9.0.2"
 
 BINARIES = ("yt-dlp", "ffmpeg", "ffprobe", "deno")
 
-YTDLP_LATEST_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
+# The public page redirects to `.../releases/tag/<tag>`: unlike api.github.com it has no
+# unauthenticated rate limit of 60 requests per hour per IP.
+YTDLP_LATEST_PAGE = "https://github.com/yt-dlp/yt-dlp/releases/latest"
+YTDLP_RELEASES_TAG = "https://github.com/yt-dlp/yt-dlp/releases/tag"
 _YTDLP_DOWNLOAD = "https://github.com/yt-dlp/yt-dlp/releases/download"
 _DENO_DOWNLOAD = f"https://github.com/denoland/deno/releases/download/v{DENO_VERSION}"
 _MARTIN_RIEDL = "https://ffmpeg.martin-riedl.de/download"
@@ -174,3 +179,12 @@ def pinned_archives(target: str) -> tuple[Archive, ...]:
             for name in ("ffmpeg", "ffprobe")
         )
     return (deno, *ffmpeg)
+
+
+def parse_release_tag(location: str) -> str:
+    """The tag in the `Location` of the "latest release" redirect (`.../releases/tag/<tag>`)."""
+    path = urlsplit(location).path
+    prefix, sep, tag = path.rpartition("/releases/tag/")
+    if not sep or not prefix.endswith("/yt-dlp/yt-dlp") or not re.fullmatch(r"[\w.\-]+", tag):
+        raise ValueError(f"redirección inesperada ({location[:80]!r})")
+    return tag

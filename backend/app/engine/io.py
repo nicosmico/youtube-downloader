@@ -49,6 +49,10 @@ class Fetcher(Protocol):
 
     def download(self, url: str, dest: Path) -> None: ...
 
+    def redirect_location(self, url: str) -> str:
+        """The `Location` the URL redirects to, without following it. FetchError if it does not."""
+        ...
+
 
 class Runner(Protocol):
     def __call__(self, args: Sequence[str], timeout: float = TIMEOUT_SECONDS) -> str:
@@ -96,19 +100,36 @@ def default_ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context(cafile=certifi.where())
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 class UrllibFetcher:
     def __init__(self, context: ssl.SSLContext | None = None) -> None:
         self._context = context or default_ssl_context()
 
     def _open(self, url: str):
-        headers = {"User-Agent": f"{APP_ID}/{__version__}", "Accept": "*/*"}
-        token = os.environ.get("GITHUB_TOKEN")
-        # CI only: unauthenticated GitHub API calls are rate limited per IP, and runners share IPs.
-        # The token goes to api.github.com and nowhere else.
-        if token and urllib.parse.urlsplit(url).hostname == "api.github.com":
-            headers["Authorization"] = f"Bearer {token}"
-        request = urllib.request.Request(url, headers=headers)
+        request = urllib.request.Request(
+            url, headers={"User-Agent": f"{APP_ID}/{__version__}", "Accept": "*/*"}
+        )
         return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=self._context)
+
+    def redirect_location(self, url: str) -> str:
+        request = urllib.request.Request(url, headers={"User-Agent": f"{APP_ID}/{__version__}"})
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=self._context), _NoRedirect
+        )
+        try:
+            opener.open(request, timeout=TIMEOUT_SECONDS).close()
+        except urllib.error.HTTPError as exc:
+            location = exc.headers.get("Location")
+            if 300 <= exc.code < 400 and location:
+                return urllib.parse.urljoin(url, location)
+            raise FetchError(_reason(exc)) from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise FetchError(_reason(exc)) from exc
+        raise FetchError("sin redirección")
 
     def get_bytes(self, url: str) -> bytes:
         try:

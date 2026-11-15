@@ -14,6 +14,7 @@ from app.engine import (
     EngineStatus,
     UpdateOutcome,
     run_periodic,
+    sources,
 )
 from tests.conftest import FakeClock
 from tests.fakes import (
@@ -524,3 +525,20 @@ def test_runner_is_called_with_the_version_flag_of_each_binary(
         "ffprobe": "-version",
         "deno": "--version",
     }
+
+
+class TestLatestYtdlpRedirect:
+    def test_malformed_location_is_a_clear_spanish_error(
+        self, engine: EngineManager, fetcher: FakeFetcher
+    ) -> None:
+        fetcher.add(sources.YTDLP_LATEST_PAGE, b"https://example.test/login")
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.ERROR
+        message = engine.info().message or ""
+        assert "No se pudo consultar la última versión de yt-dlp" in message
+        assert "redirección inesperada" in message
+
+    def test_parse_release_tag(self) -> None:
+        assert sources.parse_release_tag(f"{sources.YTDLP_RELEASES_TAG}/2026.11.30") == "2026.11.30"

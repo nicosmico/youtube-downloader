@@ -50,6 +50,9 @@ class FakeFetcher:
     def get_bytes(self, url: str) -> bytes:
         return self._serve(url)
 
+    def redirect_location(self, url: str) -> str:
+        return self._serve(url).decode()
+
     def download(self, url: str, dest: Path) -> None:
         dest.write_bytes(self._serve(url))
 
@@ -62,7 +65,7 @@ class FakeFetcher:
         self, tag: str, content: bytes, *, sums_sha256: str | None = None, target: str = TARGET
     ) -> None:
         asset = sources.ytdlp_asset(target)
-        self.add(sources.YTDLP_LATEST_API, json.dumps({"tag_name": tag}).encode())
+        self.add(sources.YTDLP_LATEST_PAGE, f"{sources.YTDLP_RELEASES_TAG}/{tag}".encode())
         digest = sums_sha256 or sha256(content)
         self.add(
             sources.ytdlp_sums_url(tag), f"{'0' * 64}  other-asset\n{digest}  {asset}\n".encode()

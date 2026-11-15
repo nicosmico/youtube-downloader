@@ -1,5 +1,6 @@
 import ssl
 
+import pytest
 import truststore
 
 from app.engine import io
@@ -42,28 +43,29 @@ def test_falls_back_to_certifi_when_truststore_is_missing(monkeypatch):
     assert not hasattr(context, "_ctx")  # not truststore's wrapper
 
 
-def test_github_token_only_goes_to_the_github_api(monkeypatch):
-    sent = []
+def test_redirect_location_is_read_without_following_it(monkeypatch):
+    import http.server
+    import threading
 
-    class Response:
-        def __enter__(self):
-            return self
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/latest":
+                self.send_response(302)
+                self.send_header("Location", "/releases/tag/2026.11.30")
+            else:
+                self.send_response(200)
+            self.end_headers()
 
-        def __exit__(self, *exc):
-            return False
+        def log_message(self, *args):
+            pass
 
-        def read(self):
-            return b""
-
-    def fake_urlopen(request, timeout, context):
-        sent.append(request.get_header("Authorization"))
-        return Response()
-
-    monkeypatch.setattr(io.urllib.request, "urlopen", fake_urlopen)
-    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
-    fetcher = UrllibFetcher(ssl.create_default_context())
-    fetcher.get_bytes("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
-    fetcher.get_bytes("https://github.com/yt-dlp/yt-dlp/releases/download/x/yt-dlp")
-    monkeypatch.delenv("GITHUB_TOKEN")
-    fetcher.get_bytes("https://api.github.com/x")
-    assert sent == ["Bearer t0ken", None, None]
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        fetcher = UrllibFetcher(ssl.create_default_context())
+        assert fetcher.redirect_location(f"{base}/latest") == f"{base}/releases/tag/2026.11.30"
+        with pytest.raises(io.FetchError):
+            fetcher.redirect_location(f"{base}/other")
+    finally:
+        server.shutdown()

@@ -406,8 +406,9 @@ class EngineManager:
         """Latest release tag and the SHA-256 of this platform's asset, from SHA2-256SUMS."""
         assert self.target is not None
         try:
-            release = json.loads(self._fetcher.get_bytes(sources.YTDLP_LATEST_API))
-            tag = str(release["tag_name"])
+            tag = sources.parse_release_tag(
+                self._fetcher.redirect_location(sources.YTDLP_LATEST_PAGE)
+            )
             sums = sources.parse_sha256sums(
                 self._fetcher.get_bytes(sources.ytdlp_sums_url(tag)).decode("utf-8", "replace")
             )
