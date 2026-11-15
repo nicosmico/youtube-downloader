@@ -35,3 +35,6 @@ backend/app/static/
 *.db
 .env
 .env.*
+
+# Directorio de datos del entorno Docker de desarrollo
+.dev-data/

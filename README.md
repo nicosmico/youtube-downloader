@@ -61,7 +61,7 @@ docs/              ADRs y documentación de agentes
 
 El backend y los tests corren en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24 local. Ni `ffmpeg` ni Deno se instalan: los gestiona la app.
 
-Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y `~/.youtube-downloader` y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
+Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y `./.dev-data` (nunca el `~/.youtube-downloader` real, que se llenaría de binarios Linux) y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
 
 ### Arrancar la app
 

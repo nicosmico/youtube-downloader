@@ -17,7 +17,8 @@ services:
       # Published on the host loopback only.
       - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"
     volumes:
-      - "${HOST_DATA_DIR:-${HOME}/.youtube-downloader}:/data"
+      # Never the real ~/.youtube-downloader: the container would fill it with Linux Engine binaries.
+      - "${HOST_DATA_DIR:-./.dev-data}:/data"
       - "${HOST_DOWNLOAD_DIR:-${HOME}/Downloads}:/downloads"
 
   # `docker compose run --rm tests [command]` runs pytest (default), ruff, etc.

@@ -8,7 +8,7 @@
 
 - [x] `docker compose up` levanta el backend y sirve el shell de Angular en el puerto publicado solo en `127.0.0.1` del host.
 - [x] `BIND_HOST` y `PORT` solo se usan en desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`.
-- [ ] El host abre el navegador y ve el shell; el contenedor corre con `OPEN_BROWSER=0`.
+- [x] El host abre el navegador y ve el shell; el contenedor corre con `OPEN_BROWSER=0`.
 - [x] `/api/health` responde identificador y versión de la app, estado del Engine y puerto.
 - [x] Un lock de archivo impide dos arranques simultáneos; una segunda instancia reutiliza la existente o se documenta el comportamiento en Compose.
 - [x] "Cerrar aplicación" apaga el servidor y limpia `runtime.json`.
@@ -39,3 +39,5 @@ Sin verificar:
 - GitHub Actions no se ejecutó (sin push); los pasos del CI se reprodujeron con los mismos comandos en local.
 
 Comportamiento en Compose: un segundo contenedor con el mismo directorio de datos falla con "Another instance is starting or stuck" (el lock sí se comparte por el bind mount, pero cada contenedor tiene su red y no alcanza el puerto del otro). Documentado en el README.
+
+**2026-11-15 — Revisión del orquestador.** Lint y tests verificados de nuevo (47 backend, 5 Angular). Shell comprobado en el navegador integrado: estado del Engine visible y "Cerrar aplicación" detiene el contenedor con exit 0. Corregido el volumen de datos de Compose: ahora usa `./.dev-data` en vez de `~/.youtube-downloader` para no mezclar binarios Linux con la instalación real. Pendiente: que el workflow de CI corra en GitHub.
