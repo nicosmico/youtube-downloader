@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (Descarga de un video end-to-end).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] El workflow construye el `onedir` en `macos-latest` y `windows-latest` con el build de Angular incluido, y publica artefactos de prueba.
 - [x] En cada runner, el ejecutable arranca con `--no-browser`, responde `/api/health` y llega a Engine `ready`.
@@ -24,3 +24,5 @@ Bugs de producto encontrados: ninguno; no se tocó el código de la app. Observa
 
 
 **2026-11-15 — Revisión del orquestador.** El artefacto de macOS (run `43759663183`) falló en un Mac real con `CERTIFICATE_VERIFY_FAILED`: el OpenSSL del Python empaquetado no trae certificados fuera de los runners. Corregido con `truststore` (respaldo `certifi`) y un segundo smoke en CI con el almacén de certificados de OpenSSL vacío. La consulta de la última versión de `yt-dlp` pasó a la redirección pública de GitHub, sin `api.github.com` ni `GITHUB_TOKEN`. Artefacto final (run `43760895171`) probado en el Mac: Engine `ready`, "Me at the zoo.mp4" descargado y apagado con exit 0. CI `43760895232` verde.
+
+**2026-11-15 — Resuelto.** Native verde sobre `main` (run `43761261417`, lanzado a mano porque el último commit era solo de documentación).
