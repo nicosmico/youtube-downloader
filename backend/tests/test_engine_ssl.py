@@ -40,3 +40,30 @@ def test_falls_back_to_certifi_when_truststore_is_missing(monkeypatch):
     context = default_ssl_context()
     assert isinstance(context, ssl.SSLContext)
     assert not hasattr(context, "_ctx")  # not truststore's wrapper
+
+
+def test_github_token_only_goes_to_the_github_api(monkeypatch):
+    sent = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b""
+
+    def fake_urlopen(request, timeout, context):
+        sent.append(request.get_header("Authorization"))
+        return Response()
+
+    monkeypatch.setattr(io.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    fetcher = UrllibFetcher(ssl.create_default_context())
+    fetcher.get_bytes("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")
+    fetcher.get_bytes("https://github.com/yt-dlp/yt-dlp/releases/download/x/yt-dlp")
+    monkeypatch.delenv("GITHUB_TOKEN")
+    fetcher.get_bytes("https://api.github.com/x")
+    assert sent == ["Bearer t0ken", None, None]

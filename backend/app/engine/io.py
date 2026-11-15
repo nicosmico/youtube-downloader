@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -100,9 +101,13 @@ class UrllibFetcher:
         self._context = context or default_ssl_context()
 
     def _open(self, url: str):
-        request = urllib.request.Request(
-            url, headers={"User-Agent": f"{APP_ID}/{__version__}", "Accept": "*/*"}
-        )
+        headers = {"User-Agent": f"{APP_ID}/{__version__}", "Accept": "*/*"}
+        token = os.environ.get("GITHUB_TOKEN")
+        # CI only: unauthenticated GitHub API calls are rate limited per IP, and runners share IPs.
+        # The token goes to api.github.com and nowhere else.
+        if token and urllib.parse.urlsplit(url).hostname == "api.github.com":
+            headers["Authorization"] = f"Bearer {token}"
+        request = urllib.request.Request(url, headers=headers)
         return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=self._context)
 
     def get_bytes(self, url: str) -> bytes:
