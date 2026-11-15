@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 (Walking skeleton en Docker).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Con el directorio de binarios vacío, la app descarga, verifica y activa los cuatro binarios dentro del contenedor Linux.
 - [x] Un binario con hash incorrecto no se activa y deja el estado `error`.
@@ -38,3 +38,5 @@ Cómo correrlo:
 - `ENGINE_BIN_DIR=<carpeta>` usa binarios existentes sin descargar (ver README).
 
 Verificación: pytest 128 tests + 1 `network` (instala el Engine Linux arm64 real), ruff, Vitest 15 tests y build OK; en Compose se comprobó `deno`/`ffmpeg`/`ffprobe`/`yt-dlp --version` dentro del contenedor, reinicio sin volver a descargar y `docker compose down` con un stream SSE abierto (3 s, gracias a `timeout_graceful_shutdown`).
+
+**2026-11-15 — Resuelto.** Revisado por el orquestador (hashes cruzados con el spike, intercambio con rollback, tarjeta del Engine "Listo" con binarios reales). CI verde en GitHub (run `43754557854`). El bloqueo efectivo del encolado se verifica en los tickets 04 y 05; la espera de la `Queue` durante actualizaciones, en el 06.
