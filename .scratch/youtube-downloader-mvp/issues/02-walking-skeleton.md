@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (Spike — Engine, Docker y empaquetado).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `docker compose up` levanta el backend y sirve el shell de Angular en el puerto publicado solo en `127.0.0.1` del host.
 - [x] `BIND_HOST` y `PORT` solo se usan en desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`.
@@ -14,7 +14,7 @@
 - [x] "Cerrar aplicación" apaga el servidor y limpia `runtime.json`.
 - [x] Peticiones con `Host` no local o mutaciones sin la cabecera de la app son rechazadas.
 - [x] Python 3.13 con `uv`, `ruff` y `pytest` configurados en el contenedor.
-- [ ] GitHub Actions corre lint y tests en el mismo contenedor y queda verde.
+- [x] GitHub Actions corre lint y tests en el mismo contenedor y queda verde.
 - [x] Los tests corren sin Python instalado en el host.
 
 ## Comments
@@ -41,3 +41,5 @@ Sin verificar:
 Comportamiento en Compose: un segundo contenedor con el mismo directorio de datos falla con "Another instance is starting or stuck" (el lock sí se comparte por el bind mount, pero cada contenedor tiene su red y no alcanza el puerto del otro). Documentado en el README.
 
 **2026-11-15 — Revisión del orquestador.** Lint y tests verificados de nuevo (47 backend, 5 Angular). Shell comprobado en el navegador integrado: estado del Engine visible y "Cerrar aplicación" detiene el contenedor con exit 0. Corregido el volumen de datos de Compose: ahora usa `./.dev-data` en vez de `~/.youtube-downloader` para no mezclar binarios Linux con la instalación real. Pendiente: que el workflow de CI corra en GitHub.
+
+**2026-11-15 — Resuelto.** CI verde en GitHub (run `43752415864`): backend, frontend e imagen de la app.
