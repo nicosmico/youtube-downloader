@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+packaging/build/
+packaging/dist/
+
+# Node / Angular
+node_modules/
+frontend/.angular/
+frontend/dist/
+
+# Estáticos generados por el build de Angular
+backend/app/static/
+
+# Datos locales y secretos
+*.log
+*.sqlite3
+*.db
+.env
+.env.*
