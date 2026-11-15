@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 (Cola persistente y concurrencia).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Cada `Quality` produce un archivo cuyo lado menor es menor o igual al tope elegido, también en videos verticales.
 - [x] A 1080p o menos, el archivo es H.264/AAC en `.mp4` cuando YouTube lo ofrece.
@@ -28,3 +28,5 @@
 - **Verificación real** (`docker compose up`, `HOST_DOWNLOAD_DIR=.dev-data/downloads`, ffprobe del contenedor): `jNQXAC9IVRw` como mp3 (`mp3`, 48 kHz), m4a (`aac` LC, 127999 b/s = itag 140 nativo) y opus (`opus`, Ogg); `2PuFyjAs7JA` a 480p: `.mp4` h264 854x480 + aac. Una petición con `quality` y `audioFormat` a la vez devolvió `422 invalid_options`. Solo se probó 480p horizontal en real; el lado menor en verticales y 720p/1080p/2160p se apoyan en el spike 01 y en los tests de contrato. La UI solo se probó con tests de componente.
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (447 backend, 121 frontend, ruff, build). Probado en el navegador integrado: selector Video/Audio, `M4A (AAC, sin recodificar)` por defecto y descarga real completada como "Audio · M4A". Spec actualizada con `invalid_options` y el formato de audio por defecto.
+
+**2026-11-15 — Resuelto.** CI `43764161693` y Native `43764161812` verdes.
