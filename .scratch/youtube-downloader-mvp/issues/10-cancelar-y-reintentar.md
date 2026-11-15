@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 (Cola persistente y concurrencia).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Cancelar un job en cola lo saca sin ejecutarlo.
 - [x] Cancelar un job activo termina `yt-dlp` y sus hijos (`ffmpeg`, Deno), borra su staging y deja el estado `canceled`.
@@ -26,3 +26,5 @@
 - **Verificación**: pytest ×8 seguidos (638), ruff check y format, Vitest (186) y build en verde. Real con `docker compose up --build` y `HOST_DOWNLOAD_DIR=.dev-data/downloads`: `aqz-KE-bpKQ` a 1080p cancelado a mitad de descarga por curl → `canceled`, `/data/staging` vacío, sin procesos `yt-dlp`/`ffmpeg`/`deno` (el contenedor no trae `ps`; se recorrió `/proc`), segundo cancel y retry de un job activo → 409; reintentado (attempt 2) y cancelado de nuevo, y un tercer intento completó con un solo archivo. Medios de prueba borrados. La UI solo se probó con tests de componente. Windows (taskkill /T) no se probó.
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (638 backend ×3, 186 frontend, ruff, build). Probado en el navegador integrado con Big Buck Bunny a 1080p: progreso en vivo (4 %, 9,8 de 275 MB, velocidad y tiempo restante), "Cancelar" pide confirmación y deja "Cancelada" sin procesos de `yt-dlp`/`ffmpeg`/Deno ni staging; "Reintentar" arranca "Intento 2", que se volvió a cancelar. Spec actualizada con `queued_at`, los `409` y la regla de la carrera cancelar/completar. Windows `taskkill /T` sigue sin probarse en real.
+
+**2026-11-15 — Resuelto.** CI `43774780395` y Native `43774780394` verdes.
