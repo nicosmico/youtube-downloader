@@ -11,11 +11,13 @@ from app.engine.commands import ytdlp_base_args
 from app.engine.io import ProcessError, ProcessTimeout, Runner, run_process
 from app.preview.failures import classify_failure, failure
 from app.preview.mapping import PreviewFailure, to_media_preview
+from app.preview.playlists import MAX_ENTRIES, to_playlist_preview
 from app.preview.urls import ClassifiedUrl, UrlKind, UrlRejected, classify_url
 
 log = logging.getLogger("app.preview")
 
-PREVIEW_TIMEOUT_SECONDS = 30
+PREVIEW_TIMEOUT_SECONDS = 30  # a playlist (up to 500 entries, paginated) gets three times this
+_PLAYLIST_END = ["--playlist-end", str(MAX_ENTRIES), "--no-warnings"]
 
 
 class PreviewService:
@@ -36,15 +38,17 @@ class PreviewService:
         except UrlRejected as exc:
             raise PreviewFailure(failure(exc.code)) from None
         if classified.kind is UrlKind.PLAYLIST:
-            # TICKET-09: playlist and channel previews replace this temporary refusal.
-            raise PreviewFailure(failure("playlist_unsupported"))
-        return self._video(classified)
+            data = self._run_json(classified, ["-J", "--flat-playlist", *_PLAYLIST_END], 3)
+            return to_playlist_preview(data, classified)
+        data = self._run_json(classified, ["-J", "--no-warnings", "--no-playlist"])
+        return to_media_preview(data, classified).to_dict()
 
-    def _video(self, classified: ClassifiedUrl) -> dict[str, Any]:
-        args = [*ytdlp_base_args(self._engine), "-J", "--no-warnings", "--no-playlist"]
-        args.append(classified.url)
+    def _run_json(
+        self, classified: ClassifiedUrl, flags: list[str], timeout_factor: int = 1
+    ) -> dict[str, Any]:
+        args = [*ytdlp_base_args(self._engine), *flags, classified.url]
         try:
-            output = self._run(args, self._timeout)
+            output = self._run(args, self._timeout * timeout_factor)
         except ProcessTimeout:
             raise PreviewFailure(failure("timeout")) from None
         except ProcessError as exc:
@@ -57,4 +61,4 @@ class PreviewService:
             raise PreviewFailure(failure("preview_failed")) from None
         if not isinstance(data, dict):
             raise PreviewFailure(failure("preview_failed"))
-        return to_media_preview(data, classified).to_dict()
+        return data

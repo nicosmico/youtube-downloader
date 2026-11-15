@@ -49,6 +49,9 @@ class Job:
     attempt: int = 1
     started_at: str | None = None
     finished_at: str | None = None
+    # Of its Batch (joined on read); None for a single video.
+    batch_title: str | None = None
+    batch_entry_count: int | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Job:
@@ -60,6 +63,8 @@ class Job:
         return {
             "id": self.id,
             "batchId": self.batch_id,
+            "batchTitle": self.batch_title,
+            "batchEntryCount": self.batch_entry_count,
             "playlistIndex": self.playlist_index,
             "url": self.url,
             "title": self.title,
@@ -79,3 +84,19 @@ class Job:
             "startedAt": self.started_at,
             "finishedAt": self.finished_at,
         }
+
+
+@dataclass(frozen=True)
+class Batch:
+    """A playlist enqueue: N jobs that share a title and a folder in the Destination."""
+
+    id: str
+    source_url: str
+    title: str
+    folder_name: str
+    entry_count: int
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Batch:
+        return cls(**dict(row))

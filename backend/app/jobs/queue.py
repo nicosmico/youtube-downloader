@@ -9,7 +9,7 @@ from collections.abc import Callable
 from app.engine.io import ProcessHandle
 from app.jobs import failures
 from app.jobs.events import JobEvents
-from app.jobs.models import Job, JobStatus
+from app.jobs.models import Batch, Job, JobStatus
 from app.jobs.repository import JobRepository
 from app.jobs.runner import JobRunner
 
@@ -71,6 +71,38 @@ class JobQueue:
         self._publish_counts()
         self.kick()
         return job
+
+    def enqueue_batch(
+        self,
+        *,
+        source_url: str,
+        title: str,
+        folder_name: str,
+        entries: list[dict],
+        **options,
+    ) -> tuple[Batch, list[Job]]:
+        """A playlist: one Batch and one `queued` job per Entry (`url`, `index`, `title`)."""
+        batch = self._repo.create_batch(
+            source_url=source_url,
+            title=title,
+            folder_name=folder_name,
+            entry_count=len(entries),
+        )
+        jobs = [
+            self._repo.create(
+                url=e["url"],
+                title=e["title"],
+                batch_id=batch.id,
+                playlist_index=e["index"],
+                **options,
+            )
+            for e in entries
+        ]
+        for job in jobs:
+            self._events.job_updated(job)
+        self._publish_counts()
+        self.kick()
+        return batch, jobs
 
     def kick(self) -> None:
         """Start as many queued jobs as there are free slots (none while held or closed)."""

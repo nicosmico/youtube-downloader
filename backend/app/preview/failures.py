@@ -28,7 +28,6 @@ MESSAGES = {
     "unavailable": "El video no está disponible: fue eliminado o está bloqueado en tu país.",
     "timeout": "YouTube tardó demasiado en responder. Inténtalo de nuevo.",
     "preview_failed": "No se pudo obtener la información del video. Inténtalo de nuevo.",
-    "playlist_unsupported": "Las playlists y canales todavía no se pueden previsualizar.",
 }
 
 _STATUS = {"timeout": 504, "preview_failed": 502}

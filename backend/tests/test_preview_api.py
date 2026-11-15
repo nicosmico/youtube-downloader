@@ -144,14 +144,6 @@ class TestRejectedWithoutYtDlp:
         assert body["message"]
         assert ytdlp.calls == []
 
-    def test_playlists_are_temporarily_unsupported(self, api: TestClient, ytdlp: FakeYtdlp) -> None:
-        for url in (f"https://www.youtube.com/playlist?list={LIST}", "https://youtube.com/@mkbhd"):
-            response = preview(api, url)
-
-            assert response.status_code == 422
-            assert response.json()["code"] == "playlist_unsupported"
-        assert ytdlp.calls == []
-
     def test_a_mix_inside_a_video_url_is_still_a_video(self, api: TestClient) -> None:
         body = preview(api, f"{ZOO}&list=RDjNQXAC9IVRw&start_radio=1").json()
 

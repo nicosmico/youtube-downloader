@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.preview.urls import ClassifiedUrl, UrlKind, UrlRejected, classify_url
+from app.preview.urls import ClassifiedUrl, UrlKind, UrlRejected, classify_url, require_video_url
 
 VID = "dQw4w9WgXcQ"
 WATCH = f"https://www.youtube.com/watch?v={VID}"
@@ -86,14 +86,25 @@ class TestPlaylists:
     @pytest.mark.parametrize(
         "raw, expected",
         [
-            ("https://www.youtube.com/@mkbhd", "https://www.youtube.com/@mkbhd"),
+            ("https://www.youtube.com/@mkbhd", "https://www.youtube.com/@mkbhd/videos"),
             ("https://www.youtube.com/@mkbhd/videos", "https://www.youtube.com/@mkbhd/videos"),
             ("https://m.youtube.com/@mkbhd/shorts", "https://www.youtube.com/@mkbhd/shorts"),
             (
                 "https://www.youtube.com/@mkbhd/streams?x=1",
                 "https://www.youtube.com/@mkbhd/streams",
             ),
-            ("https://www.youtube.com/@mkbhd/", "https://www.youtube.com/@mkbhd"),
+            ("https://www.youtube.com/@mkbhd/", "https://www.youtube.com/@mkbhd/videos"),
+            ("https://www.youtube.com/@mkbhd/featured", "https://www.youtube.com/@mkbhd/videos"),
+            ("https://www.youtube.com/@mkbhd/playlists", "https://www.youtube.com/@mkbhd/videos"),
+            (
+                "https://www.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ",
+                "https://www.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ/videos",
+            ),
+            ("https://www.youtube.com/c/Marques", "https://www.youtube.com/c/Marques/videos"),
+            (
+                "https://www.youtube.com/user/marquesbrownlee",
+                "https://www.youtube.com/user/marquesbrownlee/videos",
+            ),
             ("https://www.youtube.com/@%E3%83%86%E3%82%B9%E3%83%88", None),
             ("https://www.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ", None),
             ("https://www.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ/videos", None),
@@ -102,7 +113,7 @@ class TestPlaylists:
             ("https://www.youtube.com/user/marquesbrownlee", None),
             ("https://www.youtube.com/user/marquesbrownlee/videos", None),
             ("https://music.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ", None),
-            ("youtube.com/@mkbhd", "https://www.youtube.com/@mkbhd"),
+            ("youtube.com/@mkbhd", "https://www.youtube.com/@mkbhd/videos"),
         ],
     )
     def test_channels_and_their_tabs(self, raw: str, expected: str | None) -> None:
@@ -205,3 +216,15 @@ class TestRejections:
     def test_none_is_invalid(self) -> None:
         with pytest.raises(UrlRejected):
             classify_url(None)  # type: ignore[arg-type]
+
+
+class TestRequireVideoUrl:
+    def test_returns_the_normalized_video_url(self) -> None:
+        assert require_video_url(f"https://youtu.be/{VID}?si=x") == WATCH
+
+    @pytest.mark.parametrize(
+        "raw", [PLAYLIST, "https://www.youtube.com/@mkbhd", "https://vimeo.com/1", "nope"]
+    )
+    def test_anything_else_is_rejected(self, raw: str) -> None:
+        with pytest.raises(UrlRejected):
+            require_video_url(raw)

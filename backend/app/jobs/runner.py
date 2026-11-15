@@ -24,6 +24,7 @@ from app.jobs.files import (
     prepare_staging,
     remove_staging,
 )
+from app.jobs.folders import numbered_name, padding_width
 from app.jobs.models import Job, JobStatus
 from app.jobs.progress import (
     Progress,
@@ -109,7 +110,8 @@ class JobRunner:
             log.warning("job %s: no output file in staging", job.id)
             return self._fail(job.id, failures.FILE_MISSING)
         try:
-            final = self._mover.move(staged)
+            subdir, name = self._destination(job, staged)
+            final = self._mover.move(staged, subdir, name)
         except OSError:
             log.exception("job %s: could not move %s", job.id, staged)
             return self._fail(job.id, failures.MOVE_FAILED)
@@ -131,6 +133,15 @@ class JobRunner:
         )
         self._publish(done)
         return done
+
+    def _destination(self, job: Job, staged: Path) -> tuple[str | None, str]:
+        """A single video goes to the Destination as yt-dlp named it; an Entry of a playlist goes
+        to the folder of its Batch as `<NN> - <name>` (spec: "Archivos")."""
+        batch = self._repo.get_batch(job.batch_id) if job.batch_id else None
+        if batch is None or job.playlist_index is None:
+            return None, staged.name
+        width = padding_width(max(batch.entry_count, self._repo.highest_index(batch.id)))
+        return batch.folder_name, numbered_name(job.playlist_index, staged.name, width)
 
     def _interrupt(self, job_id: str) -> Job:
         remove_staging(self._staging_root, job_id)

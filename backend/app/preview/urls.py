@@ -25,6 +25,9 @@ _HOSTNAME = re.compile(r"^(?=.{1,253}$)([a-z0-9-]{1,63}\.)+[a-z0-9-]{2,63}$")
 _ID_PREFIXES = ("shorts", "live", "embed")
 _CHANNEL_PREFIXES = ("channel", "c", "user")
 _PRIVATE_LISTS = frozenset({"WL", "LL"})
+# Tabs that list videos. Any other tab (`featured`, `playlists`, `community`...) lists nested
+# playlists or no videos at all, so it is replaced by `videos`.
+_VIDEO_TABS = frozenset({"videos", "shorts", "streams", "live"})
 
 
 class UrlKind(StrEnum):
@@ -70,7 +73,9 @@ def classify_url(raw: str) -> ClassifiedUrl:
             raise UrlRejected("invalid_url")
         return _playlist_by_list(list_id)
     if _is_channel(segments):
-        return ClassifiedUrl(UrlKind.PLAYLIST, f"{CANONICAL_HOST}/{'/'.join(segments)}")
+        return ClassifiedUrl(
+            UrlKind.PLAYLIST, f"{CANONICAL_HOST}/{'/'.join(_channel_tab(segments))}"
+        )
     raise UrlRejected("invalid_url")
 
 
@@ -130,3 +135,21 @@ def _is_channel(segments: list[str]) -> bool:
     if segments[0] in _CHANNEL_PREFIXES:
         return 2 <= len(segments) <= 3
     return False
+
+
+def _channel_tab(segments: list[str]) -> list[str]:
+    """A channel root returns its tabs as nested playlists: aim at the Videos tab instead.
+
+    A URL that already targets a video tab (Videos, Shorts, Live) is kept as it is.
+    """
+    base = segments[:1] if segments[0].startswith("@") else segments[:2]
+    tab = segments[len(base) :]
+    return segments if tab and tab[0] in _VIDEO_TABS else [*base, "videos"]
+
+
+def require_video_url(raw: str) -> str:
+    """The normalized URL of a single YouTube video. Raises UrlRejected for anything else."""
+    classified = classify_url(raw)
+    if classified.kind is not UrlKind.VIDEO:
+        raise UrlRejected("invalid_url")
+    return classified.url

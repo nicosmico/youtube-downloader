@@ -91,7 +91,6 @@ class TestCreate:
             ("not a url", "invalid_url"),
             ("https://www.youtube.com/watch?v=abc", "invalid_url"),
             ("https://www.youtube.com/playlist?list=RDabcdef", "mix_playlist"),
-            ("https://www.youtube.com/playlist?list=PLabcdef", "playlist_unsupported"),
         ],
     )
     def test_rejects_urls_the_classifier_rejects(

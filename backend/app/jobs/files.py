@@ -77,12 +77,15 @@ class FileMover:
         self._rename = rename
         self._lock = threading.Lock()
 
-    def move(self, source: Path, subdir: str | None = None) -> Path:
-        """Move `source` into the Destination and return its final path."""
+    def move(self, source: Path, subdir: str | None = None, name: str | None = None) -> Path:
+        """Move `source` into the Destination (as `name` if given) and return its final path.
+
+        `subdir` is created if missing and reused if it exists (the folder of a Batch).
+        """
         folder = self.download_dir / subdir if subdir else self.download_dir
         with self._lock:
             folder.mkdir(parents=True, exist_ok=True)
-            target = _free_name(folder, source.name)
+            target = _free_name(folder, name or source.name)
             try:
                 self._rename(source, target)
             except OSError as exc:
