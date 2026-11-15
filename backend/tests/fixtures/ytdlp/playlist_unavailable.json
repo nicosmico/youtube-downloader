@@ -1,0 +1,127 @@
+{
+ "id": "PL59FEE129ADFF2B12",
+ "title": "Test Playlist",
+ "channel": "GoogleVoice",
+ "uploader": "GoogleVoice",
+ "playlist_count": 11,
+ "_type": "playlist",
+ "webpage_url": "https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12",
+ "availability": "public",
+ "thumbnails": [
+  {
+   "url": "https://i.ytimg.com/vi/EjN5avRvApk/hqdefault.jpg?sqp=-oaymwExCNACELwBSFryq4qpAyMIARUAAIhCGAHwAQH4Af4JgALQBYoCDAgAEAEYUyBlKFMwDw==&rs=AOn4CLA6Dkw_bJvCAf11u5LFdI9m2jPXkw"
+  }
+ ],
+ "entries": [
+  {
+   "id": "EjN5avRvApk",
+   "title": "The Google Story",
+   "duration": 133,
+   "url": "https://www.youtube.com/watch?v=EjN5avRvApk",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "nnsSUqgkDwU",
+   "title": "Parisian Love",
+   "duration": 52,
+   "url": "https://www.youtube.com/watch?v=nnsSUqgkDwU",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "xgrcK9Ozb_Q",
+   "title": "Cake",
+   "duration": 60,
+   "url": "https://www.youtube.com/watch?v=xgrcK9Ozb_Q",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "yi50KlsCBio",
+   "title": null,
+   "duration": null,
+   "url": "https://www.youtube.com/watch?v=yi50KlsCBio",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "oXHHkROejik",
+   "title": "Real Time Search Event",
+   "duration": 5607,
+   "url": "https://www.youtube.com/watch?v=oXHHkROejik",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "Hhgfz0zPmH4",
+   "title": "Google Goggles",
+   "duration": 123,
+   "url": "https://www.youtube.com/watch?v=Hhgfz0zPmH4",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "EKuG2M6R4VM",
+   "title": "Personalized Search",
+   "duration": 92,
+   "url": "https://www.youtube.com/watch?v=EKuG2M6R4VM",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "ZNbHGrGJu8Q",
+   "title": null,
+   "duration": null,
+   "url": "https://www.youtube.com/watch?v=ZNbHGrGJu8Q",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "BrXPcaRlBqo",
+   "title": "What is a browser?",
+   "duration": 69,
+   "url": "https://www.youtube.com/watch?v=BrXPcaRlBqo",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "JUf1zxjR_Qw",
+   "title": null,
+   "duration": null,
+   "url": "https://www.youtube.com/watch?v=JUf1zxjR_Qw",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "dsUXAEzaC3Q",
+   "title": "Michael Jackson - Bad (Shortened Version)",
+   "duration": 260,
+   "url": "https://www.youtube.com/watch?v=dsUXAEzaC3Q",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}

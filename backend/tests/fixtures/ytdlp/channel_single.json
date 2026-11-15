@@ -1,0 +1,27 @@
+{
+ "id": "UC4QobU6STFB0P71PMvOGN5A",
+ "title": "jawed - Videos",
+ "channel": "jawed",
+ "uploader": "jawed",
+ "playlist_count": 1,
+ "_type": "playlist",
+ "webpage_url": "https://www.youtube.com/@jawed/videos",
+ "availability": "public",
+ "thumbnails": [
+  {
+   "url": "https://yt3.googleusercontent.com/uI3VE4PVqvCy0xnWLqMJnEzyBUm3T8VHOCp4ee-1RxdHqKXCdUE_qXYQnpf9AfuEoIPactVyDhM=s0"
+  }
+ ],
+ "entries": [
+  {
+   "id": "jNQXAC9IVRw",
+   "title": "Me at the zoo",
+   "duration": 19,
+   "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}

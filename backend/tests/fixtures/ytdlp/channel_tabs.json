@@ -1,0 +1,35 @@
+{
+ "id": "@Fireship",
+ "title": "Fireship",
+ "channel": "Fireship",
+ "uploader": "Fireship",
+ "playlist_count": 3,
+ "_type": "playlist",
+ "webpage_url": "https://www.youtube.com/@Fireship",
+ "availability": "public",
+ "thumbnails": [
+  {
+   "url": "https://yt3.googleusercontent.com/3fPNbkf_xPyCleq77ZhcxyeorY97NtMHVNUbaAON_RBDH9ydL4hJkjxC8x_4mpuopkB8oI7Ct6Y=s0"
+  }
+ ],
+ "entries": [
+  {
+   "id": "UCsBjURrPoezykLs9EqgamOA",
+   "title": "Fireship - Videos",
+   "_type": "playlist",
+   "availability": "public"
+  },
+  {
+   "id": "UCsBjURrPoezykLs9EqgamOA",
+   "title": "Fireship - Live",
+   "_type": "playlist",
+   "availability": "public"
+  },
+  {
+   "id": "UCsBjURrPoezykLs9EqgamOA",
+   "title": "Fireship - Shorts",
+   "_type": "playlist",
+   "availability": "public"
+  }
+ ]
+}

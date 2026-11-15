@@ -1,0 +1,47 @@
+{
+ "id": "UCsBjURrPoezykLs9EqgamOA",
+ "title": "Fireship - Videos",
+ "channel": "Fireship",
+ "uploader": "Fireship",
+ "playlist_count": null,
+ "_type": "playlist",
+ "webpage_url": "https://www.youtube.com/@Fireship/videos",
+ "availability": "public",
+ "thumbnails": [
+  {
+   "url": "https://yt3.googleusercontent.com/3fPNbkf_xPyCleq77ZhcxyeorY97NtMHVNUbaAON_RBDH9ydL4hJkjxC8x_4mpuopkB8oI7Ct6Y=s0"
+  }
+ ],
+ "entries": [
+  {
+   "id": "SOwUWPtXQ9I",
+   "title": "Nvidia just got caught with its pants down...",
+   "duration": 336,
+   "url": "https://www.youtube.com/watch?v=SOwUWPtXQ9I",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "1FurWDiK9A4",
+   "title": "Did Anthropic just save its $1 trillion IPO?",
+   "duration": 334,
+   "url": "https://www.youtube.com/watch?v=1FurWDiK9A4",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "pf5tXJZM1Rw",
+   "title": "OpenAI spent $1.2 million hacking Linux... and it was a bargain",
+   "duration": 390,
+   "url": "https://www.youtube.com/watch?v=pf5tXJZM1Rw",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}

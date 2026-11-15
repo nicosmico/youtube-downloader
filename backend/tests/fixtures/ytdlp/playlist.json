@@ -1,0 +1,37 @@
+{
+ "id": "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf",
+ "title": "Select Lectures",
+ "channel": "Lex Fridman",
+ "uploader": "Lex Fridman",
+ "playlist_count": 2,
+ "_type": "playlist",
+ "webpage_url": "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf",
+ "availability": "public",
+ "thumbnails": [
+  {
+   "url": "https://i.ytimg.com/vi/0VH1Lim8gL8/hqdefault.jpg?sqp=-oaymwEXCNACELwBSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLDihFHMG8jxfDLYDsnEkDFI_1kUaw"
+  }
+ ],
+ "entries": [
+  {
+   "id": "0VH1Lim8gL8",
+   "title": "Deep Learning State of the Art (2020)",
+   "duration": 5261,
+   "url": "https://www.youtube.com/watch?v=0VH1Lim8gL8",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  },
+  {
+   "id": "O5xeyoRL95U",
+   "title": "Deep Learning Basics: Introduction and Overview",
+   "duration": 4086,
+   "url": "https://www.youtube.com/watch?v=O5xeyoRL95U",
+   "_type": "url",
+   "ie_key": "Youtube",
+   "availability": null,
+   "live_status": null
+  }
+ ]
+}
