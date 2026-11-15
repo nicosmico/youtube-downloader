@@ -79,6 +79,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - La `Queue` muestra los jobs `queued`, `downloading` y `processing`. El `History` muestra los terminales; los que no están `completed` ofrecen "Reintentar" y los `completed` ofrecen "Mostrar en Finder/Explorer".
 - Para un video suelto, `best` siempre está disponible, más cada tope (`2160p`, `1080p`, `720p`, `480p`) menor o igual al lado menor máximo del video; por debajo de 480 solo queda `best`. La UI deshabilita el resto. Para playlists muestra todas, porque `--flat-playlist` no trae formatos.
 - Junto a `2160p` la UI indica que el archivo puede requerir un reproductor como VLC (ADR-0009).
+- El preview ofrece un selector Video/Audio. En audio, el formato por defecto es `m4a`: es la pista AAC nativa de YouTube, no se recodifica y se reproduce en todas partes. La elección de modo, calidad y formato se conserva al previsualizar otro enlace; si la calidad elegida no existe en el nuevo video, vuelve a `best`.
 
 ### URLs aceptadas
 
@@ -198,7 +199,7 @@ CREATE TABLE presets (
 
 Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean de YouTube.
 
-Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable` (`422`); `timeout` (`504`); `preview_failed` (`502`, cualquier otro fallo de `yt-dlp`, con mensaje saneado); `engine_not_ready` (`409`). El preview de video usa un tiempo límite de 30 s y, si se agota, mata el árbol de procesos.
+Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. `POST /api/jobs` exige `quality` en modo video y `audioFormat` en modo audio, y rechaza el campo del otro modo, con `422 invalid_options`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable` (`422`); `timeout` (`504`); `preview_failed` (`502`, cualquier otro fallo de `yt-dlp`, con mensaje saneado); `engine_not_ready` (`409`). El preview de video usa un tiempo límite de 30 s y, si se agota, mata el árbol de procesos.
 
 ### Eventos SSE
 
