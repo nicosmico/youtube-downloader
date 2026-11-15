@@ -169,7 +169,7 @@ CREATE TABLE presets (
 );
 ```
 
-- Se siembran los presets `Mejor video` y `MP3` si la tabla está vacía.
+- Se siembran los presets `Mejor video` y `MP3` en cada arranque si la tabla está vacía: si el usuario los borra todos, vuelven en el siguiente arranque.
 
 ### API REST
 
@@ -185,10 +185,12 @@ CREATE TABLE presets (
 | `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer (acción del host). |
 | `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409` si no es terminal. |
 | `GET` | `/api/events` | Stream SSE. |
-| `GET` | `/api/presets` | Lista de `Preset`. |
+| `GET` | `/api/presets` | Lista de `Preset` ordenada por nombre. |
 | `POST` | `/api/presets` | Crea `Preset`. |
 | `PATCH` | `/api/presets/{id}` | Edita `Preset`. |
 | `DELETE` | `/api/presets/{id}` | Elimina `Preset`. |
+
+Presets: nombre de 1 a 40 caracteres, único sin distinguir mayúsculas (`409 preset_name_taken`); `422 invalid_name` o `invalid_options`; `404 preset_not_found`. `POST` responde `201` y `DELETE` `204`. Un `PATCH` con opciones reemplaza y valida el grupo completo (`mode`, `quality`, `audioFormat`).
 | `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
 | `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |
 | `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, también con descargas activas: el Engine queda con `updatePending` y se aplica al terminar. `409` si ya hay una pendiente o en curso (`engine_busy`), si no está listo (`engine_not_ready`) o con `ENGINE_BIN_DIR` (`engine_external`). |
