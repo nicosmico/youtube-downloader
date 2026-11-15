@@ -143,3 +143,45 @@ def test_the_process_handle_is_reachable_while_running(
     h.runner.run(job, on_handle=handles.append)
 
     assert handles == fake_engine.handles
+
+
+def advancing(harness: Harness, seconds: float) -> None:
+    harness.fake.tick = lambda: setattr(harness.clock, "now", harness.clock.now + seconds)
+
+
+def test_with_the_total_announced_percent_only_reaches_100_with_the_last_stream(
+    harness: Harness,
+) -> None:
+    harness.fake.default.postprocessors = ()
+    advancing(harness, 1.0)  # every line is flushed
+
+    harness.run()
+
+    updates = [j for j in harness.published if j.status.value == "downloading"]
+    assert all(j.total_bytes == 5000 for j in updates)
+    percents = [j.progress_percent for j in updates]
+    assert percents == sorted(percents)
+    # 4000 of the 5000 bytes are the video: the bar waits for the audio stream
+    after_video = [j for j in updates if j.downloaded_bytes == 4000]
+    assert after_video and all(j.progress_percent == 80.0 for j in after_video)
+    assert {j.downloaded_bytes for j in updates if j.progress_percent >= 100.0} == {5000}
+
+
+def test_an_approximate_total_never_pushes_the_percent_past_100(harness: Harness) -> None:
+    harness.fake.default.total_override = 4500  # yt-dlp's estimate was too small
+    advancing(harness, 1.0)
+
+    job = harness.run()
+
+    assert max(j.progress_percent for j in harness.published) == 100.0
+    assert job.status.value == "completed"
+
+
+def test_without_the_announced_total_it_falls_back_to_the_aggregation(harness: Harness) -> None:
+    harness.fake.default.announce_total = False
+    advancing(harness, 1.0)
+
+    job = harness.run()
+
+    assert job.status.value == "completed"
+    assert job.total_bytes == 5000

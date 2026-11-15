@@ -207,7 +207,7 @@ class TestHappyPath:
     ) -> None:
         enqueue(jobs_client)
 
-        # The real clock is used: throttled lines wait for the status change, which flushes them.
+        # The clock is frozen: throttled lines wait for the status change, which flushes them.
         updates = [d for d in events.named("job.updated") if d["status"] != "queued"]
         processing = next(d for d in updates if d["status"] == "processing")
         assert (processing["downloadedBytes"], processing["totalBytes"]) == (5000, 5000)

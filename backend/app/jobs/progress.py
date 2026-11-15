@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 PROGRESS_PREFIX = "PROGRESS"
+TOTAL_PREFIX = "TOTAL"
 POSTPROC_PREFIX = "POSTPROC"
 MOVE_FILES = "MoveFiles"
 
@@ -42,6 +43,10 @@ def _number(value: Any) -> float | None:
     return float(value)
 
 
+def is_total_line(line: str) -> bool:
+    return line.startswith(TOTAL_PREFIX)
+
+
 def is_progress_line(line: str) -> bool:
     return line.startswith(PROGRESS_PREFIX)
 
@@ -63,8 +68,21 @@ class ProgressTracker:
         # filename -> (downloaded bytes, total bytes or None while unknown)
         self._streams: dict[str, tuple[int, int | None]] = {}
         self._percent = 0.0
+        self._expected: int | None = None  # whole-job size printed before the download
         self._speed: float | None = None
         self._eta: int | None = None
+
+    def set_expected(self, line: str) -> None:
+        """Read `TOTAL<json>` (`before_dl:` of `%(filesize,filesize_approx)j`, merged formats
+        included): the job's total up front, so the percent does not reach 100 after the first
+        stream. `null`, garbage or non-positive values are ignored."""
+        try:
+            value = json.loads(line[len(TOTAL_PREFIX) :])
+        except ValueError:
+            return
+        number = _number(value)
+        if number is not None and number > 0:
+            self._expected = int(number)
 
     def feed(self, line: str) -> Progress | None:
         """Consume a stdout line; returns the new aggregate for a usable PROGRESS line."""
@@ -90,6 +108,9 @@ class ProgressTracker:
         done = sum(d for d, _ in self._streams.values())
         totals = [t for _, t in self._streams.values()]
         total_bytes = None if any(t is None for t in totals) else sum(t for t in totals if t)
+        if self._expected is not None:
+            # An approximate size may be too small: never let the bytes exceed the total.
+            total_bytes = max(self._expected, done)
         if total_bytes:
             # Never go backwards: the audio stream is unknown until it starts and grows the total.
             self._percent = max(self._percent, min(100.0, done / total_bytes * 100))

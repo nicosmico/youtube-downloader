@@ -41,6 +41,9 @@ def download_args(engine: EngineManager, job: Job, staging: Path) -> list[str]:
         "download:PROGRESS%(progress)j",
         "--progress-template",
         "postprocess:POSTPROC%(progress)j",
+        # Whole-job size before downloading (video + audio of a merged format): a stable total.
+        "--print",
+        "before_dl:TOTAL%(filesize,filesize_approx)j",
         "--print",
         "after_move:filepath",
         "-P",

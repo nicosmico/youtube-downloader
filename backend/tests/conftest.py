@@ -187,6 +187,9 @@ def make_jobs_client(
             "streamer": fake_engine,
             "broadcaster": events,
             "spawn_job": lambda fn: fn(),
+            "clock": lambda: (
+                0.0
+            ),  # frozen: progress is flushed on the first line and on status changes
         }
         return TestClient(create_app(**{**options, **kwargs}), base_url=f"http://{HOST}")
 

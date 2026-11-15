@@ -29,6 +29,7 @@ from app.jobs.progress import (
     Progress,
     ProgressTracker,
     is_progress_line,
+    is_total_line,
     starts_processing,
 )
 from app.jobs.repository import JobRepository
@@ -152,6 +153,8 @@ class _Attempt:
                     self.last_progress = progress
                     self._dirty = True
                     self._flush_if_due()
+            elif is_total_line(line):
+                self._tracker.set_expected(line)
             elif line.strip():
                 self.reported_path = line.strip()  # the last one is `after_move:filepath`
 

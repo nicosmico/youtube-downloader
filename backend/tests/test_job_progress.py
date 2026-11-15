@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.jobs.progress import ProgressTracker, starts_processing
 
 
@@ -103,3 +105,46 @@ def test_processing_starts_with_the_first_postprocessor_that_is_not_move_files()
     assert not starts_processing(pp("started", "MoveFiles"))
     assert not starts_processing("ERROR: something")
     assert not starts_processing("POSTPROC{broken")
+
+
+class TestExpectedTotal:
+    def test_percent_stays_below_100_until_the_last_stream_finishes(self) -> None:
+        tracker = ProgressTracker()
+        tracker.set_expected("TOTAL1000")
+        video = {"filename": "v.mp4", "total_bytes": 800}
+        audio = {"filename": "a.m4a", "total_bytes": 200}
+
+        mid = tracker.feed(line(status="downloading", downloaded_bytes=400, **video))
+        video_done = tracker.feed(line(status="finished", downloaded_bytes=800, **video))
+        audio_mid = tracker.feed(line(status="downloading", downloaded_bytes=100, **audio))
+        done = tracker.feed(line(status="finished", downloaded_bytes=200, **audio))
+
+        assert mid is not None and (mid.percent, mid.total_bytes) == (40.0, 1000)
+        assert video_done is not None and video_done.percent == 80.0
+        assert audio_mid is not None and audio_mid.percent == 90.0
+        assert done is not None and done.percent == 100.0
+
+    def test_an_underestimate_never_exceeds_100(self) -> None:
+        tracker = ProgressTracker()
+        tracker.set_expected("TOTAL500")
+
+        p = tracker.feed(line(status="downloading", downloaded_bytes=800, total_bytes=800))
+
+        assert p is not None and (p.percent, p.total_bytes) == (100.0, 800)
+
+    @pytest.mark.parametrize("text", ["TOTALnull", "TOTAL", "TOTAL{bad", "TOTAL0", 'TOTAL"x"'])
+    def test_unusable_totals_fall_back_to_the_aggregation(self, text: str) -> None:
+        tracker = ProgressTracker()
+        tracker.set_expected(text)
+
+        p = tracker.feed(line(status="downloading", downloaded_bytes=250, total_bytes=1000))
+
+        assert p is not None and (p.percent, p.total_bytes) == (25.0, 1000)
+
+    def test_an_approximate_float_total_is_accepted(self) -> None:
+        tracker = ProgressTracker()
+        tracker.set_expected("TOTAL2000.7")
+
+        p = tracker.feed(line(status="downloading", downloaded_bytes=500, total_bytes=None))
+
+        assert p is not None and p.percent == 25.0

@@ -31,6 +31,8 @@ class Scenario:
     fail_with: str | None = None  # stderr text; the process exits with 1 after some progress
     hold: bool = False  # block after the first progress line until `release()`
     content: bytes = b"fake-video-bytes"
+    announce_total: bool = True  # print `TOTAL<sum of the streams>` first (before_dl)
+    total_override: int | None = None  # what TOTAL announces instead (e.g. an approximation)
     no_path: bool = False  # do not print the final path (the runner must find the file)
 
 
@@ -98,6 +100,10 @@ class FakeEngine:
 
     def _run(self, sc: Scenario, staging: Path, on_stdout, on_stderr) -> int:
         first = True
+        if sc.announce_total:
+            sizes = [t if t is not None else 300 for _, t in sc.streams]
+            total = sc.total_override if sc.total_override is not None else sum(sizes)
+            on_stdout(f"TOTAL{total}")
         for name, total in sc.streams:
             tmp = str(staging / f"{name}.part")
             size = total if total is not None else 300

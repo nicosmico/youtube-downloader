@@ -38,7 +38,8 @@ def test_engine_flags_and_the_download_contract(engine: EngineManager, tmp_path:
         assert flag in args
     templates = [args[i + 1] for i, a in enumerate(args) if a == "--progress-template"]
     assert templates == ["download:PROGRESS%(progress)j", "postprocess:POSTPROC%(progress)j"]
-    assert value_after(args, "--print") == "after_move:filepath"
+    prints = [args[i + 1] for i, a in enumerate(args) if a == "--print"]
+    assert prints == ["before_dl:TOTAL%(filesize,filesize_approx)j", "after_move:filepath"]
     assert value_after(args, "-P") == str(tmp_path / "staging" / "j1")
     assert value_after(args, "-o") == "%(title)s.%(ext)s"
     assert value_after(args, "--merge-output-format") == "mp4"
