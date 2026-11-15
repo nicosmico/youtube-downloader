@@ -30,6 +30,16 @@ export const TEXTS = {
     quality2160Hint: 'puede requerir VLC',
     maxResolution: 'Resolución máxima:',
     fullPlaylist: 'Ver playlist completa',
+    download: 'Descargar',
+    enqueuing: 'Encolando…',
+    enqueued: 'Añadido a las descargas.',
+    enqueueErrors: {
+      engine_not_ready: 'El motor de descarga todavía no está listo.',
+      audio_unsupported: 'La descarga de audio todavía no está disponible.',
+      playlist_unsupported: 'Las playlists y canales todavía no se pueden descargar.',
+      network: 'No se pudo contactar con el servidor local.',
+      unknown: 'No se pudo añadir la descarga. Inténtalo de nuevo.',
+    } as Record<string, string>,
     errors: {
       invalid_url:
         'Ese enlace no parece válido. Pega la dirección completa de un video de YouTube.',
@@ -46,6 +56,25 @@ export const TEXTS = {
       network: 'No se pudo contactar con el servidor local.',
       unknown: 'Ocurrió un error inesperado. Inténtalo de nuevo.',
     } as Record<string, string>,
+  },
+  downloads: {
+    heading: 'Descargas',
+    empty: 'Todavía no hay descargas.',
+    untitled: 'Video de YouTube',
+    status: {
+      queued: 'En cola',
+      downloading: 'Descargando',
+      processing: 'Procesando',
+      completed: 'Completado',
+      failed: 'Falló',
+      canceled: 'Cancelado',
+      interrupted: 'Interrumpido',
+    } as Record<string, string>,
+    unknownStatus: 'Desconocido',
+    eta: 'Quedan',
+    openFolder: 'Abrir carpeta',
+    folderOpened: 'Carpeta abierta.',
+    openFailed: 'No se pudo abrir la carpeta de descargas.',
   },
   health: {
     unreachable: 'No se pudo contactar con el servidor local.',

@@ -59,6 +59,7 @@ describe('App', () => {
     await fixture.whenStable();
     stream().open();
     http.expectOne('/api/system/engine').flush({ ...ENGINE, status: 'missing' });
+    http.expectOne((r) => r.url === '/api/jobs').flush({ jobs: [], nextBefore: null });
     await fixture.whenStable();
     fixture.detectChanges();
 

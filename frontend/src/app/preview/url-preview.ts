@@ -12,6 +12,7 @@ import {
   timer,
 } from 'rxjs';
 import { EngineService } from '../core/engine.service';
+import { EnqueueError, JobsService } from '../core/jobs.service';
 import { MediaPreview, PreviewError, PreviewService, Quality } from '../core/preview.service';
 import { TEXTS } from '../core/texts';
 
@@ -31,6 +32,19 @@ export function looksLikeUrl(value: string): boolean {
   return /^(https?:\/\/)?[^\s/.]+(\.[^\s/.]+)+(\/\S*)?$/i.test(value.trim());
 }
 
+/** Spanish text for a rejected enqueue: a known code, else the server's own message. */
+function enqueueMessage(error: unknown): string {
+  const texts = TEXTS.preview;
+  if (!(error instanceof EnqueueError)) {
+    return texts.enqueueErrors['unknown'];
+  }
+  return (
+    texts.enqueueErrors[error.code] ??
+    texts.errors[error.code] ??
+    (error.message || texts.enqueueErrors['unknown'])
+  );
+}
+
 /** `75` -> `1:15`, `3725` -> `1:02:05`. */
 export function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
@@ -48,6 +62,7 @@ export function formatDuration(seconds: number): string {
 })
 export class UrlPreview {
   private readonly previews = inject(PreviewService);
+  private readonly jobs = inject(JobsService);
   protected readonly engineReady = inject(EngineService).engineReady;
   private readonly requests = new Subject<Request>();
 
@@ -61,8 +76,11 @@ export class UrlPreview {
     const code = this.errorCode();
     return code ? (TEXTS.preview.errors[code] ?? TEXTS.preview.errors['unknown']) : null;
   });
-  /** The Quality picked in the selector; ticket 05 reads it to enqueue. */
+  /** The Quality picked in the selector; "Descargar" enqueues with it. */
   readonly quality = signal<Quality>('best');
+  protected readonly enqueuing = signal(false);
+  protected readonly enqueued = signal(false);
+  protected readonly enqueueError = signal<string | null>(null);
 
   constructor() {
     this.requests
@@ -129,6 +147,25 @@ export class UrlPreview {
     this.quality.set(value as Quality);
   }
 
+  protected download(media: MediaPreview): void {
+    if (!this.engineReady() || this.enqueuing()) {
+      return;
+    }
+    this.enqueuing.set(true);
+    this.enqueued.set(false);
+    this.enqueueError.set(null);
+    this.jobs.enqueue(media.url, this.quality(), media.title).subscribe({
+      next: () => {
+        this.enqueuing.set(false);
+        this.enqueued.set(true);
+      },
+      error: (error: unknown) => {
+        this.enqueuing.set(false);
+        this.enqueueError.set(enqueueMessage(error));
+      },
+    });
+  }
+
   private schedule(url: string, immediate: boolean): void {
     // Anything pending or in flight is stale from now on: clear the old result right away.
     if (!looksLikeUrl(url)) {
@@ -138,6 +175,8 @@ export class UrlPreview {
   }
 
   private apply(outcome: Outcome): void {
+    this.enqueued.set(false);
+    this.enqueueError.set(null);
     switch (outcome.state) {
       case 'idle':
         this.reset();

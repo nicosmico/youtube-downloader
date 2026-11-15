@@ -1,5 +1,8 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, InjectionToken, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
+import { EventStreamService, eventData } from './event-stream.service';
+
+export { EVENT_SOURCE_FACTORY } from './event-stream.service';
 
 export type EngineStatus = 'missing' | 'installing' | 'ready' | 'error';
 
@@ -17,18 +20,12 @@ export interface EngineInfo {
   updateMessage: string | null;
 }
 
-/** Creates the EventSource of the server stream; replaced by a fake in tests. */
-export const EVENT_SOURCE_FACTORY = new InjectionToken<(url: string) => EventSource>(
-  'EVENT_SOURCE_FACTORY',
-  { providedIn: 'root', factory: () => (url: string) => new EventSource(url) },
-);
-
 /** Live Engine state: REST for commands and rehydration, SSE (`engine.updated`) for changes. */
 @Injectable({ providedIn: 'root' })
 export class EngineService implements OnDestroy {
   private readonly http = inject(HttpClient);
-  private readonly createSource = inject(EVENT_SOURCE_FACTORY);
-  private source: EventSource | null = null;
+  private readonly stream = inject(EventStreamService);
+  private connected = false;
 
   readonly engine = signal<EngineInfo | null>(null);
   /** True once the Engine is `ready`: the enqueue and preview UI use this to block actions. */
@@ -37,15 +34,13 @@ export class EngineService implements OnDestroy {
 
   /** Opens the event stream (idempotent). On every (re)connect the state is fetched again. */
   connect(): void {
-    if (this.source) {
+    if (this.connected) {
       return;
     }
-    const source = this.createSource('/api/events');
-    source.addEventListener('open', () => this.refresh());
-    source.addEventListener('engine.updated', (event) => {
-      this.engine.set(JSON.parse((event as MessageEvent<string>).data) as EngineInfo);
-    });
-    this.source = source;
+    this.connected = true;
+    this.stream.on('open', () => this.refresh());
+    this.stream.on('engine.updated', (event) => this.engine.set(eventData<EngineInfo>(event)));
+    this.stream.connect();
   }
 
   refresh(): void {
@@ -64,8 +59,7 @@ export class EngineService implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.source?.close();
-    this.source = null;
+    this.stream.close();
   }
 
   private command(url: string): void {

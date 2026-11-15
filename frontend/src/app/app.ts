@@ -1,20 +1,23 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { EngineService } from './core/engine.service';
+import { JobsService } from './core/jobs.service';
 import { Health, SystemService } from './core/system.service';
 import { TEXTS } from './core/texts';
+import { Downloads } from './downloads/downloads';
 import { UrlPreview } from './preview/url-preview';
 
 type ShutdownState = 'idle' | 'closing' | 'done' | 'failed';
 
 @Component({
   selector: 'app-root',
-  imports: [UrlPreview],
+  imports: [UrlPreview, Downloads],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
 export class App implements OnInit {
   private readonly system = inject(SystemService);
   protected readonly engineService = inject(EngineService);
+  private readonly jobsService = inject(JobsService);
 
   protected readonly texts = TEXTS;
   protected readonly health = signal<Health | null>(null);
@@ -23,6 +26,7 @@ export class App implements OnInit {
 
   ngOnInit(): void {
     this.engineService.connect();
+    this.jobsService.connect();
     this.system.health().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.unreachable.set(true),

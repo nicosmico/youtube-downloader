@@ -1,0 +1,59 @@
+<section class="card" aria-labelledby="downloads-heading">
+  <h2 id="downloads-heading">{{ texts.downloads.heading }}</h2>
+
+  @if (jobsService.jobs().length === 0) {
+    <p class="meta" data-testid="downloads-empty">{{ texts.downloads.empty }}</p>
+  }
+
+  @for (job of jobsService.jobs(); track job.id) {
+    <article class="job" data-testid="job-card" [attr.data-status]="job.status">
+      <header>
+        <h3 data-testid="job-title">{{ title(job) }}</h3>
+        <span class="status" [class]="job.status" data-testid="job-status">
+          {{ statusLabel(job) }}
+        </span>
+      </header>
+
+      @if (showsProgress(job)) {
+        <progress
+          max="100"
+          data-testid="job-progress"
+          [value]="percent(job)"
+          [attr.aria-label]="statusLabel(job)"
+        ></progress>
+        <p class="meta numbers">
+          <span data-testid="job-percent">{{ percent(job) }}%</span>
+          @if (bytes(job); as text) {
+            <span data-testid="job-bytes">{{ text }}</span>
+          }
+          @if (speed(job); as text) {
+            <span data-testid="job-speed">{{ text }}</span>
+          }
+          @if (eta(job); as text) {
+            <span data-testid="job-eta">{{ texts.downloads.eta }} {{ text }}</span>
+          }
+        </p>
+      }
+
+      @if (job.error) {
+        <p class="error" role="alert" data-testid="job-error">{{ job.error }}</p>
+      }
+
+      @if (job.status === 'completed') {
+        <button type="button" class="action" data-testid="open-folder" (click)="openFolder()">
+          {{ texts.downloads.openFolder }}
+        </button>
+      }
+    </article>
+  }
+
+  @if (folderMessage(); as message) {
+    <p
+      [class]="message.ok ? 'meta' : 'error'"
+      [attr.role]="message.ok ? 'status' : 'alert'"
+      data-testid="folder-message"
+    >
+      {{ message.text }}
+    </p>
+  }
+</section>

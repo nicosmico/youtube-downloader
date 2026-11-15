@@ -18,6 +18,11 @@ export class SystemService {
     return this.http.get<Health>('/api/health');
   }
 
+  /** Host action: the server opens the Downloads folder in Finder/Explorer. */
+  openDownloads(): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>('/api/system/open-downloads', null);
+  }
+
   shutdown(): Observable<unknown> {
     return this.http.post('/api/system/shutdown', null);
   }

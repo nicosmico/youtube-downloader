@@ -9,6 +9,7 @@ import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
 import { ENGINE_READY } from '../core/engine.service.spec';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
+import { JobsService } from '../core/jobs.service';
 import { MEDIA } from '../core/preview.service.spec';
 import { DEBOUNCE_MS, UrlPreview, formatDuration, looksLikeUrl } from './url-preview';
 
@@ -337,6 +338,99 @@ describe('UrlPreview', () => {
 
       expect(first.cancelled).toBe(true);
       expect(el('preview-loading')).toBeNull();
+    });
+  });
+
+  describe('"Descargar"', () => {
+    const JOB = {
+      id: 'job1',
+      batchId: null,
+      playlistIndex: null,
+      url: MEDIA.url,
+      title: MEDIA.title,
+      mode: 'video',
+      quality: '720p',
+      audioFormat: null,
+      status: 'queued',
+      progressPercent: 0,
+      downloadedBytes: null,
+      totalBytes: null,
+      speed: null,
+      eta: null,
+      outputPath: null,
+      error: null,
+      attempt: 1,
+      createdAt: '2026-11-15T12:00:00.000000+00:00',
+      startedAt: null,
+      finishedAt: null,
+    };
+    const button = () => el<HTMLButtonElement>('download-button')!;
+
+    beforeEach(async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+    });
+
+    it('enqueues the previewed video with the selected quality and its title', async () => {
+      const select = el<HTMLSelectElement>('quality-select')!;
+      select.value = '720p';
+      select.dispatchEvent(new Event('change'));
+      await settle();
+
+      expect(button().textContent).toContain('Descargar');
+      button().click();
+      await settle();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      expect(req.request.body).toEqual({
+        url: MEDIA.url,
+        mode: 'video',
+        quality: '720p',
+        title: MEDIA.title,
+      });
+      expect(button().disabled).toBe(true);
+      await answer(req, { batchId: null, jobs: [JOB] });
+
+      expect(el('enqueued')?.textContent).toContain('Añadido');
+      expect(button().disabled).toBe(false);
+      expect(
+        TestBed.inject(JobsService)
+          .jobs()
+          .map((j) => j.id),
+      ).toEqual(['job1']);
+    });
+
+    it('shows a Spanish error when the server refuses', async () => {
+      button().click();
+      await settle();
+
+      await answer(http.expectOne('/api/jobs'), { code: 'engine_not_ready', message: 'x' }, 409);
+
+      expect(el('enqueue-error')?.textContent).toContain('motor de descarga');
+      expect(el('enqueued')).toBeNull();
+    });
+
+    it('falls back to the server message for unknown codes', async () => {
+      button().click();
+      await settle();
+
+      await answer(
+        http.expectOne('/api/jobs'),
+        { code: 'weird', message: 'Mensaje del servidor' },
+        422,
+      );
+
+      expect(el('enqueue-error')?.textContent).toContain('Mensaje del servidor');
+    });
+
+    it('is disabled (and sends nothing) while the Engine is not ready', async () => {
+      engine.engine.set({ ...ENGINE_READY, status: 'installing' } as EngineInfo);
+      await settle();
+
+      expect(el('download-button')).toBeNull();
+      http.expectNone('/api/jobs');
     });
   });
 

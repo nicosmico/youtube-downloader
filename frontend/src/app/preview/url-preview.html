@@ -73,6 +73,21 @@
                 }
               </select>
             </label>
+            <button
+              type="button"
+              class="primary"
+              data-testid="download-button"
+              [disabled]="!engineReady() || enqueuing()"
+              (click)="download(media)"
+            >
+              {{ enqueuing() ? texts.preview.enqueuing : texts.preview.download }}
+            </button>
+            @if (enqueued()) {
+              <p class="meta" role="status" data-testid="enqueued">{{ texts.preview.enqueued }}</p>
+            }
+            @if (enqueueError(); as message) {
+              <p class="error" role="alert" data-testid="enqueue-error">{{ message }}</p>
+            }
             @if (media.playlistUrl; as playlistUrl) {
               <button
                 type="button"

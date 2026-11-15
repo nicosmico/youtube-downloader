@@ -72,3 +72,18 @@ button.action {
   font: inherit;
   cursor: pointer;
 }
+button.primary {
+  margin-top: 0.75rem;
+  margin-right: 0.5rem;
+  border: 1px solid #1c1c1e;
+  background: #1c1c1e;
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 0.45rem 1.1rem;
+  font: inherit;
+  cursor: pointer;
+}
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
