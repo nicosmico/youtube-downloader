@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
 import { EVENT_SOURCE_FACTORY } from '../core/event-stream.service';
-import { JOB } from '../core/jobs.service.spec';
+import { JOB } from '../../testing/fixtures';
 import { Job, JobsService } from '../core/jobs.service';
 import { Downloads, formatBytes } from './downloads';
 

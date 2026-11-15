@@ -3,17 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from './api.interceptor';
-import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from './engine.service';
-
-export const ENGINE_READY: EngineInfo = {
-  status: 'ready',
-  message: null,
-  versions: { ytDlp: '2026.10.26', ffmpeg: '9.0.2', ffprobe: '9.0.2', deno: '2.9.8' },
-  updating: false,
-  updatePending: false,
-  lastUpdateCheck: null,
-  updateMessage: null,
-};
+import { EVENT_SOURCE_FACTORY, EngineService } from './engine.service';
+import { ENGINE_READY } from '../../testing/fixtures';
 
 describe('EngineService', () => {
   let service: EngineService;

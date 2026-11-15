@@ -3,19 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { appHeaderInterceptor } from './api.interceptor';
 import { MediaPreview, PreviewError, PreviewService } from './preview.service';
-
-export const MEDIA: MediaPreview = {
-  kind: 'video',
-  id: 'Jt5fgKBqZSY',
-  url: 'https://www.youtube.com/watch?v=Jt5fgKBqZSY',
-  title: 'Un Short vertical',
-  thumbnail: 'https://i.ytimg.com/vi/Jt5fgKBqZSY/maxresdefault.jpg',
-  duration: 32,
-  author: 'YouTube',
-  availableQualities: ['best', '1080p', '720p', '480p'],
-  maxQuality: '1080p',
-  maxResolution: 1080,
-};
+import { MEDIA } from '../../testing/fixtures';
 
 describe('PreviewService', () => {
   let service: PreviewService;

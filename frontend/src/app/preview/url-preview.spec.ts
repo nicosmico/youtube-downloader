@@ -7,10 +7,9 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
-import { ENGINE_READY } from '../core/engine.service.spec';
+import { ENGINE_READY, MEDIA } from '../../testing/fixtures';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
 import { JobsService } from '../core/jobs.service';
-import { MEDIA } from '../core/preview.service.spec';
 import { DEBOUNCE_MS, UrlPreview, formatDuration, looksLikeUrl } from './url-preview';
 
 const URL_A = 'https://www.youtube.com/watch?v=Jt5fgKBqZSY';

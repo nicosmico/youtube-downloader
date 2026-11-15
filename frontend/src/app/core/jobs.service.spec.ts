@@ -5,29 +5,7 @@ import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from './api.interceptor';
 import { EVENT_SOURCE_FACTORY } from './event-stream.service';
 import { EnqueueError, Job, JobsService } from './jobs.service';
-
-export const JOB: Job = {
-  id: 'job1',
-  batchId: null,
-  playlistIndex: null,
-  url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-  title: 'Me at the zoo',
-  mode: 'video',
-  quality: 'best',
-  audioFormat: null,
-  status: 'queued',
-  progressPercent: 0,
-  downloadedBytes: null,
-  totalBytes: null,
-  speed: null,
-  eta: null,
-  outputPath: null,
-  error: null,
-  attempt: 1,
-  createdAt: '2026-11-15T12:00:00.000000+00:00',
-  startedAt: null,
-  finishedAt: null,
-};
+import { JOB } from '../../testing/fixtures';
 
 describe('JobsService', () => {
   let service: JobsService;
