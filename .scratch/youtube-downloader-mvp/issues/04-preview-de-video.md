@@ -44,3 +44,5 @@ Ejemplo (Short, recortado):
 ```json
 {"kind":"video","id":"Jt5fgKBqZSY","url":"https://www.youtube.com/watch?v=Jt5fgKBqZSY","title":"ok so lunch is hitting harder than ever imagined…","thumbnail":"https://i.ytimg.com/vi/Jt5fgKBqZSY/maxresdefault.jpg","duration":32,"author":"YouTube","availableQualities":["best","1080p","720p","480p"],"maxQuality":"1080p","maxResolution":1080}
 ```
+
+**2026-11-15 — Revisión del orquestador.** Checks repetidos (313 backend, 87 frontend, ruff, build). Probado en el navegador integrado con el Engine real: preview de "Me at the zoo" con `list=` (solo "Mejor disponible" por ser 240p), "Ver playlist completa" muestra el aviso provisional y una URL de Vimeo muestra "Solo se admiten enlaces de YouTube.". Spec actualizada con `maxResolution`, códigos HTTP del preview y reglas de calidades y `live_status`.

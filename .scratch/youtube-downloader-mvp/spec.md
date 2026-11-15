@@ -77,7 +77,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Angular consume REST para comandos y SSE para eventos.
 - Al reconectar SSE, el cliente rehidrata con `GET /api/jobs`; no depende de eventos perdidos.
 - La `Queue` muestra los jobs `queued`, `downloading` y `processing`. El `History` muestra los terminales; los que no están `completed` ofrecen "Reintentar" y los `completed` ofrecen "Mostrar en Finder/Explorer".
-- Para un video suelto, la UI deshabilita las `Quality` por encima de la máxima disponible. Para playlists muestra todas, porque `--flat-playlist` no trae formatos.
+- Para un video suelto, `best` siempre está disponible, más cada tope (`2160p`, `1080p`, `720p`, `480p`) menor o igual al lado menor máximo del video; por debajo de 480 solo queda `best`. La UI deshabilita el resto. Para playlists muestra todas, porque `--flat-playlist` no trae formatos.
 - Junto a `2160p` la UI indica que el archivo puede requerir un reproductor como VLC (ADR-0009).
 
 ### URLs aceptadas
@@ -86,7 +86,7 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Una URL con `v=` (o `youtu.be/<id>`, `/shorts/<id>`) es un video, aunque lleve `list=`. En ese caso la respuesta incluye `playlistUrl` y la UI ofrece "ver playlist completa".
 - Una URL de lista (`/playlist?list=`) o de canal (`/@handle`, `/channel/…`, `/c/…`, `/user/…` y sus pestañas) es una `Playlist`.
 - Los mixes automáticos (`list=RD…`) se rechazan con `mix_playlist`.
-- Los directos y estrenos pendientes (`live_status` distinto de `not_live` y `was_live`) se rechazan con `live_content`.
+- Los directos y estrenos pendientes se rechazan con `live_content`: se aceptan `live_status` `not_live`, `was_live` o ausente; cualquier otro valor (`is_live`, `is_upcoming`, `post_live`, desconocido) se rechaza. Un estreno pendiente o un directo terminado sin grabación hacen fallar `yt-dlp -J` ("This live event will begin…"), y ese error de stderr también se traduce a `live_content`.
 - El preview de una `Playlist` lista como máximo 500 `Entry` (`--playlist-end 500`) y marca `truncated: true` si hay más.
 
 ### Engine
@@ -191,11 +191,11 @@ CREATE TABLE presets (
 | `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer (acción del host). |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
-`MediaPreview` incluye `kind` (`video` o `playlist`), título, miniatura, duración, autor, calidades disponibles, `playlistUrl` si la URL de video venía de una lista, y para playlists `entries` y `truncated`. Cada `Entry` lleva `{id, url, index, title, duration, available, unavailableReason?}`.
+`MediaPreview` incluye `kind` (`video` o `playlist`), `id`, `url`, título, miniatura, duración, autor, `availableQualities`, `maxQuality`, `maxResolution` (lado menor máximo, en píxeles), `playlistUrl` si la URL de video venía de una lista, y para playlists `entries` y `truncated`. Cada `Entry` lleva `{id, url, index, title, duration, available, unavailableReason?}`.
 
 Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean de YouTube.
 
-Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable`, `timeout`, `engine_not_ready`.
+Los errores usan `{code, message, detail?}`. El `message` de los errores que ve el usuario (Engine, preview, jobs) va en español; los rechazos de seguridad, que no llegan a la UI, pueden ir en inglés. Las operaciones que necesitan el Engine responden `409` con `engine_not_ready` si no está `ready`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable` (`422`); `timeout` (`504`); `preview_failed` (`502`, cualquier otro fallo de `yt-dlp`, con mensaje saneado); `engine_not_ready` (`409`). El preview de video usa un tiempo límite de 30 s y, si se agota, mata el árbol de procesos.
 
 ### Eventos SSE
 

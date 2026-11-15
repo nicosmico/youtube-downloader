@@ -12,4 +12,5 @@
 - [ ] Los archivos se guardan en `DOWNLOAD_DIR/<folder_name>/<NN> - <título>.<ext>` (por defecto `~/Downloads`), con `NN` según la posición en la playlist.
 - [ ] `folder_name` es válido en macOS y Windows; descargar la misma playlist dos veces reutiliza la carpeta y resuelve colisiones por archivo.
 - [ ] Los jobs de un batch son independientes entre sí.
+- [ ] Se elimina el rechazo provisional `playlist_unsupported` del ticket 04 (marcado `TICKET-09` en el código).
 - [ ] Tests unitarios de saneado y numeración, y tests de integración con `FakeEngine` para preview y descarga de playlists.
