@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (Descarga de un video end-to-end), 14 (Smoke de empaquetado nativo).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Con cinco jobs encolados nunca hay más de dos activos.
 - [x] El orden FIFO se respeta.
@@ -28,3 +28,5 @@
 - **Verificación real** (`docker compose up`, `HOST_DOWNLOAD_DIR=.dev-data/downloads`): tres descargas simultáneas, `GET /api/jobs` nunca mostró más de dos `downloading`; con tres videos largos en cola, `docker compose restart app` dejó los dos activos `interrupted` (staging vacío, sin procesos huérfanos) y el `queued` se reanudó solo. La UI solo se probó con tests de componente.
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (423 backend ×2, 125 frontend, ruff, build). Etiquetas de estado unificadas en femenino ("Completada", "Fallida", "Cancelada", "Interrumpida"). Spec actualizada con `updatePending`, el `202` de la actualización manual, el estado inicial del stream SSE y la reconciliación al arrancar y al apagar.
+
+**2026-11-15 — Resuelto.** El primer CI tras el merge falló en el frontend ("No test suite found") porque unos specs importaban datos de otros specs; corregido moviéndolos a `src/testing/fixtures.ts` (`34f9c0f`). CI `43763340338` y Native `43763340342` verdes.
