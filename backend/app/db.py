@@ -63,6 +63,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        3,
+        """
+        ALTER TABLE jobs ADD COLUMN queued_at TEXT;
+
+        UPDATE jobs SET queued_at = created_at;
+        """,
+    ),
 )
 
 

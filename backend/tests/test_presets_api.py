@@ -307,6 +307,8 @@ class TestMigration:
         old.close()
 
         db = Database(path)
-        assert db.migrate() == 2
+        assert db.migrate() == 3
         assert db.query("SELECT id FROM jobs")[0]["id"] == "a"
+        # Jobs that predate `queued_at` keep their place in the line.
+        assert db.query("SELECT queued_at FROM jobs")[0]["queued_at"] == "t"
         assert db.query("SELECT COUNT(*) FROM presets")[0][0] == 0

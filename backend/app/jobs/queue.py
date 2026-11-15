@@ -1,4 +1,4 @@
-"""The Queue: takes `queued` jobs FIFO by `created_at` and runs at most `limit` at a time."""
+"""The Queue: takes `queued` jobs FIFO by `queued_at` and runs at most `limit` at a time."""
 
 from __future__ import annotations
 
@@ -16,6 +16,20 @@ from app.jobs.runner import JobRunner
 log = logging.getLogger("app.jobs")
 
 MAX_CONCURRENT_JOBS = 2
+CANCEL_GRACE_SECONDS = 5.0  # TERM first; KILL if the process tree is still there after this
+CANCEL_KILL_WAIT_SECONDS = 2.0
+
+
+class UnknownJob(Exception):
+    """There is no job with that id."""
+
+
+class NotCancelable(Exception):
+    """The job is already over (or ended before the cancellation could take effect)."""
+
+
+class NotRetryable(Exception):
+    """Only `failed`, `canceled` and `interrupted` jobs can be retried."""
 
 
 def start_thread(fn: Callable[[], None]) -> None:
@@ -38,6 +52,8 @@ class JobQueue:
         limit: int = MAX_CONCURRENT_JOBS,
         spawn: Callable[[Callable[[], None]], None] = start_thread,
         on_drained: Callable[[], None] = lambda: None,
+        cancel_grace: float = CANCEL_GRACE_SECONDS,
+        cancel_kill_wait: float = CANCEL_KILL_WAIT_SECONDS,
     ) -> None:
         """`on_drained` runs when the last active job ends while the Queue is held."""
         self._repo = repo
@@ -48,9 +64,12 @@ class JobQueue:
         self.on_drained = on_drained
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
-        # job id -> process handle (None until the process starts). Ticket 10 cancels through it.
+        # job id -> process handle (None until the process starts); cancel and shutdown stop it.
         self._active: dict[str, ProcessHandle | None] = {}
         self._stopping: set[str] = set()  # active jobs being interrupted by a shutdown
+        self._canceling: set[str] = set()  # active jobs the user asked to cancel
+        self._cancel_grace = cancel_grace
+        self._cancel_kill_wait = cancel_kill_wait
         self._held = False
         self._closed = False
 
@@ -103,6 +122,66 @@ class JobQueue:
         self._publish_counts()
         self.kick()
         return batch, jobs
+
+    def cancel(self, job_id: str) -> Job:
+        """Cancel a `queued` or running job and return it in its final state.
+
+        A queued job never starts. A running one has its whole process tree terminated (TERM,
+        then KILL after `cancel_grace`); its staging is removed by the runner and its slot goes
+        to the next queued job. Blocks until the job has ended.
+
+        Race with completion: the outcome is decided by the process. If it had already exited
+        successfully when the TERM arrived, the job `completed` and this raises `NotCancelable`
+        (the file is in the Destination); otherwise it ends `canceled`, whatever the exit code.
+        """
+        with self._lock:
+            job = self._repo.get(job_id)
+            if job is None:
+                raise UnknownJob(job_id)
+            if job.status is JobStatus.QUEUED:
+                canceled = self._repo.cancel_queued(job_id)
+                if canceled is None:  # unreachable under the lock, but never claim a false cancel
+                    raise NotCancelable(job_id)
+                handle = None
+            elif job_id in self._active:
+                canceled = None
+                self._canceling.add(job_id)
+                handle = self._active[job_id]
+            else:
+                raise NotCancelable(job_id)
+        if canceled is not None:
+            self._events.job_updated(canceled)
+            self._publish_counts()
+            return canceled
+        if handle is not None:  # None: `_set_handle` terminates it as soon as it exists
+            handle.terminate()
+        if not self._wait_gone(job_id, self._cancel_grace):
+            with self._lock:
+                handle = self._active.get(job_id)
+            if handle is not None:
+                handle.kill()
+            if not self._wait_gone(job_id, self._cancel_kill_wait):
+                log.error("Job %s still running after cancel", job_id)
+        final = self._repo.get(job_id)
+        if final is None or final.status is not JobStatus.CANCELED:
+            raise NotCancelable(job_id)
+        return final
+
+    def retry(self, job_id: str) -> Job:
+        """A new Attempt of a `failed`, `canceled` or `interrupted` job, at the end of the line."""
+        with self._changed:
+            job = self._repo.get(job_id)
+            if job is None:
+                raise UnknownJob(job_id)
+            # The runner publishes the final status just before its slot is released.
+            self._changed.wait_for(lambda: job_id not in self._active, self._cancel_kill_wait)
+            queued = None if job_id in self._active else self._repo.requeue(job_id)
+        if queued is None:
+            raise NotRetryable(job_id)
+        self._events.job_updated(queued)
+        self._publish_counts()
+        self.kick()
+        return queued
 
     def kick(self) -> None:
         """Start as many queued jobs as there are free slots (none while held or closed)."""
@@ -163,13 +242,17 @@ class JobQueue:
         self._publish_counts()
 
     def handle(self, job_id: str) -> ProcessHandle | None:
-        """The running process of a job, if any (for cancellation, ticket 10)."""
+        """The running process of a job, if any."""
         with self._lock:
             return self._active.get(job_id)
 
     def active_ids(self) -> list[str]:
         with self._lock:
             return list(self._active)
+
+    def _wait_gone(self, job_id: str, timeout: float) -> bool:
+        with self._changed:
+            return self._changed.wait_for(lambda: job_id not in self._active, timeout)
 
     def _wait_drained(self, timeout: float) -> bool:
         with self._changed:
@@ -181,6 +264,7 @@ class JobQueue:
                 job,
                 on_handle=lambda h: self._set_handle(job.id, h),
                 interrupted=lambda: self._is_stopping(job.id),
+                canceled=lambda: self._is_canceling(job.id),
             )
         except Exception:
             log.exception("Job %s crashed the runner", job.id)
@@ -188,6 +272,7 @@ class JobQueue:
             with self._changed:
                 self._active.pop(job.id, None)
                 self._stopping.discard(job.id)
+                self._canceling.discard(job.id)
                 drained = self._held and not self._active
                 self._changed.notify_all()
             self._publish_counts()
@@ -205,13 +290,17 @@ class JobQueue:
         with self._lock:
             return job_id in self._stopping
 
+    def _is_canceling(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._canceling
+
     def _set_handle(self, job_id: str, handle: ProcessHandle) -> None:
         with self._lock:
             if job_id not in self._active:
                 return
             self._active[job_id] = handle
-            stop = job_id in self._stopping
-        if stop:  # shutdown began before the process existed
+            stop = job_id in self._stopping or job_id in self._canceling
+        if stop:  # shutdown or cancel began before the process existed
             handle.terminate()
 
     def _counts(self) -> dict[str, int]:

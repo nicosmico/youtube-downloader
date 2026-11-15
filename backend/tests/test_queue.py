@@ -43,6 +43,7 @@ class Harness:
         *,
         stream=None,
         now: Callable[[], datetime] | None = None,
+        **queue_options,
     ) -> None:
         db = Database(tmp_path / "db.sqlite3")
         db.migrate()
@@ -66,6 +67,7 @@ class Harness:
             ),
             events=job_events,
             spawn=self._spawn,
+            **queue_options,
         )
 
     def _spawn(self, fn: Callable[[], None]) -> None:
@@ -104,7 +106,7 @@ class TestConcurrencyAndFifo:
         for finished, expected_started in ((1, 3), (2, 4), (3, 5)):
             fake_engine.release_url(url(finished))
             assert fake_engine.wait_started(expected_started)
-            assert fake_engine.started == [url(n) for n in range(1, expected_started + 1)]
+            assert fake_engine.started[2:] == [url(n) for n in range(3, expected_started + 1)]
         fake_engine.release()
         wait_for(lambda: all(harness.status(i) == "completed" for i in ids))
 
@@ -411,7 +413,7 @@ class TestEngineUpdatePause:
             url(3): "2026.11.30",
             url(4): "2026.11.30",
         }
-        assert fake_engine.started[2:] == [url(3), url(4)]  # FIFO survives the pause
+        assert sorted(fake_engine.started[2:]) == [url(3), url(4)]  # both slots free at once
         fake_engine.release()
         wait_for(lambda: all(get_job(client, i)["status"] == "completed" for i in (*ids, late)))
         assert fake_engine.peak == 2

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.db import Database
@@ -62,9 +62,10 @@ class JobRepository:
     ) -> Job:
         """A single video (`batch_id` NULL) or one Entry of a Batch."""
         job_id = uuid.uuid4().hex
+        stamp = self._stamp()
         self._db.execute(
             "INSERT INTO jobs (id, batch_id, playlist_index, url, title, mode, quality, "
-            "audio_format, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "audio_format, status, created_at, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job_id,
                 batch_id,
@@ -75,7 +76,8 @@ class JobRepository:
                 quality,
                 audio_format,
                 JobStatus.QUEUED.value,
-                self._stamp(),
+                stamp,
+                stamp,
             ),
         )
         return self.get(job_id)  # type: ignore[return-value]
@@ -143,15 +145,58 @@ class JobRepository:
         return job
 
     def claim_queued(self, limit: int) -> list[Job]:
-        """Oldest queued jobs first (FIFO by `created_at`), marked `downloading` when taken."""
+        """The longest-waiting queued jobs first (FIFO by `queued_at`: a retry goes to the end),
+        marked `downloading` when taken."""
         rows = self._db.query(
-            "SELECT id FROM jobs WHERE status = ? ORDER BY created_at, rowid LIMIT ?",
+            "SELECT id FROM jobs WHERE status = ? "
+            "ORDER BY COALESCE(queued_at, created_at), rowid LIMIT ?",
             (JobStatus.QUEUED.value, limit),
         )
         stamp = self._stamp()
         return [
             self.update(r["id"], status=JobStatus.DOWNLOADING.value, started_at=stamp) for r in rows
         ]
+
+    def cancel_queued(self, job_id: str) -> Job | None:
+        """A `queued` job becomes `canceled` without ever running. None if it was not queued."""
+        changed = self._db.execute(
+            "UPDATE jobs SET status = ?, finished_at = ? WHERE id = ? AND status = ?",
+            (JobStatus.CANCELED.value, self._stamp(), job_id, JobStatus.QUEUED.value),
+        )
+        return self.get(job_id) if changed else None
+
+    def requeue(self, job_id: str) -> Job | None:
+        """A `failed`/`canceled`/`interrupted` job starts a new Attempt at the end of the line:
+        `attempt + 1`, progress, error and output cleared. `created_at` is kept (History).
+        None if the job was not in one of those states."""
+        stamp = self._queue_stamp()
+        changed = self._db.execute(
+            "UPDATE jobs SET status = ?, attempt = attempt + 1, progress_percent = 0, "
+            "downloaded_bytes = NULL, total_bytes = NULL, speed = NULL, eta = NULL, "
+            "output_path = NULL, error = NULL, started_at = NULL, finished_at = NULL, "
+            "queued_at = ? WHERE id = ? AND status IN (?, ?, ?)",
+            (
+                JobStatus.QUEUED.value,
+                stamp,
+                job_id,
+                JobStatus.FAILED.value,
+                JobStatus.CANCELED.value,
+                JobStatus.INTERRUPTED.value,
+            ),
+        )
+        return self.get(job_id) if changed else None
+
+    def _queue_stamp(self) -> str:
+        """Now, but strictly after every `queued_at` so far (a coarse clock cannot let a retry
+        jump the line)."""
+        stamp = self._stamp()
+        rows = self._db.query("SELECT MAX(COALESCE(queued_at, created_at)) AS top FROM jobs")
+        top = rows[0]["top"]
+        if top is not None and top >= stamp:
+            return (datetime.fromisoformat(top) + timedelta(microseconds=1)).isoformat(
+                timespec="microseconds"
+            )
+        return stamp
 
     def interrupt_active(self, message: str) -> list[Job]:
         """`downloading`/`processing` jobs become `interrupted` (their process is gone)."""

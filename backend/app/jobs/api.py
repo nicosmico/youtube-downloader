@@ -1,4 +1,4 @@
-"""Routes of the jobs: `POST /api/jobs`, `GET /api/jobs`, `GET /api/jobs/{id}`."""
+"""Routes of the jobs: create, list, get, cancel and retry."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.engine.guard import require_engine_ready
 from app.errors import ApiError
 from app.jobs.folders import FALLBACK_FOLDER, sanitize_folder_name
 from app.jobs.options import AudioFormatName, Mode, QualityName, check_options
-from app.jobs.queue import JobQueue
+from app.jobs.queue import JobQueue, NotCancelable, NotRetryable, UnknownJob
 from app.jobs.repository import JobRepository
 from app.preview.failures import failure
 from app.preview.urls import UrlKind, UrlRejected, classify_url, require_video_url
@@ -117,7 +117,35 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository) -> APIRouter:
     def get_job(job_id: str) -> dict[str, Any]:
         job = repo.get(job_id)
         if job is None:
-            raise ApiError(404, "job_not_found", "No se encontró la descarga.")
+            raise _not_found()
         return job.to_dict()
 
+    @router.post("/{job_id}/cancel")
+    def cancel_job(job_id: str) -> dict[str, Any]:
+        try:
+            return queue.cancel(job_id).to_dict()
+        except UnknownJob:
+            raise _not_found() from None
+        except NotCancelable:
+            raise ApiError(
+                409, "job_not_cancelable", "Esta descarga ya terminó y no se puede cancelar."
+            ) from None
+
+    @router.post("/{job_id}/retry")
+    def retry_job(job_id: str) -> dict[str, Any]:
+        try:
+            return queue.retry(job_id).to_dict()
+        except UnknownJob:
+            raise _not_found() from None
+        except NotRetryable:
+            raise ApiError(
+                409,
+                "job_not_retryable",
+                "Solo se pueden reintentar descargas fallidas, canceladas o interrumpidas.",
+            ) from None
+
     return router
+
+
+def _not_found() -> ApiError:
+    return ApiError(404, "job_not_found", "No se encontró la descarga.")

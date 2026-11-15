@@ -68,14 +68,17 @@ class JobRunner:
         job: Job,
         on_handle: Callable[[ProcessHandle], None] | None = None,
         interrupted: Callable[[], bool] = lambda: False,
+        canceled: Callable[[], bool] = lambda: False,
     ) -> Job:
         """Run an Attempt that is already `downloading`; always ends in a final status.
 
         `interrupted()` tells that the app is shutting down: a process that dies after that is an
-        `interrupted` job, not a `failed` one.
+        `interrupted` job, not a `failed` one. `canceled()` tells that the user cancelled: a
+        process that dies after that is a `canceled` job. A process that still exits 0 completed
+        its download first, so the job completes (the cancel lost the race).
         """
         try:
-            return self._run(job, on_handle, interrupted)
+            return self._run(job, on_handle, interrupted, canceled)
         except Exception:
             log.exception("Unexpected error in job %s", job.id)
             return self._fail(job.id, failures.GENERIC)
@@ -85,8 +88,11 @@ class JobRunner:
         job: Job,
         on_handle: Callable[[ProcessHandle], None] | None,
         interrupted: Callable[[], bool],
+        canceled: Callable[[], bool],
     ) -> Job:
         staging = prepare_staging(self._staging_root, job.id)
+        if canceled():  # cancelled before the process existed
+            return self._cancel(job.id)
         try:
             args = download_args(self._engine, job, staging)
         except UnsupportedJob:
@@ -100,6 +106,8 @@ class JobRunner:
             return self._fail(job.id, failures.GENERIC)
         attempt.flush()
 
+        if code != 0 and canceled():
+            return self._cancel(job.id)
         if code != 0 and interrupted():
             return self._interrupt(job.id)
         if code != 0:
@@ -142,6 +150,19 @@ class JobRunner:
             return None, staged.name
         width = padding_width(max(batch.entry_count, self._repo.highest_index(batch.id)))
         return batch.folder_name, numbered_name(job.playlist_index, staged.name, width)
+
+    def _cancel(self, job_id: str) -> Job:
+        remove_staging(self._staging_root, job_id)
+        job = self._repo.update(
+            job_id,
+            status=JobStatus.CANCELED.value,
+            speed=None,
+            eta=None,
+            error=None,
+            finished_at=self._repo.now(),
+        )
+        self._publish(job)
+        return job
 
     def _interrupt(self, job_id: str) -> Job:
         remove_staging(self._staging_root, job_id)

@@ -49,6 +49,8 @@ class Job:
     attempt: int = 1
     started_at: str | None = None
     finished_at: str | None = None
+    # When the job last entered the Queue: `created_at` at first, later a retry. FIFO follows it.
+    queued_at: str | None = None
     # Of its Batch (joined on read); None for a single video.
     batch_title: str | None = None
     batch_entry_count: int | None = None
