@@ -102,9 +102,27 @@ npm run build         # escribe en backend/app/static (ignorado por git)
 
 `npm run build` deja la SPA lista para el `Launcher` fuera de Docker; la imagen de Compose siempre compila su propia copia.
 
+## Descargar e instalar
+
+Descarga el `.zip` de tu sistema desde la última versión en [GitHub Releases](../../releases/latest). No hace falta instalar Python, Node ni `ffmpeg`. La app no está firmada ni notarizada, por eso el sistema muestra un aviso la primera vez.
+
+**macOS 13 o superior (Apple Silicon)**: `YouTube-Downloader-macos-arm64.zip`
+
+1. Descomprime y mueve `YouTube Downloader.app` a Aplicaciones.
+2. Al abrirla, macOS la bloquea. En macOS 15 o superior ve a Ajustes del Sistema › Privacidad y seguridad y pulsa "Abrir igualmente". En versiones anteriores, clic derecho sobre la app › Abrir.
+3. La app abre el navegador con su interfaz. Sigue funcionando en segundo plano hasta que pulses "Cerrar aplicación" o pasen 10 minutos sin uso.
+
+**Windows 10/11 (x64)**: `YouTube-Downloader-windows-x64.zip`
+
+1. Descomprime la carpeta completa y ejecuta `YouTube Downloader.exe`.
+2. Si SmartScreen avisa, pulsa "Más información" › "Ejecutar de todos modos".
+3. Se abre el navegador; se cierra igual que en macOS.
+
+En el primer arranque la app descarga el Engine (`yt-dlp`, `ffmpeg` y Deno, unos 250 MB), así que necesita conexión a internet.
+
 ## Empaquetado
 
-Los ejecutables se construyen en **GitHub Actions**: `macos-latest` produce el `.app` arm64 y `windows-latest` el `.exe` x64. Docker no participa en el build nativo porque PyInstaller no cross-compila. Un tag `v*` publica ambos `.zip` en un GitHub Release; los PR generan artefactos de prueba.
+Los ejecutables se construyen en **GitHub Actions**: `macos-latest` produce el `.app` arm64 (firma ad-hoc) y `windows-latest` la carpeta con el `.exe` x64; ambos se comprimen en `.zip`. Docker no participa en el build nativo porque PyInstaller no cross-compila. Un tag `v*` publica ambos `.zip` en un GitHub Release; los PR generan artefactos de prueba.
 
 ## Fuera de alcance del MVP
 
