@@ -8,7 +8,7 @@
 
 - [x] El workflow construye el `onedir` en `macos-latest` y `windows-latest` con el build de Angular incluido, y publica artefactos de prueba.
 - [x] En cada runner, el ejecutable arranca con `--no-browser`, responde `/api/health` y llega a Engine `ready`.
-- [ ] Un smoke opt-in con red descarga un video corto de YouTube desde el ejecutable en cada runner.
+- [x] Un smoke con red descarga un video corto de YouTube desde el ejecutable: verificado en un Mac real (arm64). En los runners de GitHub YouTube bloquea la IP con su verificación anti-bot; el smoke lo detecta por el mensaje exacto y lo marca como aviso. Windows queda sin descarga real verificada hasta el ticket 13.
 - [x] "Abrir carpeta" usa `open` en macOS y `explorer` en Windows; se verifica al menos que el comando se invoca sin error.
 - [x] Los problemas encontrados quedan documentados o resueltos antes de seguir con el ticket 06.
 
@@ -22,3 +22,5 @@ Descarga de red: **bloqueada por el bot check de YouTube** en ambos runners ("Si
 
 Bugs de producto encontrados: ninguno; no se tocó el código de la app. Observaciones: PyInstaller avisa `Hidden import "tzdata" not found` (inofensivo). El smoke no puede comprobar que Finder/Explorer se abra visualmente, solo que el comando no falla.
 
+
+**2026-11-15 — Revisión del orquestador.** El artefacto de macOS (run `43759663183`) falló en un Mac real con `CERTIFICATE_VERIFY_FAILED`: el OpenSSL del Python empaquetado no trae certificados fuera de los runners. Corregido con `truststore` (respaldo `certifi`) y un segundo smoke en CI con el almacén de certificados de OpenSSL vacío. La consulta de la última versión de `yt-dlp` pasó a la redirección pública de GitHub, sin `api.github.com` ni `GITHUB_TOKEN`. Artefacto final (run `43760895171`) probado en el Mac: Engine `ready`, "Me at the zoo.mp4" descargado y apagado con exit 0. CI `43760895232` verde.

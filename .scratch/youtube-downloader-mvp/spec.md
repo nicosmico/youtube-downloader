@@ -101,6 +101,8 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 | Deno | `deno-aarch64-apple-darwin.zip` | `deno-x86_64-pc-windows-msvc.zip` | `deno-aarch64-unknown-linux-gnu.zip` / `deno-x86_64-unknown-linux-gnu.zip` | Fijado en el código |
 | `ffmpeg`, `ffprobe` | martin-riedl, un zip por binario | Gyan essentials (`GyanD/codexffmpeg`), un zip con ambos en `bin/` | martin-riedl, un zip por binario | Fijado en el código |
 
+- La última versión de `yt-dlp` se obtiene de la redirección pública `https://github.com/yt-dlp/yt-dlp/releases/latest` (cabecera `Location` → `…/releases/tag/<tag>`), no de `api.github.com`: no tiene el límite de 60 consultas por hora por IP ni necesita token. La app nunca lee tokens del entorno.
+- Todas las conexiones HTTPS de la app usan un contexto SSL explícito con los certificados del sistema (`truststore`: Llavero en macOS, almacén de Windows), con `certifi` como respaldo. El OpenSSL del Python empaquetado no trae certificados en un equipo de usuario.
 - El `yt-dlp` oficial ya incluye `yt-dlp-ejs`. BtbN se descarta para Windows porque borra sus releases antiguos y el hash fijado dejaría de ser descargable.
 - Cada binario se descarga a un archivo temporal, se verifica por SHA-256, recibe permiso de ejecución en macOS y se activa con `rename` atómico. Al arrancar se borran restos `.old` y `.new`.
 - Verificación con `yt-dlp --version`, `ffmpeg -version`, `ffprobe -version` y `deno --version`. Si cualquiera falla, incluido Deno, el Engine queda en `error`: no se descarga en modo degradado.
