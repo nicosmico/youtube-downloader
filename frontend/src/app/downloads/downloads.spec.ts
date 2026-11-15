@@ -146,6 +146,68 @@ describe('Downloads', () => {
     expect(el('open-folder')).toBeNull();
   });
 
+  it('labels an interrupted job in Spanish with the reason and no progress or folder button', async () => {
+    await show({
+      status: 'interrupted',
+      error: 'La aplicación se cerró durante la descarga.',
+      progressPercent: 40,
+    });
+
+    expect(el('job-status')?.textContent).toContain('Interrumpida');
+    expect(el('job-card')?.getAttribute('data-status')).toBe('interrupted');
+    expect(el('job-error')?.textContent).toContain('La aplicación se cerró durante la descarga.');
+    expect(el('job-progress')).toBeNull();
+    expect(el('open-folder')).toBeNull();
+  });
+
+  it('shows the queue counts from queue.updated and follows the jobs without a reload', async () => {
+    jobs.connect();
+    const stream = FakeEventSource.instances[0];
+    expect(el('queue-summary')).toBeNull();
+
+    for (const id of ['a', 'b', 'c']) {
+      stream.emit('job.updated', {
+        ...JOB,
+        id,
+        createdAt: `2026-11-15T12:00:0${id === 'a' ? 1 : id === 'b' ? 2 : 3}.000000+00:00`,
+      });
+    }
+    stream.emit('queue.updated', { active: 0, queued: 3 });
+    await settle();
+    expect(el('queue-summary')?.textContent).toMatch(/0 activas\s*·\s*3 en cola/);
+    expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
+      'En cola',
+      'En cola',
+      'En cola',
+    ]);
+
+    // two slots are taken: the oldest two start, the newest keeps waiting
+    stream.emit('job.updated', {
+      ...JOB,
+      id: 'a',
+      createdAt: '2026-11-15T12:00:01.000000+00:00',
+      status: 'downloading',
+    });
+    stream.emit('job.updated', {
+      ...JOB,
+      id: 'b',
+      createdAt: '2026-11-15T12:00:02.000000+00:00',
+      status: 'downloading',
+    });
+    stream.emit('queue.updated', { active: 2, queued: 1 });
+    await settle();
+    expect(el('queue-summary')?.textContent).toMatch(/2 activas\s*·\s*1 en cola/);
+    expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
+      'En cola',
+      'Descargando',
+      'Descargando',
+    ]);
+
+    stream.emit('queue.updated', { active: 0, queued: 0 });
+    await settle();
+    expect(el('queue-summary')).toBeNull();
+  });
+
   it('renders one card per job, newest first, and follows SSE updates', async () => {
     jobs.connect();
     const stream = FakeEventSource.instances[0];

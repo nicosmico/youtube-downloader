@@ -18,6 +18,7 @@ const ENGINE: EngineInfo = {
   message: null,
   versions: { ytDlp: '2026.10.26', ffmpeg: '9.0.2', ffprobe: '9.0.2', deno: '2.9.8' },
   updating: false,
+  updatePending: false,
   lastUpdateCheck: null,
   updateMessage: null,
 };
@@ -113,6 +114,41 @@ describe('App', () => {
     const update = el('[data-testid=engine-update]') as HTMLButtonElement;
     expect(update.disabled).toBe(true);
     expect(update.textContent).toContain('Actualizando…');
+  });
+
+  it('shows that an update is pending until the active downloads finish', async () => {
+    http.expectOne('/api/health').flush(HEALTH);
+    await pushEngine({});
+    expect(el('[data-testid=engine-update-pending]')).toBeNull();
+
+    await pushEngine({ updatePending: true });
+
+    expect(el('[data-testid=engine-update-pending]')?.textContent).toContain(
+      'Actualización pendiente: se aplicará al terminar las descargas en curso',
+    );
+    expect((el('[data-testid=engine-update]') as HTMLButtonElement).disabled).toBe(true);
+
+    // the swap happens: the new version is shown and the notice goes away
+    await pushEngine({ updatePending: false, updating: true });
+    expect(el('[data-testid=engine-update-pending]')).toBeNull();
+    await pushEngine({
+      versions: { ...ENGINE.versions, ytDlp: '2026.11.30' },
+    });
+    expect(text()).toContain('2026.11.30');
+    expect((el('[data-testid=engine-update]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('keeps the update pending when the server accepts it with downloads running', async () => {
+    http.expectOne('/api/health').flush(HEALTH);
+    await pushEngine({});
+    el('[data-testid=engine-update]')?.click();
+
+    http.expectOne('/api/system/engine/update').flush({ ...ENGINE, updatePending: true });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el('[data-testid=engine-update-pending]')).not.toBeNull();
+    expect(el('[role=alert]')).toBeNull();
   });
 
   it('shows why a yt-dlp update failed', async () => {

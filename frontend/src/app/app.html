@@ -26,6 +26,11 @@
                 }
               }
             </p>
+            @if (engine.updatePending) {
+              <p class="meta" role="status" data-testid="engine-update-pending">
+                {{ texts.engine.updatePending }}
+              </p>
+            }
             @if (engine.updateMessage) {
               <p class="error" role="alert">
                 {{ texts.engine.updateFailed }} {{ engine.updateMessage }}
@@ -35,7 +40,7 @@
               type="button"
               class="action"
               data-testid="engine-update"
-              [disabled]="engine.updating"
+              [disabled]="engine.updating || engine.updatePending"
               (click)="engineService.update()"
             >
               {{ engine.updating ? texts.engine.updating : texts.engine.update }}

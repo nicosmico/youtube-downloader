@@ -393,21 +393,75 @@ class TestUpdate:
         assert ready.info().status == EngineStatus.READY
         assert "yt-dlp" in (ready.info().update_message or "")
 
-    def test_is_deferred_while_the_hook_says_downloads_are_active(
+    def test_is_deferred_while_downloads_run_and_applied_when_the_queue_drains(
         self, make_engine: MakeEngine, fetcher: FakeFetcher
     ) -> None:
-        active = [True]
-        engine = make_engine(can_update=lambda: not active[0])
+        running = [True]
+        held: list[str] = []
+        engine = make_engine(
+            can_update=lambda: not running[0],
+            hold_queue=lambda: held.append("hold"),
+            release_queue=lambda: held.append("release"),
+        )
         engine.install()
         fetcher.requests.clear()
         fetcher.publish_ytdlp("2026.11.30", YTDLP_NEW)
 
         assert engine.update_ytdlp() == UpdateOutcome.DEFERRED
-        assert engine.start_update() == UpdateOutcome.DEFERRED
+        assert engine.info().update_pending is True
+        assert held == ["hold"]
+        assert fetcher.requests == []  # nothing is fetched or swapped while downloads run
+        assert engine.start_update() == UpdateOutcome.BUSY  # already pending
+
+        running[0] = False
+        engine.apply_pending_update()  # what the Queue calls when it drains
+
+        assert engine.info().versions["yt-dlp"] == "2026.11.30"
+        assert engine.info().update_pending is False
+        assert held == ["hold", "release"]
+        assert engine.start_update() == UpdateOutcome.UPDATED  # claim released: a new one may run
+
+    def test_apply_pending_update_does_nothing_without_a_pending_update(
+        self, engine: EngineManager, fetcher: FakeFetcher
+    ) -> None:
+        engine.install()
+        fetcher.requests.clear()
+
+        engine.apply_pending_update()
+
         assert fetcher.requests == []
 
-        active[0] = False
-        assert engine.update_ytdlp() == UpdateOutcome.UPDATED
+    def test_a_failed_update_still_releases_the_queue(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher
+    ) -> None:
+        released: list[str] = []
+        engine = make_engine(release_queue=lambda: released.append("release"))
+        engine.install()
+        fetcher.routes.clear()
+
+        assert engine.update_ytdlp() == UpdateOutcome.FAILED
+
+        assert released == ["release"]
+        assert engine.info().update_pending is False
+
+    def test_pending_is_visible_to_listeners_and_cleared_when_the_swap_starts(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher
+    ) -> None:
+        running = [True]
+        engine = make_engine(can_update=lambda: not running[0])
+        engine.install()
+        fetcher.publish_ytdlp("2026.11.30", YTDLP_NEW)
+        events: list[EngineInfo] = []
+        engine.subscribe(events.append)
+
+        engine.start_update()
+        running[0] = False
+        engine.apply_pending_update()
+
+        states = [(e.update_pending, e.updating) for e in events]
+        assert states[0] == (True, False)
+        assert (False, True) in states
+        assert states[-1] == (False, False)
 
     def test_requires_a_ready_engine(self, engine: EngineManager) -> None:
         assert engine.update_ytdlp() == UpdateOutcome.NOT_READY
@@ -459,18 +513,23 @@ class TestScheduling:
         clock.advance(hours=1)
         assert ready.tick() == UpdateOutcome.UP_TO_DATE
 
-    def test_a_deferred_check_is_retried_on_the_next_tick(
+    def test_a_due_check_with_downloads_running_stays_pending_until_the_queue_drains(
         self, make_engine: MakeEngine, fetcher: FakeFetcher, clock: FakeClock
     ) -> None:
-        allowed = [False]
-        engine = make_engine(can_update=lambda: allowed[0])
+        running = [True]
+        engine = make_engine(can_update=lambda: not running[0])
         engine.install()
         fetcher.publish_ytdlp("2026.11.30", YTDLP_NEW)
         clock.advance(hours=25)
 
         assert engine.tick() == UpdateOutcome.DEFERRED
-        allowed[0] = True
-        assert engine.tick() == UpdateOutcome.UPDATED
+        assert engine.info().update_pending is True
+        assert engine.tick() == UpdateOutcome.BUSY  # the next hourly tick does not pile up
+
+        running[0] = False
+        engine.apply_pending_update()
+
+        assert engine.info().versions["yt-dlp"] == "2026.11.30"
 
     def test_start_updates_when_the_last_check_is_older_than_24_hours(
         self, engine: EngineManager, make_engine: MakeEngine, fetcher: FakeFetcher, clock: FakeClock

@@ -77,6 +77,12 @@ def create_app(
         spawn=spawn_job,
     )
 
+    # The yt-dlp update and the Queue coordinate (ADR-0002): see EngineManager.
+    engine.hold_queue = queue.hold
+    engine.release_queue = queue.release
+    engine.can_update = queue.is_idle
+    queue.on_drained = engine.apply_pending_update
+
     def publish_engine(info: EngineInfo) -> None:
         broadcaster.publish("engine.updated", info.to_dict())
 
@@ -87,13 +93,15 @@ def create_app(
         broadcaster.bind_loop(asyncio.get_running_loop())
         engine.start()  # installs in the background if binaries are missing
         clean_orphans(staging)  # nothing runs yet: every staging folder is a leftover
-        queue.kick()  # queued jobs survive a restart and resume
+        queue.start()  # active jobs of the last run become `interrupted`; queued ones resume
         scheduler = asyncio.create_task(run_periodic(engine))
         try:
             yield
         finally:
             scheduler.cancel()
-            queue.close()
+            # Orderly stop: terminate yt-dlp, mark the active jobs `interrupted`, clean staging.
+            await asyncio.to_thread(queue.shutdown)
+            clean_orphans(staging)
             broadcaster.close()
 
     app = FastAPI(
@@ -125,7 +133,10 @@ def create_app(
     app.include_router(
         build_events_router(
             broadcaster,
-            initial_events=lambda: [Event("engine.updated", engine.info().to_dict())],
+            initial_events=lambda: [
+                Event("engine.updated", engine.info().to_dict()),
+                Event("queue.updated", queue.counts()),
+            ],
             heartbeat=heartbeat_seconds,
         )
     )

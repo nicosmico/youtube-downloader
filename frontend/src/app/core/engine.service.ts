@@ -16,6 +16,8 @@ export interface EngineInfo {
     deno: string | null;
   };
   updating: boolean;
+  /** An update waits for the active downloads to finish (ADR-0002). */
+  updatePending: boolean;
   lastUpdateCheck: string | null;
   updateMessage: string | null;
 }

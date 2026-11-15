@@ -62,15 +62,29 @@ class JobRunner:
         self._clock = clock
         self._flush_interval = flush_interval
 
-    def run(self, job: Job, on_handle: Callable[[ProcessHandle], None] | None = None) -> Job:
-        """Run an Attempt that is already `downloading`; always ends in a final status."""
+    def run(
+        self,
+        job: Job,
+        on_handle: Callable[[ProcessHandle], None] | None = None,
+        interrupted: Callable[[], bool] = lambda: False,
+    ) -> Job:
+        """Run an Attempt that is already `downloading`; always ends in a final status.
+
+        `interrupted()` tells that the app is shutting down: a process that dies after that is an
+        `interrupted` job, not a `failed` one.
+        """
         try:
-            return self._run(job, on_handle)
+            return self._run(job, on_handle, interrupted)
         except Exception:
             log.exception("Unexpected error in job %s", job.id)
             return self._fail(job.id, failures.GENERIC)
 
-    def _run(self, job: Job, on_handle: Callable[[ProcessHandle], None] | None) -> Job:
+    def _run(
+        self,
+        job: Job,
+        on_handle: Callable[[ProcessHandle], None] | None,
+        interrupted: Callable[[], bool],
+    ) -> Job:
         staging = prepare_staging(self._staging_root, job.id)
         try:
             args = download_args(self._engine, job, staging)
@@ -85,6 +99,8 @@ class JobRunner:
             return self._fail(job.id, failures.GENERIC)
         attempt.flush()
 
+        if code != 0 and interrupted():
+            return self._interrupt(job.id)
         if code != 0:
             log.warning("job %s: yt-dlp exited with %s: %s", job.id, code, attempt.stderr_tail())
             return self._fail(job.id, failures.describe_failure(attempt.stderr_tail()))
@@ -115,6 +131,19 @@ class JobRunner:
         )
         self._publish(done)
         return done
+
+    def _interrupt(self, job_id: str) -> Job:
+        remove_staging(self._staging_root, job_id)
+        job = self._repo.update(
+            job_id,
+            status=JobStatus.INTERRUPTED.value,
+            speed=None,
+            eta=None,
+            error=failures.INTERRUPTED,
+            finished_at=self._repo.now(),
+        )
+        self._publish(job)
+        return job
 
     def _fail(self, job_id: str, message: str) -> Job:
         remove_staging(self._staging_root, job_id)

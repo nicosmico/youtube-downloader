@@ -35,6 +35,7 @@ describe('SystemService', () => {
         message: null,
         versions: { ytDlp: null, ffmpeg: null, ffprobe: null, deno: null },
         updating: false,
+        updatePending: false,
         lastUpdateCheck: null,
         updateMessage: null,
       },

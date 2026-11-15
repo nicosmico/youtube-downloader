@@ -20,12 +20,7 @@ from app.runtime import remove_runtime
 
 _UPDATE_REFUSALS = {
     UpdateOutcome.NOT_READY: (409, "engine_not_ready", "El motor de descarga no está listo."),
-    UpdateOutcome.BUSY: (409, "engine_busy", "Ya hay una actualización en curso."),
-    UpdateOutcome.DEFERRED: (
-        409,
-        "engine_busy",
-        "Hay descargas activas; yt-dlp se actualizará cuando terminen.",
-    ),
+    UpdateOutcome.BUSY: (409, "engine_busy", "Ya hay una actualización en curso o pendiente."),
     UpdateOutcome.UNSUPPORTED: (
         409,
         "engine_external",
@@ -71,6 +66,7 @@ def build_router(
 
     @router.post("/system/engine/update", status_code=202)
     def engine_update() -> dict[str, Any]:
+        """202 also when downloads are active: the update stays pending (`updatePending`)."""
         outcome = engine.start_update()
         if outcome in _UPDATE_REFUSALS:
             status, code, message = _UPDATE_REFUSALS[outcome]

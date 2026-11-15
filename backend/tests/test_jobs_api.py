@@ -293,8 +293,8 @@ class TestFailure:
         fake_engine.scenario(ZOO, no_path=True, postprocessors=())
         original = fake_engine._run
 
-        def run_without_file(sc, staging, on_stdout, on_stderr):
-            code = original(sc, staging, on_stdout, on_stderr)
+        def run_without_file(sc, staging, *rest):
+            code = original(sc, staging, *rest)
             for f in staging.iterdir():
                 f.unlink()
             return code

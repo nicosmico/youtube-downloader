@@ -83,6 +83,15 @@ describe('JobsService', () => {
     expect(service.jobs()[1]).toMatchObject({ status: 'downloading', progressPercent: 42 });
   });
 
+  it('applies queue.updated, which is also the snapshot sent on connect', () => {
+    service.connect();
+    expect(service.queue()).toEqual({ active: 0, queued: 0 });
+
+    stream().emit('queue.updated', { active: 2, queued: 3 });
+
+    expect(service.queue()).toEqual({ active: 2, queued: 3 });
+  });
+
   it('enqueues a video with the app header and adds the job to the list', () => {
     let result: Job[] = [];
     service.enqueue(JOB.url, '480p', 'Me at the zoo').subscribe((jobs) => (result = jobs));

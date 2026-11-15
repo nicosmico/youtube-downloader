@@ -35,6 +35,9 @@
 .status.completed {
   color: #1b7a3a;
 }
+.status.interrupted {
+  color: #8a5a00;
+}
 .status.failed {
   color: #b00020;
 }

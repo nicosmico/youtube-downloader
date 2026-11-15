@@ -10,6 +10,7 @@ export const ENGINE_READY: EngineInfo = {
   message: null,
   versions: { ytDlp: '2026.10.26', ffmpeg: '9.0.2', ffprobe: '9.0.2', deno: '2.9.8' },
   updating: false,
+  updatePending: false,
   lastUpdateCheck: null,
   updateMessage: null,
 };

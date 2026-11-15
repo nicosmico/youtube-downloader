@@ -16,7 +16,7 @@ from app.engine import EngineManager
 from app.engine.guard import require_engine_ready
 from app.errors import install_error_handlers
 from app.main import create_app
-from tests.conftest import APP_HEADERS, HOST, PORT
+from tests.conftest import APP_HEADERS
 from tests.fakes import YTDLP_NEW, FakeFetcher
 
 MakeEngine = Callable[..., EngineManager]
@@ -32,6 +32,7 @@ class TestEngineStatus:
             "message": None,
             "versions": {"ytDlp": None, "ffmpeg": None, "ffprobe": None, "deno": None},
             "updating": False,
+            "updatePending": False,
             "lastUpdateCheck": None,
             "updateMessage": None,
         }
@@ -114,21 +115,6 @@ class TestManualUpdate:
 
         assert response.status_code == 409
         assert response.json()["code"] == "engine_not_ready"
-
-    def test_conflicts_while_downloads_are_active(
-        self, make_engine: MakeEngine, make_client: Callable[..., TestClient]
-    ) -> None:
-        engine = make_engine(can_update=lambda: False)
-        engine.install()
-        client = TestClient(
-            create_app(data_dir=engine.data_dir, port=PORT, engine=engine),
-            base_url=f"http://{HOST}",
-        )
-
-        response = client.post("/api/system/engine/update", headers=APP_HEADERS)
-
-        assert response.status_code == 409
-        assert response.json()["code"] == "engine_busy"
 
 
 class TestEngineReadyGuard:
@@ -241,9 +227,10 @@ class TestEventsEndpoint:
         with httpx.stream("GET", f"{base}/api/events", timeout=5) as response:
             assert response.headers["content-type"].startswith("text/event-stream")
             lines = response.iter_lines()
-            first = read_events(lines, 1)
-            assert first[0][0] == "engine.updated"
+            first = read_events(lines, 2)
+            assert [name for name, _ in first] == ["engine.updated", "queue.updated"]
             assert '"status":"missing"' in first[0][1]
+            assert first[1][1] == '{"active":0,"queued":0}'
 
             armed[0] = True
             httpx.post(f"{base}/api/system/engine/install", headers=headers).raise_for_status()
@@ -260,10 +247,10 @@ class TestEventsEndpoint:
         base, _ = live(heartbeat_seconds=0.05)
 
         with httpx.stream("GET", f"{base}/api/events", timeout=5) as response:
-            messages = read_events(response.iter_lines(), 3)
+            messages = read_events(response.iter_lines(), 4)
 
-        assert messages[0][0] == "engine.updated"
-        assert [m[0] for m in messages[1:]] == ["comment", "comment"]
+        assert [m[0] for m in messages[:2]] == ["engine.updated", "queue.updated"]
+        assert [m[0] for m in messages[2:]] == ["comment", "comment"]
 
     def test_rejects_a_foreign_host(self, client: TestClient) -> None:
         response = client.get("/api/events", headers={"Host": "evil.test"})

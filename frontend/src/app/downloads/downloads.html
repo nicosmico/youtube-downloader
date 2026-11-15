@@ -1,6 +1,15 @@
 <section class="card" aria-labelledby="downloads-heading">
   <h2 id="downloads-heading">{{ texts.downloads.heading }}</h2>
 
+  @if (jobsService.queue(); as queue) {
+    @if (queue.active + queue.queued > 0) {
+      <p class="meta" role="status" data-testid="queue-summary">
+        {{ queue.active }} {{ texts.downloads.activeCount }} · {{ queue.queued }}
+        {{ texts.downloads.queuedCount }}
+      </p>
+    }
+  }
+
   @if (jobsService.jobs().length === 0) {
     <p class="meta" data-testid="downloads-empty">{{ texts.downloads.empty }}</p>
   }

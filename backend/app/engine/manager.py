@@ -63,8 +63,8 @@ class EngineStatus(StrEnum):
 class UpdateOutcome(StrEnum):
     UPDATED = "updated"
     UP_TO_DATE = "up_to_date"
-    DEFERRED = "deferred"  # can_update() said no (active downloads)
-    BUSY = "busy"  # an install or update is already running
+    DEFERRED = "deferred"  # active downloads: the update is pending until the Queue drains
+    BUSY = "busy"  # an install or update is already running or pending
     NOT_READY = "not_ready"
     UNSUPPORTED = "unsupported"  # ENGINE_BIN_DIR: binaries are managed by hand
     FAILED = "failed"
@@ -80,6 +80,7 @@ class EngineInfo:
     message: str | None = None
     versions: dict[str, str] = field(default_factory=dict)
     updating: bool = False
+    update_pending: bool = False  # waiting for the active downloads to finish (ADR-0002)
     last_update_check: str | None = None
     update_message: str | None = None
 
@@ -94,6 +95,7 @@ class EngineInfo:
                 "deno": self.versions.get("deno"),
             },
             "updating": self.updating,
+            "updatePending": self.update_pending,
             "lastUpdateCheck": self.last_update_check,
             "updateMessage": self.update_message,
         }
@@ -118,10 +120,14 @@ class EngineManager:
         runner: Runner = run_process,
         now: Callable[[], datetime] = _utcnow,
         can_update: Callable[[], bool] = lambda: True,
+        hold_queue: Callable[[], None] = lambda: None,
+        release_queue: Callable[[], None] = lambda: None,
         spawn: Callable[[Callable[[], None]], None] = _start_thread,
         pinned: Callable[[str], tuple[sources.Archive, ...]] = sources.pinned_archives,
     ) -> None:
-        """`can_update` is the hook the Queue uses to defer yt-dlp updates while downloads run."""
+        """The Queue plugs into the update through three hooks (ADR-0002): `hold_queue` stops it
+        dispatching new jobs, `can_update` says whether no download is running, `release_queue`
+        resumes it. The Queue calls `apply_pending_update` when it drains while held."""
         self.data_dir = data_dir
         self.external = bin_dir_override is not None
         self.bin_dir = bin_dir_override or data_dir / "bin"
@@ -130,10 +136,14 @@ class EngineManager:
         self._run = runner
         self._now = now
         self.can_update = can_update
+        self.hold_queue = hold_queue
+        self.release_queue = release_queue
         self._spawn = spawn
         self._pinned = pinned
         self._lock = threading.RLock()  # guards _info and _listeners
         self._op_lock = threading.Lock()  # one install/update at a time
+        self._update_claimed = False  # an update is pending or running (guarded by _lock)
+        self._swap_started = False  # its swap began (guarded by _lock)
         self._info = EngineInfo()
         self._listeners: list[Callable[[EngineInfo], None]] = []
         self._manifest: dict[str, Any] = self._load_manifest()
@@ -167,18 +177,18 @@ class EngineManager:
         return True
 
     def start_update(self) -> UpdateOutcome:
-        """Manual yt-dlp update in the background; returns why it did not start, or UPDATED."""
-        info = self.info()
-        if self.external:
-            return UpdateOutcome.UNSUPPORTED
-        if info.status != EngineStatus.READY:
-            return UpdateOutcome.NOT_READY
-        if info.updating:
-            return UpdateOutcome.BUSY
-        if not self.can_update():
-            return UpdateOutcome.DEFERRED
-        self._spawn(self.update_ytdlp)
+        """Manual yt-dlp update. UPDATED: running in the background; DEFERRED: pending until the
+        active downloads finish. Anything else is a refusal."""
+        refusal = self._begin_update()
+        if refusal is not None:
+            return refusal
+        self._spawn(self._swap)
         return UpdateOutcome.UPDATED
+
+    def apply_pending_update(self) -> None:
+        """The Queue drained while held: run the pending update in the background."""
+        if self.info().update_pending:
+            self._spawn(self._swap)
 
     def install(self) -> bool:
         """Install (or verify) the Engine. Blocking. False if busy or already ready."""
@@ -207,31 +217,62 @@ class EngineManager:
             self._op_lock.release()
 
     def update_ytdlp(self) -> UpdateOutcome:
-        """Replace yt-dlp with the latest release if newer. Blocking; never raises."""
+        """Replace yt-dlp with the latest release if newer. Blocking; never raises.
+
+        With downloads running it only leaves the update pending and returns DEFERRED.
+        """
+        refusal = self._begin_update()
+        return refusal if refusal is not None else self._swap()
+
+    def _begin_update(self) -> UpdateOutcome | None:
+        """Claim the update and stop the Queue. None: nothing runs, the swap may go ahead."""
         if self.external:
             return UpdateOutcome.UNSUPPORTED
         if self.info().status != EngineStatus.READY:
             return UpdateOutcome.NOT_READY
-        if not self._op_lock.acquire(blocking=False):
-            return UpdateOutcome.BUSY
+        with self._lock:
+            if self._update_claimed:
+                return UpdateOutcome.BUSY
+            self._update_claimed = True
+        self.hold_queue()  # from here on nothing new starts, so `can_update` can only turn true
+        if self.can_update():
+            return None
+        self._set(update_pending=True)
+        if self.can_update():  # drained in between: the Queue's drain hook may have missed us
+            return None
+        return UpdateOutcome.DEFERRED
+
+    def _swap(self) -> UpdateOutcome:
+        """Run the claimed update (the Queue is idle and held); always resumes the Queue."""
+        with self._lock:
+            if self._swap_started:
+                return UpdateOutcome.BUSY  # the drain hook and the caller raced: one wins
+            self._swap_started = True
         try:
-            if not self.can_update():
-                return UpdateOutcome.DEFERRED
-            self._set(updating=True, update_message=None)
+            if not self._op_lock.acquire(blocking=False):
+                return UpdateOutcome.BUSY
             try:
-                return self._update_ytdlp()
-            except EngineError as exc:
-                log.warning("yt-dlp update failed: %s", exc)
-                self._set(update_message=str(exc))
-                return UpdateOutcome.FAILED
-            except Exception:
-                log.exception("Unexpected error updating yt-dlp")
-                self._set(update_message="Error inesperado al actualizar yt-dlp.")
-                return UpdateOutcome.FAILED
+                self._set(updating=True, update_pending=False, update_message=None)
+                try:
+                    return self._update_ytdlp()
+                except EngineError as exc:
+                    log.warning("yt-dlp update failed: %s", exc)
+                    self._set(update_message=str(exc))
+                    return UpdateOutcome.FAILED
+                except Exception:
+                    log.exception("Unexpected error updating yt-dlp")
+                    self._set(update_message="Error inesperado al actualizar yt-dlp.")
+                    return UpdateOutcome.FAILED
+                finally:
+                    self._set(updating=False)
             finally:
-                self._set(updating=False)
+                self._op_lock.release()
         finally:
-            self._op_lock.release()
+            with self._lock:
+                self._update_claimed = False
+                self._swap_started = False
+            self._set(update_pending=False)
+            self.release_queue()
 
     def tick(self) -> UpdateOutcome | None:
         """Run the yt-dlp update check if the last one is older than 24 h."""

@@ -33,6 +33,11 @@ export interface Job {
   finishedAt: string | null;
 }
 
+export interface QueueCounts {
+  active: number;
+  queued: number;
+}
+
 interface JobPage {
   jobs: Job[];
   nextBefore: string | null;
@@ -59,6 +64,8 @@ export class JobsService {
 
   /** Newest first. */
   readonly jobs = signal<Job[]>([]);
+  /** Jobs running and waiting, from `queue.updated` (also sent as a snapshot on connect). */
+  readonly queue = signal<QueueCounts>({ active: 0, queued: 0 });
 
   /** Starts listening (idempotent). On every (re)connect the list is fetched again. */
   connect(): void {
@@ -68,6 +75,7 @@ export class JobsService {
     this.connected = true;
     this.stream.on('open', () => this.refresh());
     this.stream.on('job.updated', (event) => this.upsert(eventData<Job>(event)));
+    this.stream.on('queue.updated', (event) => this.queue.set(eventData<QueueCounts>(event)));
     this.stream.connect();
   }
 

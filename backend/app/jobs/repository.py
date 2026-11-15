@@ -118,6 +118,25 @@ class JobRepository:
             self.update(r["id"], status=JobStatus.DOWNLOADING.value, started_at=stamp) for r in rows
         ]
 
+    def interrupt_active(self, message: str) -> list[Job]:
+        """`downloading`/`processing` jobs become `interrupted` (their process is gone)."""
+        rows = self._db.query(
+            "SELECT id FROM jobs WHERE status IN (?, ?) ORDER BY created_at, rowid",
+            (JobStatus.DOWNLOADING.value, JobStatus.PROCESSING.value),
+        )
+        stamp = self._stamp()
+        return [
+            self.update(
+                r["id"],
+                status=JobStatus.INTERRUPTED.value,
+                speed=None,
+                eta=None,
+                error=message,
+                finished_at=stamp,
+            )
+            for r in rows
+        ]
+
     def count(self, status: JobStatus) -> int:
         return self._db.query("SELECT COUNT(*) AS n FROM jobs WHERE status = ?", (status.value,))[
             0
