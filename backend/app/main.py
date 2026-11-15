@@ -12,9 +12,11 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import build_router
 from app.engine import EngineInfo, EngineManager, run_periodic
+from app.engine.io import Runner, run_process
 from app.errors import install_error_handlers
 from app.events import Event, EventBroadcaster, build_events_router
 from app.paths import static_dir as default_static_dir
+from app.preview import PreviewService
 from app.security import LocalSecurityMiddleware
 from app.spa import mount_spa
 
@@ -27,6 +29,7 @@ def create_app(
     static_dir: Path | None = None,
     engine: EngineManager | None = None,
     engine_bin_dir: Path | None = None,
+    ytdlp_runner: Runner = run_process,
     broadcaster: EventBroadcaster | None = None,
     heartbeat_seconds: float = 15.0,
 ) -> FastAPI:
@@ -62,7 +65,13 @@ def create_app(
     install_error_handlers(app)
     app.add_middleware(LocalSecurityMiddleware, port=port)
     app.include_router(
-        build_router(data_dir=data_dir, port=port, request_shutdown=request_shutdown, engine=engine)
+        build_router(
+            data_dir=data_dir,
+            port=port,
+            request_shutdown=request_shutdown,
+            engine=engine,
+            previews=PreviewService(engine, ytdlp_runner),
+        )
     )
     app.include_router(
         build_events_router(

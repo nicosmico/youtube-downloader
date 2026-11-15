@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import threading
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
 
 from app.engine import sources
-from app.engine.io import FetchError, ProcessError
+from app.engine.io import FetchError, ProcessError, ProcessTimeout
 
 TARGET = "linux-x64"
 
@@ -75,7 +76,7 @@ class FakeRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    def __call__(self, args: Sequence[str]) -> str:
+    def __call__(self, args: Sequence[str], timeout: float = 30) -> str:
         self.calls.append(list(args))
         content = Path(args[0]).read_text()
         if content.startswith("FAIL"):
@@ -106,3 +107,54 @@ def fake_archives(
         routes[url] = data
         archives.append(sources.Archive(url, sha256(data), (sources.Extract(binary, binary),)))
     return tuple(archives), routes
+
+
+# -- yt-dlp at the subprocess edge (preview) -----------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures" / "ytdlp"
+
+
+def load_fixture(name: str) -> dict:
+    """A real `yt-dlp -J` output recorded with network and trimmed to the fields the app reads."""
+    return json.loads((FIXTURES / f"{name}.json").read_text())
+
+
+class FakeYtdlp:
+    """Stands in for the yt-dlp process: answers by the URL (last argument) it is asked about.
+
+    `respond(url, data)` prints JSON, `fail(url, stderr)` exits with an error, `hang(url)` blocks
+    until `release()` (and then raises the timeout, like the real runner does).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+        self.timeouts: list[float] = []
+        self._answers: dict[str, object] = {}
+        self._release = threading.Event()
+        self.started = threading.Event()
+
+    def respond(self, url: str, data: dict) -> None:
+        self._answers[url] = json.dumps(data)
+
+    def fail(self, url: str, stderr: str) -> None:
+        self._answers[url] = ProcessError(stderr.splitlines()[-1], stderr)
+
+    def hang(self, url: str) -> None:
+        self._answers[url] = "hang"
+
+    def release(self) -> None:
+        self._release.set()
+
+    def __call__(self, args: Sequence[str], timeout: float = 30) -> str:
+        self.calls.append(list(args))
+        self.timeouts.append(timeout)
+        answer = self._answers.get(args[-1])
+        if answer == "hang":
+            self.started.set()
+            self._release.wait(10)
+            raise ProcessTimeout(f"timed out after {timeout:g}s")
+        if isinstance(answer, ProcessError):
+            raise answer
+        if answer is None:
+            raise ProcessError("no answer configured", f"ERROR: unexpected URL {args[-1]}")
+        return str(answer)

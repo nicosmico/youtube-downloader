@@ -7,11 +7,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
+from pydantic import BaseModel
 
 from app import APP_ID, __version__
 from app.engine import EngineManager, UpdateOutcome
+from app.engine.guard import require_engine_ready
 from app.errors import ApiError
+from app.preview import PreviewFailure, PreviewService
 from app.runtime import remove_runtime
 
 _UPDATE_REFUSALS = {
@@ -30,8 +33,17 @@ _UPDATE_REFUSALS = {
 }
 
 
+class PreviewRequest(BaseModel):
+    url: str
+
+
 def build_router(
-    *, data_dir: Path, port: int, request_shutdown: Callable[[], None], engine: EngineManager
+    *,
+    data_dir: Path,
+    port: int,
+    request_shutdown: Callable[[], None],
+    engine: EngineManager,
+    previews: PreviewService,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -61,6 +73,15 @@ def build_router(
             status, code, message = _UPDATE_REFUSALS[outcome]
             raise ApiError(status, code, message)
         return engine.info().to_dict()
+
+    @router.post("/preview", dependencies=[Depends(require_engine_ready)])
+    def preview(body: PreviewRequest) -> dict[str, Any]:
+        """Plain `def`: FastAPI runs it in a worker thread, so a slow yt-dlp never blocks."""
+        try:
+            return previews.preview(body.url)
+        except PreviewFailure as exc:
+            f = exc.failure
+            raise ApiError(f.status, f.code, f.message) from None
 
     @router.post("/system/shutdown", status_code=202)
     def shutdown(background: BackgroundTasks) -> dict[str, str]:

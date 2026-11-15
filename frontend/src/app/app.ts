@@ -2,11 +2,13 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { EngineService } from './core/engine.service';
 import { Health, SystemService } from './core/system.service';
 import { TEXTS } from './core/texts';
+import { UrlPreview } from './preview/url-preview';
 
 type ShutdownState = 'idle' | 'closing' | 'done' | 'failed';
 
 @Component({
   selector: 'app-root',
+  imports: [UrlPreview],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

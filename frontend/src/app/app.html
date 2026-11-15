@@ -7,6 +7,8 @@
       <p>{{ texts.shutdown.doneHint }}</p>
     </section>
   } @else {
+    <app-url-preview />
+
     <section class="card" aria-labelledby="engine-heading">
       <h2 id="engine-heading">{{ texts.engine.heading }}</h2>
       @if (unreachable()) {

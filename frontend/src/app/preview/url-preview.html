@@ -1,0 +1,91 @@
+<section class="card" aria-labelledby="preview-heading">
+  <h2 id="preview-heading">{{ texts.preview.heading }}</h2>
+
+  <label class="field">
+    <span class="label">{{ texts.preview.urlLabel }}</span>
+    <input
+      type="text"
+      inputmode="url"
+      autocomplete="off"
+      spellcheck="false"
+      data-testid="url-input"
+      [placeholder]="texts.preview.urlPlaceholder"
+      [value]="url()"
+      [disabled]="!engineReady()"
+      [attr.aria-describedby]="engineReady() ? null : 'url-hint'"
+      (input)="onInput($event)"
+    />
+  </label>
+  @if (!engineReady()) {
+    <p id="url-hint" class="meta" data-testid="url-hint">{{ texts.preview.engineNotReady }}</p>
+  }
+
+  @switch (status()) {
+    @case ('loading') {
+      <p class="meta" role="status" data-testid="preview-loading">{{ texts.preview.loading }}</p>
+    }
+    @case ('error') {
+      <p class="error" role="alert" data-testid="preview-error" [attr.data-code]="errorCode()">
+        {{ errorMessage() }}
+      </p>
+    }
+    @case ('ready') {
+      @if (preview(); as media) {
+        <article class="media" data-testid="preview-card">
+          @if (media.thumbnail) {
+            <img
+              class="thumb"
+              alt=""
+              referrerpolicy="no-referrer"
+              data-testid="preview-thumbnail"
+              [src]="media.thumbnail"
+            />
+          }
+          <div class="info">
+            <h3 data-testid="preview-title">{{ media.title }}</h3>
+            @if (media.author) {
+              <p class="meta" data-testid="preview-author">{{ media.author }}</p>
+            }
+            @if (media.duration !== null) {
+              <p class="meta" data-testid="preview-duration">
+                {{ texts.preview.duration }}: {{ duration(media.duration) }}
+              </p>
+            }
+            @if (media.maxResolution) {
+              <p class="meta" data-testid="preview-max">
+                {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
+              </p>
+            }
+            <label class="field">
+              <span class="label">{{ texts.preview.quality }}</span>
+              <select
+                data-testid="quality-select"
+                (change)="selectQuality($any($event.target).value)"
+              >
+                @for (q of qualities; track q) {
+                  <option
+                    [value]="q"
+                    [selected]="q === quality()"
+                    [disabled]="!isAvailable(media, q)"
+                  >
+                    {{ qualityLabel(q) }}
+                  </option>
+                }
+              </select>
+            </label>
+            @if (media.playlistUrl; as playlistUrl) {
+              <button
+                type="button"
+                class="action"
+                data-testid="full-playlist"
+                (click)="showFullPlaylist(playlistUrl)"
+              >
+                {{ texts.preview.fullPlaylist }}
+              </button>
+            }
+          </div>
+        </article>
+      }
+    }
+  }
+</section>
