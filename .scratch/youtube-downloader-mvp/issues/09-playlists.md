@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Opciones nivel 1).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] El preview de playlist y de canal lista las `Entry` sin descargar, con `truncated` si superan 500.
 - [x] Las `Entry` disponibles vienen seleccionadas y se pueden deseleccionar; las no disponibles se muestran deshabilitadas con motivo.
@@ -29,3 +29,5 @@
 - **Verificación**: pytest, ruff (check y format), Vitest y build en verde. Real con `docker compose up --build` (`HOST_DOWNLOAD_DIR=.dev-data/downloads`): preview de la playlist `PLrAXtm...` (2 videos), de `@Fireship` (normalizado a `/videos`, 500 `Entry`, `truncated: true`) y de `PL59FEE...` (3 no disponibles con motivo); un batch de 2 videos en m4a con título `Select: Lectures?` dejó `Select Lectures/01 - Me at the zoo.m4a` y `02 - ….m4a`, y encolarlo otra vez reutilizó la carpeta con ` (2)`. Medios de prueba borrados. La UI solo se probó con tests de componente (no en navegador).
 
 **2026-11-15 — Revisión del orquestador.** Checks repetidos (602 backend ×5, 167 frontend, ruff, build). Corregido un test intermitente del ticket 06: cuatro aserciones comparaban el orden de arranque de dos jobs lanzados en hilos paralelos; ahora comparan el conjunto. Probado en el navegador integrado con una playlist real de 2 videos: entradas seleccionadas por defecto, "Ninguno" deja 0/2 y deshabilita el botón, y las descargas del lote aparecen agrupadas con "2/2 completadas". Spec y README actualizados.
+
+**2026-11-15 — Resuelto.** CI `43773522915` y Native `43773522847` verdes.
