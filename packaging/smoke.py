@@ -1,6 +1,11 @@
 """Smoke test of the packaged app (ticket 14). Standard library only; runs on macOS and Windows.
 
-    python packaging/smoke.py <path to the youtube-downloader executable>
+    python packaging/smoke.py <path to the youtube-downloader executable> [--empty-ca-store]
+
+`--empty-ca-store` points SSL_CERT_FILE / SSL_CERT_DIR at an empty file / directory, so OpenSSL's
+default CA lookup cannot rescue the app: the Engine must still install, which proves the app uses
+its own explicit trust store (an end-user Mac has no CA bundle for the bundled Python). The video
+download is skipped in that mode: yt-dlp's own binary reads the same variables.
 
 Starts the executable with `--no-browser` and temporary DATA_DIR / DOWNLOAD_DIR, then checks:
 health, Engine `ready` (real binaries downloaded and verified), "open folder", a real download
@@ -72,13 +77,18 @@ class Client:
             return exc.code, json.loads(exc.read() or b"{}")
 
 
-def run(exe: Path, work: Path) -> int:
+def run(exe: Path, work: Path, empty_ca_store: bool = False) -> int:
     data_dir = work / "data"
     download_dir = work / "downloads"
     data_dir.mkdir()
     download_dir.mkdir()
     env = {**os.environ, "DATA_DIR": str(data_dir), "DOWNLOAD_DIR": str(download_dir)}
     env.pop("ENGINE_BIN_DIR", None)
+    if empty_ca_store:
+        (work / "empty-ca.pem").write_text("")
+        (work / "empty-ca-dir").mkdir()
+        env["SSL_CERT_FILE"] = str(work / "empty-ca.pem")
+        env["SSL_CERT_DIR"] = str(work / "empty-ca-dir")
 
     step(f"Starting {exe}")
     proc = subprocess.Popen([str(exe), "--no-browser"], env=env)
@@ -127,8 +137,11 @@ def run(exe: Path, work: Path) -> int:
 
         bot_blocked = False
         try:
-            step(f"Downloading {VIDEO_URL}")
-            download(client, download_dir)
+            if empty_ca_store:
+                step("Download skipped (--empty-ca-store)")
+            else:
+                step(f"Downloading {VIDEO_URL}")
+                download(client, download_dir)
         except SmokeError as exc:
             if BOT_MARKER in str(exc):
                 bot_blocked = True
@@ -185,13 +198,15 @@ def download(client: Client, download_dir: Path) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    if len(args) != 1 or flags - {"--empty-ca-store"}:
         print(__doc__)
         return 2
-    exe = Path(sys.argv[1]).resolve()
+    exe = Path(args[0]).resolve()
     with tempfile.TemporaryDirectory(prefix="ytdl-smoke-") as tmp:
         try:
-            return run(exe, Path(tmp))
+            return run(exe, Path(tmp), "--empty-ca-store" in flags)
         except SmokeError as exc:
             print(f"SMOKE FAILED: {exc}", flush=True)
             return 1

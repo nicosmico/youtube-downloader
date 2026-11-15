@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import signal
+import ssl
 import subprocess
 import sys
 import threading
@@ -78,12 +79,31 @@ class Streamer(Protocol):
         ...
 
 
+def default_ssl_context() -> ssl.SSLContext:
+    """Trust the OS certificate store (Keychain / Windows store, so corporate CAs work).
+
+    The Python bundled by PyInstaller has no CA bundle of its own on an end-user Mac, so OpenSSL's
+    defaults cannot be relied on. Falls back to certifi's bundle if truststore is unavailable.
+    """
+    try:
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+
+
 class UrllibFetcher:
+    def __init__(self, context: ssl.SSLContext | None = None) -> None:
+        self._context = context or default_ssl_context()
+
     def _open(self, url: str):
         request = urllib.request.Request(
             url, headers={"User-Agent": f"{APP_ID}/{__version__}", "Accept": "*/*"}
         )
-        return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS)
+        return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=self._context)
 
     def get_bytes(self, url: str) -> bytes:
         try:

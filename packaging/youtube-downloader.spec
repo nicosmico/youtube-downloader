@@ -9,7 +9,7 @@
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).resolve().parent  # noqa: F821 - SPECPATH is injected by PyInstaller
 BACKEND = ROOT / "backend"
@@ -22,9 +22,9 @@ a = Analysis(  # noqa: F821
     [str(ROOT / "packaging" / "entry.py")],
     pathex=[str(BACKEND)],
     # `datas` pairs use the platform-independent (source, dest) tuple form: no `:`/`;` separator.
-    datas=[(str(STATIC), "static")],
+    datas=[(str(STATIC), "static"), *collect_data_files("certifi")],
     # uvicorn picks its loop/protocol implementations by name at runtime.
-    hiddenimports=collect_submodules("uvicorn"),
+    hiddenimports=[*collect_submodules("uvicorn"), "truststore", "certifi"],
     excludes=["tkinter"],
 )
 pyz = PYZ(a.pure)  # noqa: F821

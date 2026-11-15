@@ -71,6 +71,11 @@ jobs:
           fi
           exit $code
 
+      - name: Smoke test without any CA bundle visible to OpenSSL (Engine must still install)
+        env:
+          PYTHONUTF8: "1"
+        run: uv run --no-project python packaging/smoke.py "${{ matrix.exe }}" --empty-ca-store
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
