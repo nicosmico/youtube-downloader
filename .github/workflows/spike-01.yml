@@ -1,7 +1,9 @@
-# Workflow del spike 01. NO ejecutado. Para probarlo: copiar a .github/workflows/spike-01.yml
-# en una rama de prueba (workflow_dispatch). Verifica PyInstaller onedir en macOS arm64 y Windows x64.
+# Workflow del spike 01: PyInstaller onedir en macOS arm64 y Windows x64, y yt-dlp -U en Windows.
 name: spike-01-pyinstaller
-on: workflow_dispatch
+on:
+  push:
+    branches: [spike/01]
+  workflow_dispatch:
 
 jobs:
   build:
