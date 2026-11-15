@@ -15,7 +15,9 @@ La app es un ejecutable de escritorio para macOS y Windows, pero el entorno de d
 ## Consequences
 
 - `DOWNLOAD_DIR`, `DATA_DIR` y `ENGINE_BIN_DIR` se pueden sobrescribir por entorno; en producción los defaults siguen siendo `~/Downloads`, `~/.youtube-downloader` y su subcarpeta `bin`.
+- En el contenedor el servidor debe escuchar en `0.0.0.0` con un puerto fijo para que el puerto publicado sea alcanzable; `BIND_HOST` y `PORT` lo permiten solo en desarrollo. Compose publica ese puerto únicamente en `127.0.0.1` del host, y la validación de `Host` acepta ese puerto.
 - En desarrollo, abrir el navegador y "abrir carpeta" son responsabilidad del host; el contenedor no puede hacerlo.
 - El `Engine` usa binarios Linux solo en desarrollo y CI; Linux no es plataforma soportada para usuarios finales.
-- Los builds se validan en CI; macOS y Windows quedan como las únicas plataformas de distribución.
+- Las plataformas de distribución son macOS arm64 (Apple Silicon) y Windows x64. `macos-latest` compila arm64 y no se produce build universal2 ni Intel.
+- Las versiones se publican como GitHub Releases por tag, con un `.zip` por plataforma; los artefactos de Actions quedan para builds de prueba.
 - Docker/OrbStack pasa a ser requisito de desarrollo, no del usuario final.

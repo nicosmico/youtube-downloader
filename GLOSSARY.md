@@ -5,29 +5,41 @@ Aplicación de escritorio que descarga contenido público de YouTube usando `yt-
 ## Contenido y previsualización
 
 **MediaPreview**:
-Metadatos de una URL obtenidos antes de descargar: título, miniatura, duración, calidades disponibles y, si aplica, las entradas de la playlist.
+Metadatos de una URL obtenidos antes de descargar: título, miniatura, duración, calidades disponibles y, si aplica, las `Entry` de la playlist.
 _Evitar_: metadata, info, resultado de inspección
 
 **Contenido público**:
-Medio accesible sin autenticación, cookies ni cuenta.
+Medio de YouTube accesible sin autenticación, cookies ni cuenta, y ya publicado (no en directo ni como estreno pendiente).
 _Evitar_: contenido libre, video normal
 
 **Playlist**:
-URL que agrupa varios medios. En la app siempre se expande en varios `DownloadJob`.
+URL de YouTube que agrupa varios medios: una lista de reproducción o un canal. Una URL que apunta a un video dentro de una lista es un video, no una playlist.
 _Evitar_: lista, álbum
+
+**Entry**:
+Cada medio que lista el `MediaPreview` de una `Playlist`, en su orden original; el usuario elige cuáles descargar.
+_Evitar_: item, elemento, pista
 
 ## Descargas y cola
 
 **DownloadJob**:
-Intento de descarga de un único medio; unidad de encolado, progreso, cancelación y reintento.
+Descarga de un único medio; unidad de encolado, progreso, cancelación y reintento.
 _Evitar_: tarea, descarga (como unidad), item
 
+**Attempt**:
+Cada ejecución de un `DownloadJob`. Reintentar crea un nuevo `Attempt` del mismo job, no un job nuevo.
+_Evitar_: reintento (como sustantivo), ejecución
+
 **Queue**:
-Conjunto ordenado de `DownloadJob` pendientes de ejecución, con un máximo de dos ejecuciones simultáneas.
+`DownloadJob` en espera o en curso, atendidos por orden de llegada con un máximo de dos simultáneos.
 _Evitar_: lista de espera, cola de tareas
 
+**History**:
+`DownloadJob` que alcanzaron un estado terminal: `completed`, `failed`, `canceled` o `interrupted`. Quitar un job del `History` no borra su archivo.
+_Evitar_: registro, log, descargas anteriores
+
 **Batch**:
-Agrupación visual de los `DownloadJob` generados por una misma URL de playlist.
+Agrupación de los `DownloadJob` generados por una misma `Playlist`. Un video suelto no pertenece a ningún `Batch`.
 _Evitar_: lote, grupo, playlist (para la agrupación)
 
 **Job Status**:
@@ -35,7 +47,7 @@ Estado del ciclo de vida de un `DownloadJob`: `queued`, `downloading`, `processi
 _Evitar_: estado de la descarga, progreso
 
 **Destination**:
-Carpeta fija donde el servidor escribe los archivos: `~/Downloads`, con una subcarpeta por playlist.
+Carpeta de descargas del usuario donde quedan los archivos terminados; cada `Batch` va en una subcarpeta con el título de su `Playlist`.
 _Evitar_: ruta de salida, carpeta destino
 
 ## Opciones
@@ -45,7 +57,7 @@ Intención de un `DownloadJob`: `video` o `audio`.
 _Evitar_: tipo, formato
 
 **Quality**:
-Resolución objetivo de un `DownloadJob` en modo video: `best`, `2160p`, `1080p`, `720p`, `480p`.
+Tope de resolución de un `DownloadJob` en modo video, medido sobre el lado menor de la imagen: `best`, `2160p`, `1080p`, `720p`, `480p`.
 _Evitar_: resolución, definición
 
 **AudioFormat**:
@@ -59,13 +71,17 @@ _Evitar_: perfil, configuración guardada
 ## Motor y aplicación
 
 **Engine**:
-Par de binarios externos `yt-dlp` y `ffmpeg` que la app descarga y actualiza por separado de su propio ejecutable.
+Conjunto de programas externos (`yt-dlp`, `ffmpeg`, `ffprobe` y el runtime JavaScript Deno) que la app instala y actualiza por separado de su propio ejecutable.
 _Evitar_: dependencias, herramientas, motor de descarga
 
 **Launcher**:
-Proceso que prepara el entorno, inicia el servidor local, elige un puerto libre y abre el navegador.
+Proceso que prepara el entorno, inicia el servidor local y abre el navegador.
 _Evitar_: main, arranque
 
 **Single Instance**:
 Regla por la que solo puede existir un `Launcher` activo; un segundo intento reutiliza el servidor en curso.
 _Evitar_: instancia única, bloqueo
+
+**Idle Shutdown**:
+Cierre automático de la app cuando lleva un tiempo sin pestañas conectadas y con la `Queue` vacía.
+_Evitar_: timeout, autocierre

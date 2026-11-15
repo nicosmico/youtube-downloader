@@ -2,7 +2,7 @@
 
 **What to build:** Varios `DownloadJob` conviven en una `Queue` FIFO con un máximo de dos ejecuciones simultáneas. Los estados se persisten: los `queued` se reanudan al reiniciar, y los que estaban `downloading` o `processing` pasan a `interrupted`. La UI muestra varias tarjetas de cola y se actualiza con `queue.updated`.
 
-**Blocked by:** 05 (Descarga de un video end-to-end).
+**Blocked by:** 05 (Descarga de un video end-to-end), 14 (Smoke de empaquetado nativo).
 
 **Status:** ready-for-agent
 

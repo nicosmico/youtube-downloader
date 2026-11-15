@@ -15,5 +15,5 @@ El producto debía ser multiplataforma (macOS y Windows), con una UI moderna y s
 ## Consequences
 
 - No hay selector nativo de carpetas: `Destination` es fijo.
-- La app sigue viva si el usuario cierra la pestaña; el MVP incluye un botón "Cerrar aplicación" en la UI y un ícono de bandeja queda como mejora posterior.
+- La app sigue viva si el usuario cierra la pestaña y no tiene ventana propia ni ícono de bandeja. Para que no quede un proceso invisible indefinidamente, el MVP incluye un botón "Cerrar aplicación" y un `Idle Shutdown`: la app se cierra sola tras 10 minutos sin pestañas conectadas y con la `Queue` vacía. El ícono de bandeja queda como mejora posterior.
 - El servidor solo escucha en `127.0.0.1`.

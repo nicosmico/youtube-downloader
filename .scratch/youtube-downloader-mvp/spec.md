@@ -4,21 +4,21 @@
 
 ## Problem Statement
 
-Descargar videos o audio de YouTube con `yt-dlp` exige usar una terminal, conocer flags y mantener actualizados `yt-dlp` y `ffmpeg`. El usuario quiere una aplicación visual, multiplataforma (macOS y Windows), que no le pida instalar Python, Node ni `ffmpeg`, y que le permita descargar contenido público con una cola persistente y progreso visible.
+Descargar videos o audio de YouTube con `yt-dlp` exige usar una terminal, conocer flags y mantener actualizados `yt-dlp`, `ffmpeg` y, desde 2025, un runtime JavaScript. El usuario quiere una aplicación visual, multiplataforma (macOS y Windows), que no le pida instalar Python, Node, Deno ni `ffmpeg`, y que le permita descargar contenido público con una cola persistente y progreso visible.
 
 ## Solution
 
-Un ejecutable que levanta un servidor local, abre el navegador por defecto en una SPA y descarga mediante un `Engine` externo que la propia app instala y actualiza. La UI expone solo las opciones de nivel 1: URL, `DownloadMode`, `Quality` o `AudioFormat`, y `Preset`. Todo se guarda en `~/Downloads`.
+Un ejecutable que levanta un servidor local, abre el navegador por defecto en una SPA y descarga mediante un `Engine` externo que la propia app instala y actualiza. Solo acepta URLs de YouTube. La UI, en español, expone solo las opciones de nivel 1: URL, `DownloadMode`, `Quality` o `AudioFormat`, y `Preset`. Todo se guarda en `~/Downloads`.
 
 ## User Stories
 
 1. Como usuario, quiero pegar una URL de YouTube y ver la información del medio automáticamente, para confirmar qué voy a descargar antes de encolar.
 2. Como usuario, quiero ver título, miniatura, duración y autor en el `MediaPreview`, para reconocer el contenido de un vistazo.
 3. Como usuario, quiero ver las calidades realmente disponibles de un video, para elegir una que exista y no una etiqueta genérica.
-4. Como usuario, quiero que una URL de playlist me muestre todas sus entradas, para saber cuántos videos se van a descargar.
-5. Como usuario, quiero que todas las entradas de una playlist vengan seleccionadas por defecto, para encolar todo con un clic.
-6. Como usuario, quiero poder deseleccionar entradas de una playlist, para bajar solo una parte.
-7. Como usuario, quiero un mensaje claro cuando el contenido es privado, requiere login o no está disponible, para entender que la app solo trabaja con `Contenido público`.
+4. Como usuario, quiero que una URL de playlist o de canal me muestre sus `Entry` (hasta 500), para saber cuántos videos se van a descargar.
+5. Como usuario, quiero que todas las `Entry` disponibles vengan seleccionadas por defecto, para encolar todo con un clic.
+6. Como usuario, quiero poder deseleccionar `Entry`, para bajar solo una parte.
+7. Como usuario, quiero un mensaje claro cuando el contenido es privado, requiere login, no está disponible, es un directo o estreno, es un mix automático o no es de YouTube, para entender qué acepta la app.
 8. Como usuario, quiero que el preview no descargue nada, para inspeccionar sin gastar datos ni disco.
 9. Como usuario, quiero elegir modo video con calidad `best`, `2160p`, `1080p`, `720p` o `480p`, para controlar el tamaño y la resolución.
 10. Como usuario, quiero elegir modo audio en `mp3`, `m4a` u `opus`, para obtener solo la pista de sonido.
@@ -27,20 +27,20 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 13. Como usuario, quiero renombrar y eliminar `Preset`, para mantener mi lista ordenada.
 14. Como usuario, quiero que la app impida combinaciones inválidas, para no encolar un job que va a fallar.
 15. Como usuario, quiero que un video suelto genere un solo `DownloadJob`, para verlo y controlarlo individualmente.
-16. Como usuario, quiero que una playlist genere un `Batch` con un `DownloadJob` por video, para cancelar o reintentar uno sin afectar al resto.
+16. Como usuario, quiero que una playlist genere un `Batch` con un `DownloadJob` por `Entry`, para cancelar o reintentar uno sin afectar al resto.
 17. Como usuario, quiero ver el progreso de cada job en porcentaje, bytes, velocidad y ETA, para saber cuánto falta.
 18. Como usuario, quiero que se ejecuten como máximo dos descargas a la vez, para no saturar la red ni el equipo.
 19. Como usuario, quiero cancelar un job en cola o en curso, para arrepentirme sin cerrar la app.
 20. Como usuario, quiero reintentar un job fallido, cancelado o interrumpido, para recuperarlo sin volver a pegar la URL.
-21. Como usuario, quiero ver un historial con el estado final de cada job, para saber qué se descargó y qué falló.
-22. Como usuario, quiero borrar una entrada del historial sin borrar el archivo descargado, para limpiar la vista sin perder contenido.
-23. Como usuario, quiero que la cola y el historial sobrevivan al cierre de la app, para no perder trabajo.
+21. Como usuario, quiero ver un `History` con el estado final de cada job, para saber qué se descargó y qué falló.
+22. Como usuario, quiero quitar una entrada del `History` sin borrar el archivo descargado, para limpiar la vista sin perder contenido.
+23. Como usuario, quiero que la `Queue` y el `History` sobrevivan al cierre de la app, para no perder trabajo.
 24. Como usuario, quiero que los jobs interrumpidos queden marcados y sean reintentables al reabrir, para retomar lo que quedó a medias.
-25. Como usuario, quiero un botón para abrir la carpeta de descargas, para encontrar el archivo al terminar.
+25. Como usuario, quiero un botón para abrir la carpeta de descargas, para encontrar los archivos.
 26. Como usuario, quiero que los videos sueltos se guarden en `~/Downloads` y las playlists en su propia subcarpeta, para mantener el destino ordenado.
 27. Como usuario, quiero que dos videos con el mismo título generen archivos distintos y nunca se sobrescriban, para no perder descargas.
 28. Como usuario, quiero ver el estado del `Engine` y saber si está listo, instalándose o con error, para entender por qué no puedo descargar todavía.
-29. Como usuario, quiero que la app descargue `yt-dlp`, `ffmpeg` y `ffprobe` en el primer arranque, para no instalarlos a mano.
+29. Como usuario, quiero que la app descargue el `Engine` en el primer arranque, para no instalar nada a mano.
 30. Como usuario, quiero actualizar `yt-dlp` desde la UI o de forma automática, para seguir descargando cuando YouTube cambie.
 31. Como usuario, quiero que la app abra el navegador sola al ejecutarla, para no escribir ninguna URL.
 32. Como usuario, quiero que una segunda ejecución reutilice la instancia abierta, para no tener dos servidores ni dos colas.
@@ -50,6 +50,12 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 36. Como usuario, quiero mensajes de error accionables cuando falla una descarga, para saber si reintentar o cambiar algo.
 37. Como usuario, quiero que la app solo escuche en mi equipo, para no exponer descargas a la red local ni a internet.
 38. Como usuario, quiero que el ejecutable funcione en macOS y Windows sin Python ni Node instalados, para compartirlo con otras personas.
+39. Como usuario, quiero que la app se cierre sola si cierro todas las pestañas y no queda nada en cola, para no dejar un proceso invisible corriendo.
+40. Como usuario, quiero que los archivos de una playlist lleven su número de orden, para conservar la secuencia original.
+41. Como usuario, quiero ver las `Entry` privadas o eliminadas de una playlist deshabilitadas y con su motivo, para saber por qué no se descargarán.
+42. Como usuario, quiero mostrar en Finder o Explorer el archivo de un job completado, para encontrarlo sin buscar.
+43. Como usuario, quiero que los videos se reproduzcan con el reproductor de mi sistema siempre que la calidad elegida lo permita, para no instalar nada más.
+44. Como usuario, quiero descargar el ejecutable desde una página de releases, para compartirlo con un enlace estable.
 
 ## Implementation Decisions
 
@@ -58,47 +64,69 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 - Un único proceso empaquetado con PyInstaller en modo `onedir`.
 - El `Launcher` elige un puerto libre con bind a `127.0.0.1:0`, escribe `runtime.json` con `{pid, port, startedAt}` y abre el navegador por defecto. `--no-browser` o `OPEN_BROWSER=0` desactiva la apertura (usado en Docker).
 - `DATA_DIR` y `DOWNLOAD_DIR` se pueden sobrescribir por variable de entorno; sus defaults son `~/.youtube-downloader` y `~/Downloads`. La UI no expone un selector de carpeta.
-- `Single Instance`: si `runtime.json` existe y `GET /api/health` responde, se abre esa instancia y el segundo proceso termina.
-- El apagado se dispara desde la UI (`POST /api/system/shutdown`) o por señal, cancelando jobs activos y marcándolos `interrupted`.
+- Solo en desarrollo, `BIND_HOST` y `PORT` fijan la interfaz y el puerto para que Docker pueda publicarlo (ver ADR-0008).
+- `Single Instance`: un lock de archivo en `$DATA_DIR` evita dos arranques simultáneos. Si `runtime.json` existe y `GET /api/health` responde con el identificador de la app, se abre esa instancia y el segundo proceso termina.
+- El apagado se dispara desde la UI (`POST /api/system/shutdown`), por señal o por `Idle Shutdown`, cancelando jobs activos y marcándolos `interrupted`.
+- `Idle Shutdown`: si pasan 10 minutos sin clientes SSE conectados, sin jobs `queued`, `downloading` o `processing` y sin instalación del `Engine` en curso, la app se apaga ordenadamente. El temporizador se reinicia con cualquier conexión.
 
 ### Frontend
 
-- SPA en Angular compilada a estáticos y servida por FastAPI en `/`.
+- SPA en Angular (versión estable vigente, componentes standalone y signals) compilada a estáticos y servida por FastAPI en `/`.
+- UI en español; los textos viven centralizados para poder traducirlos después.
 - Sin CORS: un solo origen.
 - Angular consume REST para comandos y SSE para eventos.
 - Al reconectar SSE, el cliente rehidrata con `GET /api/jobs`; no depende de eventos perdidos.
+- La `Queue` muestra los jobs `queued`, `downloading` y `processing`. El `History` muestra los terminales; los que no están `completed` ofrecen "Reintentar" y los `completed` ofrecen "Mostrar en Finder/Explorer".
+- Para un video suelto, la UI deshabilita las `Quality` por encima de la máxima disponible. Para playlists muestra todas, porque `--flat-playlist` no trae formatos.
+- Junto a `2160p` la UI indica que el archivo puede requerir un reproductor como VLC (ADR-0009).
+
+### URLs aceptadas
+
+- Solo `youtube.com`, `www.youtube.com`, `m.youtube.com`, `music.youtube.com` y `youtu.be` (ADR-0006). Cualquier otro dominio se rechaza con `unsupported_site` sin invocar `yt-dlp`.
+- Una URL con `v=` (o `youtu.be/<id>`, `/shorts/<id>`) es un video, aunque lleve `list=`. En ese caso la respuesta incluye `playlistUrl` y la UI ofrece "ver playlist completa".
+- Una URL de lista (`/playlist?list=`) o de canal (`/@handle`, `/channel/…`, `/c/…`, `/user/…` y sus pestañas) es una `Playlist`.
+- Los mixes automáticos (`list=RD…`) se rechazan con `mix_playlist`.
+- Los directos y estrenos pendientes (`live_status` distinto de `not_live` y `was_live`) se rechazan con `live_content`.
+- El preview de una `Playlist` lista como máximo 500 `Entry` (`--playlist-end 500`) y marca `truncated: true` si hay más.
 
 ### Engine
 
-- Binarios externos en `$DATA_DIR/bin`: `yt-dlp`, `ffmpeg`, `ffprobe`. `ENGINE_BIN_DIR` permite sobrescribir esa ruta en desarrollo y CI.
-- `yt-dlp` se obtiene del release oficial (`yt-dlp_macos`, `yt-dlp.exe` o `yt-dlp_linux` según la plataforma).
-- `ffmpeg`/`ffprobe` se obtienen de un build estático validado por plataforma y arquitectura. Proveedor concreto a confirmar con un spike; candidatos: evermeet.cx o ffmpeg.martin-riedl.de para macOS, BtbN para Windows x64 y Linux.
-- En desarrollo y CI sobre Linux se usan binarios Linux; Linux no es plataforma soportada para usuarios finales.
-- Descarga a archivo temporal y `rename` atómico; permiso de ejecución en macOS.
-- Verificación con `yt-dlp --version` y `ffmpeg -version`.
+- Binarios externos en `$DATA_DIR/bin`: `yt-dlp`, `ffmpeg`, `ffprobe` y `deno`. `ENGINE_BIN_DIR` permite sobrescribir esa ruta en desarrollo y CI.
+- `yt-dlp` se obtiene del release oficial (`yt-dlp_macos`, `yt-dlp.exe` o `yt-dlp_linux`), que ya incluye `yt-dlp-ejs`.
+- Deno se obtiene del release oficial para `aarch64-apple-darwin`, `x86_64-pc-windows-msvc` y `x86_64-unknown-linux-gnu`, en una versión fijada en el código. `yt-dlp` lo recibe explícitamente con su opción de runtimes JavaScript (flag exacta a confirmar en el spike).
+- `ffmpeg`/`ffprobe` se obtienen de un build estático por plataforma, en una versión fijada. Proveedor a confirmar en el spike; candidatos: ffmpeg.martin-riedl.de para macOS arm64 y BtbN para Windows x64 y Linux.
+- Plataformas de producción: macOS arm64 y Windows x64. Los binarios Linux solo se usan en desarrollo y CI.
+- Cada binario se descarga a un archivo temporal, se verifica por SHA-256 (`yt-dlp` contra el `SHA2-256SUMS` de su release; el resto contra hashes fijados en el código), recibe permiso de ejecución en macOS y se activa con `rename` atómico.
+- Verificación con `yt-dlp --version`, `ffmpeg -version`, `ffprobe -version` y `deno --version`.
 - Estados: `missing → installing → ready | error`.
-- Actualización de `yt-dlp` con `-U` si `engine.json` tiene más de 24 h, o manual desde la UI. Si `-U` falla, se reinstala el release.
+- Actualización de `yt-dlp` con `-U` al arrancar si `engine.json` tiene más de 24 h, cada 24 h mientras la app está abierta, o manualmente desde la UI. Si `-U` falla, se reinstala el release. `ffmpeg`, `ffprobe` y Deno solo cambian con una nueva versión de la app.
+- `engine.json` en `$DATA_DIR` guarda versión y hash de cada binario y la fecha del último chequeo de `yt-dlp`.
 - Las descargas quedan bloqueadas hasta que el Engine esté `ready`.
 
 ### Dominio y persistencia
 
-- Un `DownloadJob` por video; una playlist se modela como `Batch` con N jobs.
+- Un `DownloadJob` por video. Una playlist se modela como `Batch` con N jobs; un video suelto no tiene `Batch` (`batch_id` nulo).
 - Estados del job: `queued → downloading → processing → completed`, con salidas laterales a `failed`, `canceled` e `interrupted`.
-- Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted`; no se reanudan solos.
+- `completed` solo se marca cuando el archivo final está en la `Destination`.
+- Los jobs en `downloading` o `processing` al arrancar pasan a `interrupted`; no se reanudan solos. Los `queued` sí se reanudan.
 - Concurrencia máxima: 2. Selección FIFO por `created_at`.
+- Solo los jobs en estado terminal se pueden quitar del `History`; borrar uno activo o en cola responde `409`.
 - Persistencia en SQLite con WAL en `$DATA_DIR/db.sqlite3` y migraciones numeradas:
 
 ```sql
 CREATE TABLE batches (
   id TEXT PRIMARY KEY,
   source_url TEXT NOT NULL,
-  title TEXT,
+  title TEXT NOT NULL,
+  folder_name TEXT NOT NULL,
+  entry_count INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
 
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   batch_id TEXT REFERENCES batches(id),
+  playlist_index INTEGER,
   url TEXT NOT NULL,
   title TEXT,
   mode TEXT NOT NULL CHECK (mode IN ('video','audio')),
@@ -134,14 +162,15 @@ CREATE TABLE presets (
 
 | Método | Ruta | Contrato |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | Versión de la app, estado del Engine, puerto. |
+| `GET` | `/api/health` | Identificador y versión de la app, estado del Engine, puerto. |
 | `POST` | `/api/preview` | `{url}` → `MediaPreview`. |
-| `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, entries?}` → `{batchId, jobs[]}`. |
+| `POST` | `/api/jobs` | `{url, mode, quality?, audioFormat?, entries?}` → `{batchId \| null, jobs[]}`. |
 | `GET` | `/api/jobs` | Lista paginada con filtros `status`, `limit`, `before`. |
 | `GET` | `/api/jobs/{id}` | `DownloadJob`. |
 | `POST` | `/api/jobs/{id}/cancel` | Cancela job en cola o activo. |
-| `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted`. |
-| `DELETE` | `/api/jobs/{id}` | Borra la entrada del historial; no toca el archivo. |
+| `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`. |
+| `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer (acción del host). |
+| `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409` si no es terminal. |
 | `GET` | `/api/events` | Stream SSE. |
 | `GET` | `/api/presets` | Lista de `Preset`. |
 | `POST` | `/api/presets` | Crea `Preset`. |
@@ -152,63 +181,72 @@ CREATE TABLE presets (
 | `POST` | `/api/system/open-downloads` | Abre `DOWNLOAD_DIR` en Finder/Explorer (acción del host). |
 | `POST` | `/api/system/shutdown` | Apagado ordenado. |
 
-`MediaPreview` incluye `kind` (`video` o `playlist`), título, miniatura, duración, autor, calidades disponibles y `entries` para playlists. Los errores usan `{code, message, detail?}`.
+`MediaPreview` incluye `kind` (`video` o `playlist`), título, miniatura, duración, autor, calidades disponibles, `playlistUrl` si la URL de video venía de una lista, y para playlists `entries` y `truncated`. Cada `Entry` lleva `{id, url, index, title, duration, available, unavailableReason?}`.
+
+Al encolar una playlist, `entries` lista las `Entry` elegidas con su `index` y título; el servidor valida que sus URLs sean de YouTube.
+
+Los errores usan `{code, message, detail?}`. Códigos de preview: `invalid_url`, `unsupported_site`, `mix_playlist`, `live_content`, `not_public`, `unavailable`, `timeout`, `engine_not_ready`.
 
 ### Eventos SSE
 
 | Evento | Condición |
 | :--- | :--- |
 | `job.updated` | Alta, cambio de estado o progreso, con throttle de 1/s por job. |
-| `job.removed` | Entrada de historial eliminada. |
+| `job.removed` | Job quitado del `History`. |
 | `engine.updated` | Cambio de estado o versión del Engine. |
 | `queue.updated` | Cambio en cola o jobs activos. |
-| `shutdown` | La app va a cerrarse. |
+| `shutdown` | La app va a cerrarse, con el motivo (`user`, `signal`, `idle`). |
 
 Heartbeat cada 15 s.
 
 ### Runner y `yt-dlp`
 
+- Todas las invocaciones pasan `--ffmpeg-location` y la ruta de Deno del `Engine`.
 - Preview de video: `yt-dlp -J --no-warnings --no-playlist <url>`.
-- Preview de playlist: `yt-dlp -J --flat-playlist --no-warnings <url>`.
-- Descarga: `--newline`, `--no-overwrites`, `--progress-template "download:PROGRESS%(progress)j"`, `--print after_move:filepath`.
-- Video: `-f "bv*[height<=H]+ba/b[height<=H]"`; `best` omite el tope; `--merge-output-format mp4` a validar para evitar recodificaciones.
-- Audio: `-x --audio-quality 0 --audio-format <mp3|m4a|opus>`.
+- Preview de playlist: `yt-dlp -J --flat-playlist --playlist-end 500 --no-warnings <url>`.
+- Descarga: `--no-playlist --newline --progress --no-overwrites --progress-template "download:PROGRESS%(progress)j" --print after_move:filepath -P <staging> -o "%(title)s.%(ext)s"`. `--print` implica `--quiet`, por eso se añade `--progress`.
+- Video (ADR-0009): orden de formatos `-S "res:H,vcodec:h264,acodec:aac"` con `--merge-output-format mp4`; `best` usa `res` sin tope. `res` mide el lado menor, así que un video vertical respeta la `Quality` elegida. Fórmula exacta a confirmar en el spike.
+- Audio: `-x --audio-quality 0 --audio-format <mp3|m4a|opus>`. Para `m4a` y `opus` se prefiere el stream nativo equivalente para no recodificar.
 - Progreso: se parsean las líneas que empiezan con `PROGRESS` y contienen el JSON de `%(progress)j`.
-- La fase de post-procesado se reporta como `processing`.
-- Cancelación: `terminate()` al grupo de procesos y `kill()` tras 5 s.
-- Reintento: `attempt + 1`, sin duplicar archivos.
+- La fase de post-procesado (merge, extracción de audio) se reporta como `processing`.
+- Cancelación: `terminate()` al grupo de procesos y `kill()` tras 5 s. En Windows se termina el árbol completo (Job Object o equivalente) y los subprocesos se lanzan con `CREATE_NO_WINDOW`.
+- Reintento: `attempt + 1` con carpeta de staging limpia.
 - Los mensajes de error se sanean antes de exponerlos.
 
 ### Archivos
 
-- Video suelto: `$DOWNLOAD_DIR/%(title)s.%(ext)s`.
-- Playlist: `$DOWNLOAD_DIR/%(playlist_title)s/%(title)s.%(ext)s`.
-- `DOWNLOAD_DIR` es `~/Downloads` en producción y se sobrescribe en desarrollo para apuntar al volumen montado.
-- Colisión: si existe un archivo con el mismo stem al despachar, se agrega ` (2)`, ` (3)`, etc.
-- La ruta final se toma de `--print after_move:filepath` y se guarda en `outputPath`.
+- Cada `Attempt` descarga en `$DATA_DIR/staging/<job_id>/` (ADR-0010). Al terminar, la app mueve el archivo a la `Destination` y marca `completed`. Cancelar o fallar borra el staging del job; al arrancar se limpian los staging sin job activo.
+- Video suelto: `$DOWNLOAD_DIR/<nombre de yt-dlp>`.
+- Playlist: `$DOWNLOAD_DIR/<Batch.folder_name>/<NN> - <nombre de yt-dlp>`. `NN` es el `index` de la `Entry` con ceros a la izquierda según `entry_count` (mínimo dos dígitos). `folder_name` es el título de la playlist saneado con reglas válidas en macOS y Windows; si la carpeta ya existe se reutiliza.
+- Colisión: si el nombre final existe, se agrega ` (2)`, ` (3)`, etc. antes de la extensión. La elección del nombre y el movimiento ocurren bajo un lock para que dos jobs concurrentes no elijan el mismo.
+- El movimiento tolera volúmenes distintos (copia y borrado) cuando `rename` no es posible.
+- La ruta final se guarda en `outputPath`.
 
 ### Seguridad local
 
-- Bind exclusivo a `127.0.0.1`.
+- Bind exclusivo a `127.0.0.1` en producción.
 - Validación de `Host` contra `127.0.0.1:<puerto>` y `localhost:<puerto>`.
 - Endpoints mutantes exigen `X-Requested-With: youtube-downloader` y validan `Origin` cuando está presente.
+- Los binarios del `Engine` se verifican por SHA-256 antes de ejecutarse.
 - Sin autenticación de usuario en el MVP.
 
 ### Entorno de desarrollo
 
 - Backend y tests corren en Docker Compose sobre Linux, usando OrbStack en macOS. No se requiere Python en el host.
+- Python 3.13 con `uv` dentro del contenedor; `ruff` para lint y formato; `pytest` para tests.
 - El build de Angular puede correr con Node local (ya instalado) o en un contenedor opcional.
-- El contenedor publica el puerto en `127.0.0.1`, monta `~/Downloads` y `$DATA_DIR`, y arranca con `OPEN_BROWSER=0`. El host abre el navegador.
+- El contenedor escucha en `0.0.0.0:<PORT>`, Compose publica ese puerto en `127.0.0.1` del host, monta `~/Downloads` y `$DATA_DIR`, y arranca con `OPEN_BROWSER=0`. El host abre el navegador.
 - Los tests de backend se ejecutan en el mismo contenedor que CI.
-- "Abrir carpeta" en desarrollo es una acción del host; el contenedor no puede abrir Finder ni Explorer.
+- "Abrir carpeta" y "Mostrar archivo" en desarrollo son acciones del host; el contenedor no puede abrir Finder ni Explorer.
 
 ### Empaquetado
 
 - PyInstaller `onedir`, con los estáticos de Angular incluidos.
-- macOS: `.app` con firma ad-hoc, distribuido en `.zip`.
-- Windows: carpeta con `.exe`, distribuida en `.zip`.
+- macOS: `.app` arm64 con firma ad-hoc, distribuido en `.zip`. Mínimo macOS 13.
+- Windows: carpeta con `.exe` x64 sin consola, distribuida en `.zip`. Windows 10/11.
 - Los builds se ejecutan en GitHub Actions con matriz `macos-latest` y `windows-latest`; Docker no participa en el empaquetado nativo.
-- Cada runner publica el artefacto correspondiente. Sin firma ni notarización en el MVP.
+- Un tag `v*` publica un GitHub Release con ambos `.zip`. Los artefactos de Actions quedan para builds de prueba.
+- Sin firma ni notarización en el MVP.
 
 ## Testing Decisions
 
@@ -216,16 +254,17 @@ Un buen test verifica **comportamiento externo**, no detalles de implementación
 
 Seams acordados:
 
-1. **Backend — API HTTP.** FastAPI con `TestClient`, directorio de datos temporal, SQLite temporal y un `FakeEngine` que reemplaza a `yt-dlp` en el borde de subprocess. Cubre preview, alta de jobs, cola, concurrencia, persistencia, cancelación, reintento, reconciliación de interrumpidos, SSE y validaciones de seguridad.
-2. **Frontend — servicios y componentes Angular.** HTTP y SSE mockeados. Cubre renderizado de preview, selección de playlist, opciones, progreso, presets, historial y rehidratación al reconectar.
+1. **Backend — API HTTP.** FastAPI con `TestClient`, directorio de datos temporal, SQLite temporal y un `FakeEngine` que reemplaza a `yt-dlp` en el borde de subprocess. Cubre preview, alta de jobs, cola, concurrencia, persistencia, cancelación, reintento, reconciliación de interrumpidos, staging y movimiento final, SSE, `Idle Shutdown` y validaciones de seguridad.
+2. **Frontend — servicios y componentes Angular.** HTTP y SSE mockeados. Cubre renderizado de preview, selección de playlist, opciones, progreso, presets, `History` y rehidratación al reconectar.
 
-El `FakeEngine` debe poder: devolver JSON de preview de video y playlist, emitir líneas `PROGRESS` predecibles, simular post-procesado, fallar con un mensaje, y quedarse colgado para probar cancelación.
+El `FakeEngine` debe poder: devolver JSON de preview de video, playlist, directo y entradas no disponibles; emitir líneas `PROGRESS` predecibles; simular post-procesado; escribir el archivo final en staging e imprimir su ruta; fallar con un mensaje; y quedarse colgado para probar cancelación.
 
 Decisiones de prueba:
 
-- Tests unitarios del parser de progreso, plantillas de salida, colisiones, máquina de estados y validadores.
+- Tests unitarios del clasificador de URLs, parser de progreso, saneado de carpetas, numeración de playlist, colisiones, máquina de estados y validadores.
 - Tests de contrato de los argumentos que se pasan a `yt-dlp` por modo y calidad.
 - Tests de integración de la API con el `FakeEngine`, sin red.
+- Tests del instalador del Engine con descargador simulado, incluida la verificación SHA-256.
 - Los tests de backend corren en el contenedor Linux y en CI; no dependen de macOS.
 - Descargas reales contra YouTube solo como E2E manual opt-in (`pytest -m network`).
 - La UI se prueba con servicios mockeados; el E2E de navegador queda fuera del MVP.
@@ -239,20 +278,25 @@ No hay código previo; estos tests establecen la convención del repo.
 - Ícono de bandeja del sistema.
 - Selector de carpeta en la UI y destinos distintos de `~/Downloads` en producción. El override por entorno es solo para desarrollo.
 - Cookies, cuentas, videos privados, con edad o con login.
+- Sitios distintos de YouTube, directos, estrenos pendientes y mixes automáticos.
+- Más de 500 `Entry` por playlist o canal.
 - Subtítulos, incrustar miniatura/metadatos, recorte por tiempo y flags extra de `yt-dlp`.
 - SponsorBlock y límites de velocidad o de red.
 - Configuración de concurrencia desde la UI (fija en 2).
 - Reanudación automática de jobs interrumpidos.
+- Avisar al volver a descargar un medio ya descargado: el `History` no garantiza que el archivo siga en disco, y la colisión ` (2)` ya evita sobrescribir.
+- Idiomas distintos del español en la UI.
 - Firma, notarización e instaladores.
 - Auto-actualización del ejecutable.
+- Macs Intel y Windows ARM.
 - Acceso remoto o desde otros dispositivos.
 - Docker como runtime del producto.
 - Soporte de Linux para usuarios finales.
 
 ## Further Notes
 
-- Validaciones técnicas abiertas que deben resolverse con spikes antes de comprometer la implementación: proveedor de `ffmpeg` por arquitectura, viabilidad de `--merge-output-format mp4` sin recodificar, y build nativo en GitHub Actions.
-- Cerrar la pestaña del navegador no detiene la app; el botón "Cerrar aplicación" es el mecanismo previsto en el MVP.
+- Validaciones técnicas que resuelve el spike (ticket 01) antes de comprometer la implementación: proveedor de `ffmpeg` para macOS arm64; flag de `yt-dlp` para indicar la ruta de Deno; que `--progress` mantenga el progreso con `--print`; la fórmula `-S` para `Quality` con preferencia H.264 y videos verticales; `m4a` y `opus` sin recodificar; `yt-dlp -U` en Windows con otra instancia de `yt-dlp.exe` en uso; y build nativo en GitHub Actions.
+- Cerrar la pestaña del navegador no detiene la app de inmediato; "Cerrar aplicación" la cierra en el acto y `Idle Shutdown` la cierra tras 10 minutos de inactividad.
 - La actualización del Engine no interrumpe jobs activos: se aplica al siguiente proceso.
 - Docker se usa solo en desarrollo y CI. La decisión y sus consecuencias están en el ADR-0008.
 - En desarrollo, las rutas de `DOWNLOAD_DIR` y `DATA_DIR` son las del contenedor; "abrir carpeta" queda como acción del host.
