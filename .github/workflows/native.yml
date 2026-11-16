@@ -1,7 +1,9 @@
 # Native packaging (tickets 12, 13, 14): PyInstaller build of the real app on macOS arm64 (ad-hoc
 # signed .app) and Windows x64 (onedir), a smoke test of the built executable (Engine install,
-# download, shutdown) and the distributable .zip. PRs and branches only keep the .zip as a
-# short-lived artifact; a `v*` tag also publishes both .zip files in a GitHub Release.
+# download, shutdown) and the distributable .zip, named YouTube-Downloader-<version>-<platform>.zip
+# with <version> read from `__version__` in backend/app/__init__.py. PRs and branches only keep the
+# .zip as a short-lived artifact; a `v*` tag (which must be exactly v<__version__>, checked before
+# building) also publishes both .zip files in a GitHub Release.
 name: Native
 
 on:
@@ -21,17 +23,32 @@ jobs:
           - os: macos-latest
             name: macos-arm64
             exe: packaging/dist/YouTube Downloader.app/Contents/MacOS/youtube-downloader
-            zip: YouTube-Downloader-macos-arm64.zip
           - os: windows-latest
             name: windows-x64
             exe: packaging/dist/YouTube Downloader/YouTube Downloader.exe
-            zip: YouTube-Downloader-windows-x64.zip
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      - name: Version (from __version__) and zip name
+        env:
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -nE 's/^__version__ = "([^"]+)".*/\1/p' backend/app/__init__.py)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read __version__ from backend/app/__init__.py"
+            exit 1
+          fi
+          if [ "$IS_TAG" = true ] && [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match __version__ ($version): expected v$version"
+            exit 1
+          fi
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "ZIP=YouTube-Downloader-$version-${{ matrix.name }}.zip" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -54,8 +71,6 @@ jobs:
 
       - name: PyInstaller (.app on macOS, onedir on Windows)
         working-directory: backend
-        env:
-          APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: >
           uv run --no-sync pyinstaller --noconfirm
           --distpath ../packaging/dist --workpath ../packaging/build
@@ -73,14 +88,14 @@ jobs:
           codesign --force --deep -s - "YouTube Downloader.app"
           codesign --verify --deep --strict --verbose=2 "YouTube Downloader.app"
           # ditto keeps the signature, symlinks and permissions that `zip` would damage.
-          ditto -c -k --keepParent "YouTube Downloader.app" "${{ matrix.zip }}"
+          ditto -c -k --keepParent "YouTube Downloader.app" "$ZIP"
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: packaging/dist
-        run: Compress-Archive -Path "YouTube Downloader" -DestinationPath "${{ matrix.zip }}"
+        run: Compress-Archive -Path "YouTube Downloader" -DestinationPath "$env:ZIP"
       - name: Zip size
-        run: ls -l "packaging/dist/${{ matrix.zip }}"
+        run: ls -l "packaging/dist/$ZIP"
 
       - name: Smoke test (health, Engine ready, open folder, download, shutdown)
         env:
@@ -112,8 +127,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: ${{ matrix.zip }}
-          path: packaging/dist/${{ matrix.zip }}
+          name: ${{ env.ZIP }}
+          path: packaging/dist/${{ env.ZIP }}
           retention-days: 3
 
   release:
