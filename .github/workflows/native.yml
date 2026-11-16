@@ -94,6 +94,12 @@ jobs:
           fi
           exit $code
 
+      - name: Smoke test reopening the .app with `open` (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          open --help 2>&1 | head -30 || true
+          uv run --no-project python packaging/smoke.py --reopen "packaging/dist/YouTube Downloader.app"
+
       - name: Smoke test without any CA bundle visible to OpenSSL (Engine must still install)
         env:
           PYTHONUTF8: "1"
