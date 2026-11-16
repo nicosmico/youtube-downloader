@@ -810,6 +810,143 @@ describe('Downloads history', () => {
   });
 });
 
+describe('Downloads "Ver detalle"', () => {
+  let fixture: ComponentFixture<Downloads>;
+  let http: HttpTestingController;
+  let jobs: JobsService;
+
+  const root = () => fixture.nativeElement as HTMLElement;
+  const el = (testId: string) => root().querySelector<HTMLElement>(`[data-testid=${testId}]`);
+  const settle = async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const click = async (testId: string) => {
+    el(testId)!.click();
+    await settle();
+  };
+  const show = async (...list: Partial<Job>[]) => {
+    jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+  };
+  const FAILED = { status: 'failed', error: 'No se pudo descargar.' } as const;
+
+  beforeEach(async () => {
+    FakeEventSource.reset();
+    await TestBed.configureTestingModule({
+      imports: [Downloads],
+      providers: [
+        provideHttpClient(withInterceptors([appHeaderInterceptor])),
+        provideHttpClientTesting(),
+        { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    jobs = TestBed.inject(JobsService);
+    fixture = TestBed.createComponent(Downloads);
+    await settle();
+  });
+
+  afterEach(() => http.verify());
+
+  it.each(['queued', 'downloading', 'completed', 'canceled', 'interrupted'] as const)(
+    'is not offered for a %s job',
+    async (status) => {
+      await show({ status });
+
+      expect(el('job-detail-toggle')).toBeNull();
+    },
+  );
+
+  it('asks nothing until "Ver detalle" is pressed, then shows the output', async () => {
+    await show(FAILED);
+    expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
+    http.expectNone('/api/jobs/job0/output');
+
+    await click('job-detail-toggle');
+    expect(el('job-detail-loading')).not.toBeNull();
+    http
+      .expectOne('/api/jobs/job0/output')
+      .flush({ attempt: 1, lines: ['WARNING: algo', 'ERROR: Video unavailable'] });
+    await settle();
+
+    expect(el('job-detail')?.textContent).toBe('WARNING: algo\nERROR: Video unavailable');
+    expect(el('job-detail-toggle')?.textContent).toContain('Ocultar detalle');
+    expect(el('job-detail-toggle')?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('hides the output again', async () => {
+    await show(FAILED);
+    await click('job-detail-toggle');
+    http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['x'] });
+    await settle();
+
+    await click('job-detail-toggle');
+
+    expect(el('job-detail')).toBeNull();
+    expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
+  });
+
+  it('says so when there is no stored detail', async () => {
+    await show(FAILED);
+    await click('job-detail-toggle');
+
+    http
+      .expectOne('/api/jobs/job0/output')
+      .flush(
+        { code: 'output_unavailable', message: 'No hay detalle guardado de esta descarga.' },
+        { status: 404, statusText: 'Not Found' },
+      );
+    await settle();
+
+    expect(el('job-detail-error')?.textContent).toContain('No hay detalle guardado');
+  });
+
+  it('says so when the detail cannot be loaded', async () => {
+    await show(FAILED);
+    await click('job-detail-toggle');
+
+    http.expectOne('/api/jobs/job0/output').flush({}, { status: 500, statusText: 'Error' });
+    await settle();
+
+    expect(el('job-detail-error')?.textContent).toContain('No se pudo cargar el detalle');
+  });
+
+  it('closes the detail on retry and does not show the old one after a new failure', async () => {
+    await show(FAILED);
+    await click('job-detail-toggle');
+    http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['old output'] });
+    await settle();
+
+    await click('retry-job');
+    http
+      .expectOne('/api/jobs/job0/retry')
+      .flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
+    await settle();
+    expect(el('job-detail')).toBeNull();
+
+    jobs.jobs.set([{ ...JOB, id: 'job0', ...FAILED, attempt: 2 }]);
+    await settle();
+
+    expect(el('job-detail')).toBeNull();
+    expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
+  });
+
+  it('forgets the detail when the job leaves the History', async () => {
+    await show(FAILED);
+    await click('job-detail-toggle');
+    http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['old output'] });
+    await settle();
+
+    await click('remove-job');
+    http.expectOne('/api/jobs/job0').flush({ status: 'removed' });
+    await settle();
+    await show({ ...JOB, ...FAILED });
+
+    expect(el('job-detail')).toBeNull();
+  });
+});
+
 describe('formatBytes', () => {
   it.each([
     [0, '0 B'],

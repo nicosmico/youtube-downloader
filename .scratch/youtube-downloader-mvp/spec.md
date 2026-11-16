@@ -176,6 +176,8 @@ CREATE TABLE jobs (
 | `POST` | `/api/jobs/{id}/retry` | Reencola job `failed`, `canceled` o `interrupted` como nuevo `Attempt`, al final de la cola. `409 job_not_retryable` en otros estados. |
 | `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer. `404 file_missing` si el archivo ya no está, `409 job_not_completed`, `501 open_unavailable` (Docker), `500 open_failed`. |
 | `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409 job_not_removable` si no es terminal. Al quitar el último job de un `Batch` se borra también el `Batch`. |
+| `GET` | `/api/jobs/{id}/output` | v0.1.1. Últimas líneas de salida de `yt-dlp` del último `Attempt` fallido (`{attempt, lines}`). `404 output_unavailable` si el job no tiene detalle. |
+| `GET` | `/api/logs` | v0.1.1. `{lines}` con el final de `app.log`: `lines` (1 a 500) y `requests` (incluye `uvicorn.access`, por defecto no). |
 | `GET` | `/api/events` | Stream SSE. |
 | `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
 | `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |

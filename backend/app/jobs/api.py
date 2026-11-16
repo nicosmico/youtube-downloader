@@ -124,6 +124,17 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevea
             raise _not_found()
         return job.to_dict()
 
+    @router.get("/{job_id}/output")
+    def job_output(job_id: str) -> dict[str, Any]:
+        """The last lines of yt-dlp output of the last failed Attempt ("Ver detalle")."""
+        if repo.get(job_id) is None:
+            raise _not_found()
+        stored = repo.get_output(job_id)
+        if stored is None:
+            raise ApiError(404, "output_unavailable", "No hay detalle guardado de esta descarga.")
+        attempt, lines = stored
+        return {"attempt": attempt, "lines": lines}
+
     @router.post("/{job_id}/cancel")
     def cancel_job(job_id: str) -> dict[str, Any]:
         try:

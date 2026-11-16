@@ -99,6 +99,35 @@
         <p class="error" role="alert" data-testid="job-error">{{ job.error }}</p>
       }
 
+      @if (job.status === 'failed') {
+        <button
+          type="button"
+          class="action"
+          data-testid="job-detail-toggle"
+          [attr.aria-expanded]="detail(job) !== null"
+          (click)="toggleDetail(job)"
+        >
+          {{ detail(job) ? texts.downloads.hideDetail : texts.downloads.showDetail }}
+        </button>
+        @if (detail(job); as info) {
+          @switch (info.state) {
+            @case ('loading') {
+              <p class="meta" role="status" data-testid="job-detail-loading">
+                {{ texts.downloads.loadingDetail }}
+              </p>
+            }
+            @case ('error') {
+              <p class="error" role="alert" data-testid="job-detail-error">{{ info.message }}</p>
+            }
+            @default {
+              <pre class="detail" data-testid="job-detail" tabindex="0">{{
+                info.lines.join('\n')
+              }}</pre>
+            }
+          }
+        }
+      }
+
       @if (canCancel(job)) {
         @if (confirming() === job.id) {
           <div class="confirm" role="group" [attr.aria-label]="texts.downloads.cancelConfirm">

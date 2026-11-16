@@ -28,6 +28,8 @@ class Scenario:
     lines_per_stream: int = 3
     estimate_only: bool = False  # `total_bytes` null, `total_bytes_estimate` set (fragments)
     postprocessors: tuple[str, ...] = ("Merger", "MoveFiles")
+    stdout_lines: tuple[str, ...] = ()  # plain (non-progress) lines printed before the end
+    stderr_lines: tuple[str, ...] = ()  # warnings printed on stderr before the end
     fail_with: str | None = None  # stderr text; the process exits with 1 after some progress
     hold: bool = False  # block after the first progress line until `release()` or a stop
     ignore_terminate: bool = False  # a stubborn process: only `kill()` stops it
@@ -178,6 +180,10 @@ class FakeEngine:
                     }
                 )
             )
+        for line in sc.stdout_lines:
+            on_stdout(line)
+        for line in sc.stderr_lines:
+            on_stderr(line)
         if sc.fail_with is not None:
             on_stderr(sc.fail_with)
             return 1

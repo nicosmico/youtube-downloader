@@ -15,7 +15,7 @@ def tables(db: Database) -> set[str]:
 def test_migrations_create_batches_and_jobs_in_wal_mode(tmp_path: Path) -> None:
     db = Database(tmp_path / "db.sqlite3")
 
-    assert db.migrate() == 4
+    assert db.migrate() == 5
 
     assert {"batches", "jobs"} <= tables(db)
     assert "presets" not in tables(db)
@@ -35,8 +35,8 @@ def test_migrate_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     db.close()
 
     again = Database(path)
-    assert again.migrate() == 4
-    assert again.migrate() == 4
+    assert again.migrate() == 5
+    assert again.migrate() == 5
     assert again.query("SELECT id FROM jobs")[0]["id"] == "a"
 
 

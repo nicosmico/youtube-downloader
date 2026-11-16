@@ -39,6 +39,10 @@ log = logging.getLogger("app.jobs")
 
 FLUSH_INTERVAL_SECONDS = 1.0
 STDERR_LINES_KEPT = 200
+# "Ver detalle": the last lines of yt-dlp output (stdout and stderr, without progress lines) of
+# an Attempt, kept only if it fails. Long lines are cut so the stored text stays small.
+OUTPUT_LINES_KEPT = 200
+OUTPUT_LINE_MAX = 2000
 
 
 class JobRunner:
@@ -112,17 +116,21 @@ class JobRunner:
             return self._interrupt(job.id)
         if code != 0:
             log.warning("job %s: yt-dlp exited with %s: %s", job.id, code, attempt.stderr_tail())
-            return self._fail(job.id, failures.describe_failure(attempt.stderr_tail()))
+            return self._fail(
+                job.id,
+                failures.describe_failure(attempt.stderr_tail()),
+                output=(job.attempt, attempt.output()),
+            )
         staged = find_staged_file(staging, attempt.reported_path)
         if staged is None:
             log.warning("job %s: no output file in staging", job.id)
-            return self._fail(job.id, failures.FILE_MISSING)
+            return self._fail(job.id, failures.FILE_MISSING, output=(job.attempt, attempt.output()))
         try:
             subdir, name = self._destination(job, staged)
             final = self._mover.move(staged, subdir, name)
         except OSError:
             log.exception("job %s: could not move %s", job.id, staged)
-            return self._fail(job.id, failures.MOVE_FAILED)
+            return self._fail(job.id, failures.MOVE_FAILED, output=(job.attempt, attempt.output()))
 
         # `completed` only now: the file is already in the Destination.
         remove_staging(self._staging_root, job.id)
@@ -177,8 +185,11 @@ class JobRunner:
         self._publish(job)
         return job
 
-    def _fail(self, job_id: str, message: str) -> Job:
+    def _fail(self, job_id: str, message: str, output: tuple[int, list[str]] | None = None) -> Job:
         remove_staging(self._staging_root, job_id)
+        if output is not None and output[1]:
+            # Before the status change: whoever sees `failed` can already ask for the detail.
+            self._repo.save_output(job_id, *output)
         failed = self._repo.update(
             job_id,
             status=JobStatus.FAILED.value,
@@ -200,6 +211,7 @@ class _Attempt:
         self._lock = threading.Lock()
         self._tracker = ProgressTracker()
         self._stderr: deque[str] = deque(maxlen=STDERR_LINES_KEPT)
+        self._output: deque[str] = deque(maxlen=OUTPUT_LINES_KEPT)
         self._dirty = False
         self._status = JobStatus.DOWNLOADING
         self._last_flush: float | None = None
@@ -218,6 +230,7 @@ class _Attempt:
                 self._tracker.set_expected(line)
             elif line.strip():
                 self.reported_path = line.strip()  # the last one is `after_move:filepath`
+                self._keep(line)
 
     def on_stderr(self, line: str) -> None:
         with self._lock:
@@ -228,6 +241,14 @@ class _Attempt:
                     self._flush()
             elif line.strip():
                 self._stderr.append(line)
+                self._keep(line)
+
+    def _keep(self, line: str) -> None:
+        self._output.append(line if len(line) <= OUTPUT_LINE_MAX else line[:OUTPUT_LINE_MAX] + "…")
+
+    def output(self) -> list[str]:
+        with self._lock:
+            return list(self._output)
 
     def stderr_tail(self) -> str:
         with self._lock:

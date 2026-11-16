@@ -14,6 +14,12 @@ export type JobStatus =
   'queued' | 'downloading' | 'processing' | 'completed' | 'failed' | 'canceled' | 'interrupted';
 
 /** A DownloadJob as the API sends it (camelCase). */
+/** yt-dlp output (stdout and stderr, no progress lines) of one Attempt. */
+export interface JobOutput {
+  attempt: number;
+  lines: string[];
+}
+
 export interface Job {
   id: string;
   batchId: string | null;
@@ -161,6 +167,11 @@ export class JobsService {
       tap(() => this.drop(jobId)),
       catchError((error: unknown) => this.failed(error)),
     );
+  }
+
+  /** The last yt-dlp output of the failed Attempt ("Ver detalle"); an error when there is none. */
+  output(jobId: string): Observable<JobOutput> {
+    return this.http.get<JobOutput>(`/api/jobs/${encodeURIComponent(jobId)}/output`);
   }
 
   /** Shows the file of a completed job in Finder/Explorer (host action). */

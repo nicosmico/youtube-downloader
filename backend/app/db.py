@@ -77,6 +77,16 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         DROP TABLE presets;
         """,
     ),
+    (
+        5,
+        """
+        CREATE TABLE job_output (
+          job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+          attempt INTEGER NOT NULL,
+          output TEXT NOT NULL
+        );
+        """,
+    ),
 )
 
 

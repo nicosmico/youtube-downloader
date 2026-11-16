@@ -20,6 +20,14 @@ export function formatBytes(bytes: number): string {
   return `${text} ${units[unit]}`;
 }
 
+/** The output of a failed Attempt as the card shows it. */
+interface Detail {
+  attempt: number;
+  state: 'loading' | 'ready' | 'error';
+  lines: string[];
+  message: string;
+}
+
 /** A Batch with the jobs of its entries, in playlist order. */
 export interface BatchGroup {
   kind: 'batch';
@@ -103,6 +111,8 @@ export class Downloads {
         ? labels.win32
         : labels.other;
   });
+  /** "Ver detalle" of failed jobs: open ones by job id, tied to the Attempt they belong to. */
+  protected readonly details = signal<ReadonlyMap<string, Detail>>(new Map());
   /** Why showing the file of a job failed (the server's Spanish message). */
   protected readonly revealError = signal<{ jobId: string; text: string } | null>(null);
   /** Job whose cancellation awaits the user's confirmation (only running jobs ask). */
@@ -218,11 +228,57 @@ export class Downloads {
     this.confirming.set(null);
   }
 
+  protected detail(job: Job): Detail | null {
+    const detail = this.details().get(job.id);
+    return detail && detail.attempt === job.attempt ? detail : null;
+  }
+
+  /** Opens or closes the yt-dlp output of the failed Attempt (fetched when opened). */
+  protected toggleDetail(job: Job): void {
+    if (this.detail(job)) {
+      this.setDetail(job.id, null);
+      return;
+    }
+    this.setDetail(job.id, { attempt: job.attempt, state: 'loading', lines: [], message: '' });
+    this.jobsService.output(job.id).subscribe({
+      next: (output) =>
+        this.setDetail(job.id, {
+          attempt: job.attempt,
+          state: 'ready',
+          lines: output.lines,
+          message: '',
+        }),
+      error: (error: unknown) => {
+        const unavailable = error instanceof HttpErrorResponse && error.status === 404;
+        this.setDetail(job.id, {
+          attempt: job.attempt,
+          state: 'error',
+          lines: [],
+          message: unavailable ? TEXTS.downloads.detailUnavailable : TEXTS.downloads.detailFailed,
+        });
+      },
+    });
+  }
+
+  private setDetail(jobId: string, detail: Detail | null): void {
+    this.details.update((current) => {
+      const next = new Map(current);
+      if (detail) {
+        next.set(jobId, detail);
+      } else {
+        next.delete(jobId);
+      }
+      return next;
+    });
+  }
+
   protected retry(job: Job): void {
+    this.setDetail(job.id, null);
     this.send(job, this.jobsService.retry(job.id));
   }
 
   protected remove(job: Job): void {
+    this.setDetail(job.id, null);
     this.send(job, this.jobsService.remove(job.id));
   }
 

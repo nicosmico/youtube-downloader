@@ -152,6 +152,20 @@ class JobRepository:
             )
         return job
 
+    def save_output(self, job_id: str, attempt: int, lines: list[str]) -> None:
+        """Keep the yt-dlp output of the last failed Attempt (replaces the previous one)."""
+        self._db.execute(
+            "INSERT OR REPLACE INTO job_output (job_id, attempt, output) VALUES (?, ?, ?)",
+            (job_id, attempt, "\n".join(lines)),
+        )
+
+    def get_output(self, job_id: str) -> tuple[int, list[str]] | None:
+        """`(attempt, lines)` of the stored output, or None when the job has none."""
+        rows = self._db.query("SELECT attempt, output FROM job_output WHERE job_id = ?", (job_id,))
+        if not rows:
+            return None
+        return rows[0]["attempt"], rows[0]["output"].split("\n")
+
     def update(self, job_id: str, **fields: Any) -> Job:
         unknown = set(fields) - _MUTABLE
         if unknown:
@@ -206,6 +220,8 @@ class JobRepository:
                 JobStatus.INTERRUPTED.value,
             ),
         )
+        if changed:
+            self._db.execute("DELETE FROM job_output WHERE job_id = ?", (job_id,))
         return self.get(job_id) if changed else None
 
     def _queue_stamp(self) -> str:
