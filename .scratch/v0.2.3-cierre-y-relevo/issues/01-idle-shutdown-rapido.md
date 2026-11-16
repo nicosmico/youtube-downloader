@@ -4,14 +4,14 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Cierre unos 15 s después de cerrar la última pestaña, sin descargas ni trabajo del motor.
 - [x] 60 s de gracia al arrancar sin ninguna pestaña.
 - [x] Una reconexión antes del plazo (recarga) cancela el cierre.
 - [x] Con descargas activas no se cierra; empieza a contar al vaciarse la `Queue`.
 - [x] `IDLE_SHUTDOWN_SECONDS=0` lo desactiva.
-- [ ] Smoke test: entorno con timeout alto (también en `--reopen`) y caso nuevo de cierre automático.
+- [x] Smoke test: entorno con timeout alto (también en `--reopen`) y caso nuevo de cierre automático.
 - [x] Tests de `IdleMonitor` con reloj inyectado; glosario y ADR-0001 actualizados.
 
 ## Comments
@@ -26,3 +26,5 @@
 **Verificación:** `docker compose run --rm tests` 722 passed (3 deselected), `ruff check` y `ruff format --check` limpios. Tests nuevos/actualizados en `test_idle.py` (reloj inyectado): 15 s tras la última pestaña, 60 s de gracia, plazo configurado mayor que la gracia, paso de gracia a 15 s al conectarse la primera pestaña, pestaña que entra y sale entre sondeos, reconexión antes del plazo, trabajo activo (también durante la gracia) y cuenta posterior, `0` desactivado, intervalo de sondeo, y los tests de la app con la gracia. `run_idle_shutdown` probado en Docker contra `python -m app` con binarios del Engine falsos: salió 3,5 s después de cerrar la conexión SSE, exit 0.
 
 **Solo CI puede verificar:** el binario empaquetado real (PyInstaller) en macOS y Windows con el Engine instalado de verdad, y el modo `--reopen` con `open --env IDLE_SHUTDOWN_SECONDS=600`. Falta marcar la casilla del smoke hasta que pase en CI.
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.3` (Native/Release `43967590958`; en main, CI `43967239573` y Native `43967239567`, con el caso de Idle Shutdown del smoke pasando en macOS y Windows). El relevo de versión se probó de punta a punta en Docker: una instancia "0.1.0" se cerró y la 0.2.2 tomó su lugar.

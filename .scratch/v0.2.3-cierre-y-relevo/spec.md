@@ -1,6 +1,6 @@
 # Spec: v0.2.3 — cierre al cerrar la pestaña y relevo de versión
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Problem Statement
 

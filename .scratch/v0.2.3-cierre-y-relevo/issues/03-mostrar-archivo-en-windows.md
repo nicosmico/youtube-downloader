@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `reveal_file` en Windows pasa `explorer /select,"<ruta>"` como línea de comandos.
 - [x] Test por plataforma sin lanzar procesos.
@@ -13,3 +13,5 @@
 ## Comments
 
 2026-11-16: Hecho por el orquestador en `backend/app/opener.py`, con `backend/tests/test_opener.py`. Los nombres de Windows no pueden contener `"`, así que entrecomillar la ruta es seguro.
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.3` (Native/Release `43967590958`; en main, CI `43967239573` y Native `43967239567`, con el caso de Idle Shutdown del smoke pasando en macOS y Windows). El relevo de versión se probó de punta a punta en Docker: una instancia "0.1.0" se cerró y la 0.2.2 tomó su lugar.
