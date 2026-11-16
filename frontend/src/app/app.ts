@@ -5,6 +5,7 @@ import { JobsService } from './core/jobs.service';
 import { Health, SystemService } from './core/system.service';
 import { TEXTS } from './core/texts';
 import { Downloads } from './downloads/downloads';
+import { Logs } from './logs/logs';
 import { UrlPreview } from './preview/url-preview';
 
 /** `closedIdle`: the server closed itself after 10 minutes without use (Idle Shutdown). */
@@ -12,7 +13,7 @@ type ShutdownState = 'idle' | 'closing' | 'done' | 'closedIdle' | 'failed';
 
 @Component({
   selector: 'app-root',
-  imports: [UrlPreview, Downloads],
+  imports: [UrlPreview, Downloads, Logs],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

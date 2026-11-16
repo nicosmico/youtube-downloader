@@ -1,10 +1,12 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { appHeaderInterceptor } from './core/api.interceptor';
+import { AppErrorHandler, errorLogInterceptor } from './core/error-log.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(withInterceptors([appHeaderInterceptor])),
+    { provide: ErrorHandler, useClass: AppErrorHandler },
+    provideHttpClient(withInterceptors([appHeaderInterceptor, errorLogInterceptor])),
   ],
 };

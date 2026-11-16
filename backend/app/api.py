@@ -8,13 +8,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 
 from app import APP_ID, __version__
 from app.engine import EngineManager, UpdateOutcome
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
+from app.logs import MAX_LINES, read_log_tail
 from app.opener import FolderOpener, OpenUnavailable
 from app.preview import PreviewFailure, PreviewService
 from app.runtime import remove_runtime
@@ -55,6 +56,15 @@ def build_router(
             "port": port,
             "platform": sys.platform,
         }
+
+    @router.get("/logs")
+    def logs(
+        lines: int = Query(default=MAX_LINES, ge=1, le=MAX_LINES),
+        requests: bool = False,
+    ) -> dict[str, Any]:
+        """Tail of `app.log`, read-only. Plain `def`: it runs in a worker thread, off the loop.
+        HTTP requests (`uvicorn.access`) are left out unless `requests=true`."""
+        return {"lines": read_log_tail(data_dir, lines, requests)}
 
     @router.get("/system/engine")
     def engine_status() -> dict[str, Any]:

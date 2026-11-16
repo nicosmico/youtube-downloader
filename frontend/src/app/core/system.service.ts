@@ -18,11 +18,16 @@ export class SystemService {
 
   /** Where the server runs (from `/api/health`); null until known. Labels host actions. */
   readonly platform = signal<string | null>(null);
+  /** App version (from `/api/health`); null until known. */
+  readonly version = signal<string | null>(null);
 
   health(): Observable<Health> {
-    return this.http
-      .get<Health>('/api/health')
-      .pipe(tap((health) => this.platform.set(health.platform ?? null)));
+    return this.http.get<Health>('/api/health').pipe(
+      tap((health) => {
+        this.platform.set(health.platform ?? null);
+        this.version.set(health.version);
+      }),
+    );
   }
 
   /** Host action: the server opens the Downloads folder in Finder/Explorer. */

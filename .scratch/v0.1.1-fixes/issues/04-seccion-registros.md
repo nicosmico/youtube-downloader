@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Un endpoint de solo lectura devuelve las últimas N líneas del log (máximo 500), con o sin peticiones, sin bloquear al runner.
-- [ ] La sección está plegada por defecto y solo pide datos al abrirse o al pulsar "Actualizar".
-- [ ] Los errores del frontend se capturan en un buffer acotado en memoria y aparecen en la sección.
-- [ ] "Copiar" y "Descargar .txt" incluyen la cabecera y ambas fuentes.
-- [ ] Funciona en el ejecutable sin consola de Windows, donde el log solo va a archivo.
-- [ ] Tests de API y de componente.
+- [x] Un endpoint de solo lectura devuelve las últimas N líneas del log (máximo 500), con o sin peticiones, sin bloquear al runner.
+- [x] La sección está plegada por defecto y solo pide datos al abrirse o al pulsar "Actualizar".
+- [x] Los errores del frontend se capturan en un buffer acotado en memoria y aparecen en la sección.
+- [x] "Copiar" y "Descargar .txt" incluyen la cabecera y ambas fuentes.
+- [x] Funciona en el ejecutable sin consola de Windows, donde el log solo va a archivo.
+- [x] Tests de API y de componente.

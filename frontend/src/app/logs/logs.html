@@ -1,0 +1,84 @@
+<section class="card" aria-labelledby="logs-heading">
+  <h2 id="logs-heading">
+    <button
+      type="button"
+      class="toggle"
+      data-testid="logs-toggle"
+      aria-controls="logs-body"
+      [attr.aria-expanded]="open()"
+      (click)="toggle()"
+    >
+      {{ texts.heading }}
+      <span class="meta">{{ open() ? texts.close : texts.open }}</span>
+    </button>
+  </h2>
+
+  @if (open()) {
+    <div id="logs-body" data-testid="logs-body">
+      <div class="toolbar">
+        <button
+          type="button"
+          class="action"
+          data-testid="logs-refresh"
+          [disabled]="loading()"
+          (click)="refresh()"
+        >
+          {{ loading() ? texts.refreshing : texts.refresh }}
+        </button>
+        <label class="requests">
+          <input
+            type="checkbox"
+            data-testid="logs-requests"
+            [checked]="includeRequests()"
+            (change)="toggleRequests($any($event.target).checked)"
+          />
+          {{ texts.showRequests }}
+        </label>
+        <button
+          type="button"
+          class="action"
+          data-testid="logs-copy"
+          [disabled]="loading()"
+          (click)="copy()"
+        >
+          {{ texts.copy }}
+        </button>
+        <button
+          type="button"
+          class="action"
+          data-testid="logs-download"
+          [disabled]="loading()"
+          (click)="download()"
+        >
+          {{ texts.download }}
+        </button>
+      </div>
+
+      @if (message(); as feedback) {
+        <p
+          [class]="feedback.ok ? 'meta' : 'error'"
+          [attr.role]="feedback.ok ? 'status' : 'alert'"
+          data-testid="logs-message"
+        >
+          {{ feedback.text }}
+        </p>
+      }
+
+      <h3>{{ texts.server }}</h3>
+      @if (loadFailed()) {
+        <p class="error" role="alert" data-testid="logs-load-error">{{ texts.loadFailed }}</p>
+      } @else if (serverLines().length > 0) {
+        <pre data-testid="logs-server" tabindex="0">{{ serverLines().join('\n') }}</pre>
+      } @else if (!loading()) {
+        <p class="meta" data-testid="logs-server-empty">{{ texts.serverEmpty }}</p>
+      }
+
+      <h3>{{ texts.frontend }}</h3>
+      @if (errorLog.entries().length > 0) {
+        <pre data-testid="logs-frontend" tabindex="0">{{ frontendText() }}</pre>
+      } @else {
+        <p class="meta" data-testid="logs-frontend-empty">{{ texts.frontendEmpty }}</p>
+      }
+    </div>
+  }
+</section>
