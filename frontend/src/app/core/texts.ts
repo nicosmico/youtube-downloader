@@ -47,6 +47,7 @@ export const TEXTS = {
     clear: 'Borrar enlace',
     empty: 'Videos, Shorts, playlists y canales de YouTube.',
     engineNotReady: 'El motor de descarga no está listo.',
+    enginePreparing: 'Preparando el motor…',
     engineRetry: 'Reintentar',
     loading: 'Obteniendo información…',
     upTo: 'Hasta',

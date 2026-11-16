@@ -15,7 +15,6 @@
       [attr.aria-label]="texts.preview.urlLabel"
       [placeholder]="texts.preview.urlPlaceholder"
       [value]="url()"
-      [disabled]="!engineReady()"
       (input)="onInput($event)"
     />
     <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
@@ -31,33 +30,49 @@
           <app-icon name="close" class="size-4" />
         </button>
       }
-      <button
-        type="button"
-        data-testid="paste-button"
-        class="flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium hover:bg-surface-2 disabled:opacity-60"
-        [disabled]="!engineReady()"
-        (click)="paste()"
-      >
-        <app-icon name="paste" class="size-4" />
-        {{ texts.preview.paste }}
-      </button>
+      @if (canPaste) {
+        <button
+          type="button"
+          data-testid="paste-button"
+          class="flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium hover:bg-surface-2"
+          (click)="paste()"
+        >
+          <app-icon name="paste" class="size-4" />
+          {{ texts.preview.paste }}
+        </button>
+      }
     </div>
   </div>
 
-  @if (!engineReady()) {
-    <div
-      class="flex items-center gap-3 rounded-xl border border-accent px-4 py-3"
-      role="alert"
-      data-testid="engine-notice"
-    >
-      <app-icon name="warning" class="size-5 text-accent" />
-      <div class="min-w-0 flex-1 text-sm">
-        <p class="m-0 font-medium">{{ texts.preview.engineNotReady }}</p>
-        @if (engine()?.status === 'error' && engine()?.message) {
-          <p class="m-0 text-muted" data-testid="engine-notice-message">{{ engine()?.message }}</p>
-        }
+  @switch (engine()?.status) {
+    @case ('installing') {
+      <div
+        class="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm text-muted"
+        role="status"
+        data-testid="engine-preparing"
+      >
+        <span
+          class="size-4 shrink-0 rounded-full border-2 border-muted border-t-transparent motion-safe:animate-spin"
+          aria-hidden="true"
+        ></span>
+        {{ texts.preview.enginePreparing }}
       </div>
-      @if (engine()?.status === 'error') {
+    }
+    @case ('error') {
+      <div
+        class="flex items-center gap-3 rounded-xl border border-accent px-4 py-3"
+        role="alert"
+        data-testid="engine-notice"
+      >
+        <app-icon name="warning" class="size-5 text-accent" />
+        <div class="min-w-0 flex-1 text-sm">
+          <p class="m-0 font-medium">{{ texts.preview.engineNotReady }}</p>
+          @if (engine()?.message) {
+            <p class="m-0 text-muted" data-testid="engine-notice-message">
+              {{ engine()?.message }}
+            </p>
+          }
+        </div>
         <button
           type="button"
           data-testid="engine-notice-retry"
@@ -66,15 +81,13 @@
         >
           {{ texts.preview.engineRetry }}
         </button>
-      }
-    </div>
+      </div>
+    }
   }
 
   @switch (status()) {
     @case ('idle') {
-      @if (engineReady()) {
-        <p class="m-0 text-sm text-muted" data-testid="empty-state">{{ texts.preview.empty }}</p>
-      }
+      <p class="m-0 text-sm text-muted" data-testid="empty-state">{{ texts.preview.empty }}</p>
     }
     @case ('loading') {
       <div class="flex min-w-0 gap-4" data-testid="preview-skeleton" aria-hidden="true">

@@ -10,7 +10,14 @@ import { appHeaderInterceptor } from '../core/api.interceptor';
 import { ENGINE_READY, MEDIA, PLAYLIST } from '../../testing/fixtures';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
 import { JobsService } from '../core/jobs.service';
-import { DEBOUNCE_MS, UrlPreview, formatDuration, looksLikeUrl } from './url-preview';
+import {
+  DEBOUNCE_MS,
+  PASTE_SUPPORT,
+  UrlPreview,
+  detectPasteSupport,
+  formatDuration,
+  looksLikeUrl,
+} from './url-preview';
 
 const URL_A = 'https://www.youtube.com/watch?v=Jt5fgKBqZSY';
 const URL_B = 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
@@ -19,6 +26,7 @@ describe('UrlPreview', () => {
   let fixture: ComponentFixture<UrlPreview>;
   let http: HttpTestingController;
   let engine: EngineService;
+  let pasteSupported = true;
 
   const root = () => fixture.nativeElement as HTMLElement;
   const el = <T extends HTMLElement>(testId: string) =>
@@ -64,12 +72,14 @@ describe('UrlPreview', () => {
     // RxJS timers use setInterval; setTimeout and rAF stay real so Angular can stabilize.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     FakeEventSource.reset();
+    pasteSupported = true;
     await TestBed.configureTestingModule({
       imports: [UrlPreview],
       providers: [
         provideHttpClient(withInterceptors([appHeaderInterceptor])),
         provideHttpClientTesting(),
         { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+        { provide: PASTE_SUPPORT, useValue: () => pasteSupported },
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
@@ -85,29 +95,143 @@ describe('UrlPreview', () => {
   });
 
   describe('Engine not ready', () => {
-    it('disables the field and the paste button, with a prominent notice', async () => {
-      engine.engine.set({ ...ENGINE_READY, status: 'installing' } as EngineInfo);
+    const setEngine = async (
+      status: EngineInfo['status'] | null,
+      message: string | null = null,
+    ) => {
+      engine.engine.set(status ? ({ ...ENGINE_READY, status, message } as EngineInfo) : null);
       await settle();
+    };
 
-      expect(input().disabled).toBe(true);
-      expect(el<HTMLButtonElement>('paste-button')!.disabled).toBe(true);
-      expect(el('engine-notice')?.getAttribute('role')).toBe('alert');
-      expect(el('engine-notice')?.textContent).toContain('motor de descarga');
+    it.each([
+      ['unknown yet', null],
+      ['missing', 'missing'],
+    ] as const)(
+      'shows nothing while the Engine is %s, and keeps the field usable',
+      async (_, status) => {
+        await setEngine(status);
+
+        expect(el('engine-notice')).toBeNull();
+        expect(el('engine-preparing')).toBeNull();
+        expect(root().querySelector('[role=alert]')).toBeNull();
+        expect(input().disabled).toBe(false);
+        expect(el<HTMLButtonElement>('paste-button')!.disabled).toBe(false);
+      },
+    );
+
+    it('shows a neutral status, not an alert, while the Engine installs', async () => {
+      await setEngine('installing');
+
+      const notice = el('engine-preparing')!;
+      expect(notice.getAttribute('role')).toBe('status');
+      expect(notice.textContent).toContain('Preparando el motor…');
+      expect(notice.className).toContain('bg-surface');
+      expect(notice.className).not.toContain('accent');
+      expect(notice.querySelector('app-icon')).toBeNull();
+      expect(root().querySelector('[role=alert]')).toBeNull();
       expect(el('engine-notice-retry')).toBeNull();
-      expect(el('empty-state')).toBeNull();
+      expect(input().disabled).toBe(false);
     });
 
-    it('offers "Reintentar" with the message when the Engine failed', async () => {
-      engine.engine.set({
-        ...ENGINE_READY,
-        status: 'error',
-        message: 'sin conexión',
-      } as EngineInfo);
-      await settle();
+    it('shows the red notice with the message and "Reintentar" when the Engine failed', async () => {
+      await setEngine('error', 'sin conexión');
 
+      expect(el('engine-notice')?.getAttribute('role')).toBe('alert');
+      expect(el('engine-notice')?.textContent).toContain('El motor de descarga no está listo.');
       expect(el('engine-notice-message')?.textContent).toContain('sin conexión');
+      expect(el('engine-preparing')).toBeNull();
       el('engine-notice-retry')!.click();
       http.expectOne('/api/system/engine/install').flush({ ...ENGINE_READY, status: 'installing' });
+    });
+
+    it.each([
+      ['unknown yet', null],
+      ['missing', 'missing'],
+      ['installing', 'installing'],
+    ] as const)(
+      'defers a pasted link while the Engine is %s and previews once it is ready',
+      async (_, status) => {
+        await setEngine(status);
+
+        await type(URL_A, 'insertFromPaste');
+
+        expect(el('preview-skeleton')).not.toBeNull();
+        expect(el('preview-error')).toBeNull();
+        expect(root().querySelector('[role=alert]')).toBeNull();
+        http.expectNone('/api/preview');
+
+        await setEngine('ready');
+
+        const req = http.expectOne('/api/preview');
+        expect(req.request.body).toEqual({ url: URL_A });
+        await answer(req, MEDIA);
+        expect(el('preview-title')?.textContent).toContain(MEDIA.title);
+        expect(el('preview-skeleton')).toBeNull();
+      },
+    );
+
+    it('defers a typed link past the debounce, then waits for the Engine', async () => {
+      await setEngine('installing');
+
+      await type(URL_A);
+      await elapse(DEBOUNCE_MS);
+      expect(el('preview-skeleton')).not.toBeNull();
+      http.expectNone('/api/preview');
+
+      await setEngine('ready');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+      expect(el('preview-card')).not.toBeNull();
+    });
+
+    it('keeps only the latest link when the user changes it while waiting', async () => {
+      await setEngine('installing');
+      await type(URL_A, 'insertFromPaste');
+      await type(URL_B, 'insertFromPaste');
+
+      await setEngine('ready');
+
+      const req = http.expectOne('/api/preview');
+      expect(req.request.body).toEqual({ url: URL_B });
+      await answer(req, MEDIA);
+    });
+
+    it('stops waiting when the field is cleared', async () => {
+      await setEngine('installing');
+      await type(URL_A, 'insertFromPaste');
+
+      el('url-clear')!.click();
+      await settle();
+      await setEngine('ready');
+
+      expect(el('preview-skeleton')).toBeNull();
+      http.expectNone('/api/preview');
+    });
+
+    it('waits for ready and retries once after a 409 engine_not_ready, with no error', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await setEngine('installing');
+      await answer(http.expectOne('/api/preview'), { code: 'engine_not_ready', message: 'x' }, 409);
+
+      expect(el('preview-skeleton')).not.toBeNull();
+      expect(el('preview-error')).toBeNull();
+      http.expectNone('/api/preview');
+
+      await setEngine('ready');
+
+      await answer(http.expectOne('/api/preview'), MEDIA);
+      expect(el('preview-card')).not.toBeNull();
+    });
+
+    it('shows the error if the retry gets 409 again', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await setEngine('installing');
+      await answer(http.expectOne('/api/preview'), { code: 'engine_not_ready', message: 'x' }, 409);
+      await setEngine('ready');
+
+      await answer(http.expectOne('/api/preview'), { code: 'engine_not_ready', message: 'x' }, 409);
+
+      expect(el('preview-error')?.getAttribute('data-code')).toBe('engine_not_ready');
+      http.expectNone('/api/preview');
     });
 
     it('enables it once the Engine is ready', async () => {
@@ -124,6 +248,51 @@ describe('UrlPreview', () => {
       await settle();
 
       expect(el('preview-card')).toBeNull();
+    });
+  });
+
+  describe('"Pegar" button', () => {
+    it('is rendered where the browser reads the clipboard directly (Chromium)', () => {
+      expect(el('paste-button')).not.toBeNull();
+    });
+
+    it('is not rendered in Safari or Firefox, which still preview on a pasted link', async () => {
+      fixture.destroy();
+      pasteSupported = false;
+      fixture = TestBed.createComponent(UrlPreview);
+      await settle();
+
+      expect(el('paste-button')).toBeNull();
+      expect(root().textContent).not.toContain('Pegar');
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+      expect(el('preview-card')).not.toBeNull();
+    });
+
+    describe('capability detection', () => {
+      const setNavigator = (key: string, value: unknown) =>
+        Object.defineProperty(navigator, key, { configurable: true, value });
+
+      afterEach(() => {
+        delete (navigator as unknown as Record<string, unknown>)['userAgentData'];
+        delete (navigator as unknown as Record<string, unknown>)['clipboard'];
+      });
+
+      it('needs both userAgentData and clipboard.readText', () => {
+        expect(detectPasteSupport()).toBe(false);
+
+        setNavigator('clipboard', { readText: async () => '' });
+        expect(detectPasteSupport()).toBe(false); // Firefox-like: no userAgentData
+
+        setNavigator('userAgentData', {});
+        expect(detectPasteSupport()).toBe(true);
+
+        setNavigator('clipboard', {});
+        expect(detectPasteSupport()).toBe(false);
+
+        setNavigator('clipboard', undefined);
+        expect(detectPasteSupport()).toBe(false);
+      });
     });
   });
 
@@ -377,7 +546,6 @@ describe('UrlPreview', () => {
       ['unavailable', 422, 'no está disponible'],
       ['timeout', 504, 'tardó demasiado'],
       ['preview_failed', 502, 'No se pudo obtener la información'],
-      ['engine_not_ready', 409, 'todavía no está listo'],
     ];
 
     for (const [code, status, text] of cases) {
