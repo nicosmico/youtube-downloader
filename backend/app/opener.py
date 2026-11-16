@@ -41,8 +41,10 @@ def reveal_file(path: Path) -> None:
         subprocess.run(["open", "-R", str(path)], check=True, capture_output=True)
     elif sys.platform == "win32":
         # explorer.exe reports exit code 1 even when it worked: the code is not checked.
+        # A command line, not a list: subprocess would quote the whole `/select,<path>` argument
+        # when the path has spaces, and Explorer then ignores it. Windows names cannot hold `"`.
         subprocess.Popen(
-            ["explorer", f"/select,{path}"],
+            f'explorer /select,"{path}"',
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     else:
