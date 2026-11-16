@@ -11,6 +11,12 @@ Starts the executable with `--no-browser` and temporary DATA_DIR / DOWNLOAD_DIR,
 health, Engine `ready` (real binaries downloaded and verified), "open folder", a real download
 and a clean shutdown (process exits, runtime.json removed).
 
+    python packaging/smoke.py --reopen <path to YouTube Downloader.app>     (macOS only)
+
+`--reopen` starts the .app through `open` (the path of a double click), waits for the server,
+opens it a second time and checks that the same server is still the only one (the second launcher
+reused it and exited) before shutting it down through the API.
+
 Exit codes: 0 all good; 1 failure; 10 everything passed except the download, which YouTube
 refused with its bot check (a known limit of datacenter IPs: never bypassed).
 """
@@ -84,6 +90,7 @@ def run(exe: Path, work: Path, empty_ca_store: bool = False) -> int:
     download_dir.mkdir()
     env = {**os.environ, "DATA_DIR": str(data_dir), "DOWNLOAD_DIR": str(download_dir)}
     env.pop("ENGINE_BIN_DIR", None)
+    env["YTDL_SERVER_CHILD"] = "1"  # run the server itself: on macOS it would detach otherwise
     if empty_ca_store:
         (work / "empty-ca.pem").write_text("")
         (work / "empty-ca-dir").mkdir()
@@ -197,9 +204,91 @@ def download(client: Client, download_dir: Path) -> None:
         raise SmokeError(f"No downloaded file found in {download_dir}")
 
 
+def server_processes(exe: Path) -> list[int]:
+    out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    pids = []
+    for line in out.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if command.startswith(str(exe)) and int(pid) != os.getpid():
+            pids.append(int(pid))
+    return pids
+
+
+def open_app(app: Path, env: dict[str, str]) -> None:
+    cmd = ["open"]
+    for key in ("DATA_DIR", "DOWNLOAD_DIR", "OPEN_BROWSER"):
+        cmd += ["--env", f"{key}={env[key]}"]
+    cmd.append(str(app))
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    print(f"$ {' '.join(cmd)} -> {result.returncode} {result.stdout}{result.stderr}", flush=True)
+    if result.returncode != 0:
+        raise SmokeError(f"open failed: {result.stderr}")
+
+
+def run_reopen(app: Path, work: Path) -> int:
+    exe = app / "Contents" / "MacOS" / "youtube-downloader"
+    data_dir = work / "data"
+    download_dir = work / "downloads"
+    data_dir.mkdir()
+    download_dir.mkdir()
+    env = {"DATA_DIR": str(data_dir), "DOWNLOAD_DIR": str(download_dir), "OPEN_BROWSER": "0"}
+    runtime_file = data_dir / "runtime.json"
+    log = data_dir / "app.log"
+    try:
+        step(f"open {app}")
+        open_app(app, env)
+        info = wait_for(
+            "runtime.json", 60, lambda: json.loads(runtime_file.read_text(encoding="utf-8"))
+        )
+        pid, port = info["pid"], info["port"]
+        print(f"runtime.json: {info}", flush=True)
+        client = Client(port)
+        wait_for("/api/health", 60, lambda: client.call("GET", "/api/health")[1] or None)
+
+        step("The first launcher exits and only the detached server remains")
+        wait_for("a single process", 20, lambda: server_processes(exe) == [pid] or None)
+
+        step("open the running app a second time")
+        open_app(app, env)
+        wait_for(
+            "the second launcher to reuse the instance",
+            30,
+            lambda: "Reusing instance" in log.read_text(encoding="utf-8", errors="replace"),
+        )
+        wait_for("the second launcher to exit", 20, lambda: server_processes(exe) == [pid] or None)
+        info_after = json.loads(runtime_file.read_text(encoding="utf-8"))
+        if info_after != info:
+            raise SmokeError(f"runtime.json changed: {info} -> {info_after}")
+        if client.call("GET", "/api/health")[1].get("app") != "youtube-downloader":
+            raise SmokeError("The server stopped answering after the second open")
+
+        step("POST /api/system/shutdown")
+        status, body = client.call("POST", "/api/system/shutdown")
+        if status != 202:
+            raise SmokeError(f"shutdown answered {status}: {body}")
+        wait_for("the server to exit", 30, lambda: not server_processes(exe))
+        if runtime_file.exists():
+            raise SmokeError("runtime.json still exists after shutdown")
+        return 0
+    except BaseException:
+        print("\n----- app.log -----", flush=True)
+        print(log.read_text(encoding="utf-8", errors="replace") if log.exists() else "(none)")
+        raise
+    finally:
+        for stray in server_processes(exe):
+            os.kill(stray, 9)
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    if "--reopen" in flags and len(args) == 1 and len(flags) == 1:
+        with tempfile.TemporaryDirectory(prefix="ytdl-smoke-") as tmp:
+            try:
+                return run_reopen(Path(args[0]).resolve(), Path(tmp))
+            except SmokeError as exc:
+                print(f"SMOKE FAILED: {exc}", flush=True)
+                return 1
     if len(args) != 1 or flags - {"--empty-ca-store"}:
         print(__doc__)
         return 2

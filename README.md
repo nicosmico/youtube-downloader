@@ -110,7 +110,8 @@ Descarga el `.zip` de tu sistema desde la última versión en [GitHub Releases](
 
 1. Descomprime y mueve `YouTube Downloader.app` a Aplicaciones.
 2. Al abrirla, macOS la bloquea. En macOS 15 o superior ve a Ajustes del Sistema › Privacidad y seguridad y pulsa "Abrir igualmente". En versiones anteriores, clic derecho sobre la app › Abrir.
-3. La app abre el navegador con su interfaz. Sigue funcionando en segundo plano hasta que pulses "Cerrar aplicación" o pasen 10 minutos sin uso.
+3. La app abre el navegador con su interfaz. Sigue funcionando en segundo plano, sin icono en el Dock, hasta que pulses "Cerrar aplicación" o pasen 10 minutos sin uso.
+4. Para volver a la interfaz después de cerrar la pestaña, haz doble clic en la app otra vez: abre una pestaña nueva en la instancia que sigue en marcha.
 
 **Windows 10/11 (x64)**: `YouTube-Downloader-windows-x64.zip`
 

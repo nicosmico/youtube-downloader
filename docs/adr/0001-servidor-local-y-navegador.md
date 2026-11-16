@@ -16,4 +16,6 @@ El producto debía ser multiplataforma (macOS y Windows), con una UI moderna y s
 
 - No hay selector nativo de carpetas: `Destination` es fijo.
 - La app sigue viva si el usuario cierra la pestaña y no tiene ventana propia ni ícono de bandeja. Para que no quede un proceso invisible indefinidamente, el MVP incluye un botón "Cerrar aplicación" y un `Idle Shutdown`: la app se cierra sola tras 10 minutos sin pestañas conectadas y con la `Queue` vacía. El ícono de bandeja queda como mejora posterior.
+- En macOS empaquetado el ejecutable del `.app` no es el servidor: lanza el servidor como proceso hijo desacoplado (sesión nueva, fuera de LaunchServices) y termina enseguida. LaunchServices permite una sola instancia por bundle y, al reabrir, pide al proceso existente que se active; un servidor Python no es una app Cocoa y no responde, así que Finder mostraba "La aplicación YouTube Downloader ya no está abierta." y `Single Instance` nunca se ejecutaba. Con el lanzador de corta vida, cada doble clic pasa por `Single Instance` y abre una pestaña en la instancia existente. Costo: no hay icono en el Dock mientras la app corre.
+- Descartado: una app Cocoa con PyObjC (icono en el Dock y "Salir" desde el Dock), por coste de dependencia y riesgo de empaquetado frente a lo que aporta.
 - El servidor solo escucha en `127.0.0.1`.
