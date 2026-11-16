@@ -60,6 +60,7 @@ class TestMapping:
             "title": "Deep Learning State of the Art (2020)",
             "duration": 5261,
             "available": True,
+            "thumbnail": "https://i.ytimg.com/vi/0VH1Lim8gL8/mqdefault.jpg",
         }
         assert [e["index"] for e in preview["entries"]] == [1, 2]
 

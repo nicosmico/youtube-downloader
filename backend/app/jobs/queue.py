@@ -115,6 +115,7 @@ class JobQueue:
             self._repo.create(
                 url=e["url"],
                 title=e["title"],
+                thumbnail=e.get("thumbnail"),
                 batch_id=batch.id,
                 playlist_index=e["index"],
                 **options,

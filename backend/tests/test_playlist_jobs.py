@@ -56,6 +56,23 @@ def titled(fake_engine: FakeEngine) -> FakeEngine:
 
 
 class TestCreateBatch:
+    def test_each_entry_keeps_its_own_thumbnail(self, make_jobs_client) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+        entries = [
+            {**entry(1), "thumbnail": "https://i.ytimg.com/vi/00000000001/mqdefault.jpg"},
+            {**entry(2), "thumbnail": "http://insecure.example/x.jpg"},
+            entry(3),
+        ]
+
+        response = enqueue_playlist(client, entries)
+
+        jobs = sorted(response.json()["jobs"], key=lambda j: j["playlistIndex"])
+        assert [j["thumbnail"] for j in jobs] == [
+            "https://i.ytimg.com/vi/00000000001/mqdefault.jpg",
+            None,
+            None,
+        ]
+
     def test_creates_a_batch_and_one_job_per_entry(self, make_jobs_client) -> None:
         client = make_jobs_client(spawn_job=lambda fn: None)
 

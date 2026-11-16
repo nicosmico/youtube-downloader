@@ -506,6 +506,7 @@ describe('UrlPreview', () => {
         mode: 'video',
         quality: '720p',
         title: MEDIA.title,
+        thumbnail: MEDIA.thumbnail,
       });
       expect(button().disabled).toBe(true);
       await answer(req, { batchId: null, jobs: [JOB] });
@@ -549,6 +550,7 @@ describe('UrlPreview', () => {
         mode: 'audio',
         audioFormat: format,
         title: MEDIA.title,
+        thumbnail: MEDIA.thumbnail,
       });
       await answer(req, {
         batchId: null,
@@ -568,6 +570,7 @@ describe('UrlPreview', () => {
         mode: 'video',
         quality: '480p',
         title: MEDIA.title,
+        thumbnail: MEDIA.thumbnail,
       });
     });
 
@@ -899,12 +902,14 @@ describe('UrlPreview', () => {
             url: 'https://www.youtube.com/watch?v=00000000001',
             index: 1,
             title: 'The Google Story',
+            thumbnail: 'https://i.ytimg.com/vi/00000000001/mqdefault.jpg',
           },
           {
             id: '00000000004',
             url: 'https://www.youtube.com/watch?v=00000000004',
             index: 4,
             title: 'Cake',
+            thumbnail: 'https://i.ytimg.com/vi/00000000004/mqdefault.jpg',
           },
         ],
       });

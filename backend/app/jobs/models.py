@@ -37,6 +37,8 @@ class Job:
     quality: str | None = None
     audio_format: str | None = None
     title: str | None = None
+    # URL of the thumbnail the preview showed (loaded by the browser from YouTube).
+    thumbnail: str | None = None
     batch_id: str | None = None
     playlist_index: int | None = None
     progress_percent: float = 0.0
@@ -70,6 +72,7 @@ class Job:
             "playlistIndex": self.playlist_index,
             "url": self.url,
             "title": self.title,
+            "thumbnail": self.thumbnail,
             "mode": self.mode,
             "quality": self.quality,
             "audioFormat": self.audio_format,

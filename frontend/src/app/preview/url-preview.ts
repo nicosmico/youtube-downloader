@@ -317,18 +317,26 @@ export class UrlPreview {
       media.kind === 'playlist'
         ? media.entries
             .filter((e) => e.available && this.selected().has(e.index))
-            .map(({ id, url, index, title }) => ({ id, url, index, title }))
+            .map(({ id, url, index, title, thumbnail }) => ({ id, url, index, title, thumbnail }))
         : undefined;
-    this.jobs.enqueue(media.url, options, media.title, entries).subscribe({
-      next: () => {
-        this.enqueuing.set(false);
-        this.enqueued.set(true);
-      },
-      error: (error: unknown) => {
-        this.enqueuing.set(false);
-        this.enqueueError.set(enqueueMessage(error));
-      },
-    });
+    this.jobs
+      .enqueue(
+        media.url,
+        options,
+        media.title,
+        entries,
+        media.kind === 'video' ? media.thumbnail : null,
+      )
+      .subscribe({
+        next: () => {
+          this.enqueuing.set(false);
+          this.enqueued.set(true);
+        },
+        error: (error: unknown) => {
+          this.enqueuing.set(false);
+          this.enqueueError.set(enqueueMessage(error));
+        },
+      });
   }
 
   private schedule(url: string, immediate: boolean): void {

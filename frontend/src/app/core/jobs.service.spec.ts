@@ -215,6 +215,24 @@ describe('JobsService', () => {
     });
   });
 
+  it('sends the thumbnail of the preview, and omits it when there is none', () => {
+    service
+      .enqueue(JOB.url, { mode: 'video', quality: 'best' }, 'T', undefined, JOB.thumbnail)
+      .subscribe();
+    const req = http.expectOne('/api/jobs');
+    expect(req.request.body).toEqual({
+      url: JOB.url,
+      mode: 'video',
+      quality: 'best',
+      title: 'T',
+      thumbnail: JOB.thumbnail,
+    });
+    req.flush({ batchId: null, jobs: [JOB] });
+
+    service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, 'T', [], null).subscribe();
+    expect('thumbnail' in http.expectOne('/api/jobs').request.body).toBe(false);
+  });
+
   it('omits the title when there is none', () => {
     service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, null).subscribe();
 

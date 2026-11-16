@@ -57,6 +57,7 @@ class JobRepository:
         quality: str | None,
         audio_format: str | None = None,
         title: str | None = None,
+        thumbnail: str | None = None,
         batch_id: str | None = None,
         playlist_index: int | None = None,
     ) -> Job:
@@ -65,7 +66,8 @@ class JobRepository:
         stamp = self._stamp()
         self._db.execute(
             "INSERT INTO jobs (id, batch_id, playlist_index, url, title, mode, quality, "
-            "audio_format, status, created_at, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "audio_format, status, created_at, queued_at, thumbnail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job_id,
                 batch_id,
@@ -78,6 +80,7 @@ class JobRepository:
                 JobStatus.QUEUED.value,
                 stamp,
                 stamp,
+                thumbnail,
             ),
         )
         return self.get(job_id)  # type: ignore[return-value]

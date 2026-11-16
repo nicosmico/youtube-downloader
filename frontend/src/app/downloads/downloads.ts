@@ -1,11 +1,14 @@
-import { Component, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Job, JobsService, isInProgress } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
 import { TEXTS } from '../core/texts';
 import { formatDuration } from '../preview/url-preview';
+import { Dismissable } from '../ui/dismissable';
+import { Icon } from '../ui/icon';
+import { MenuKeys } from '../ui/menu-keys';
 
 /** `1536` -> `1,5 KB`; binary units, one decimal from KB up. */
 export function formatBytes(bytes: number): string {
@@ -43,8 +46,11 @@ export interface BatchGroup {
 
 export type ListItem = { kind: 'job'; job: Job } | BatchGroup;
 
-/** Jobs of a Batch gather under one heading, at the place of their newest job; the rest stay alone. */
-export function groupJobs(jobs: readonly Job[]): ListItem[] {
+/**
+ * Jobs of a Batch gather under one heading, at the place of their newest job; the rest stay
+ * alone. The summary counts every known job of the Batch (`all`), whichever tab shows `jobs`.
+ */
+export function groupJobs(jobs: readonly Job[], all: readonly Job[] = jobs): ListItem[] {
   const items: ListItem[] = [];
   const batches = new Map<string, BatchGroup>();
   for (const job of jobs) {
@@ -71,10 +77,11 @@ export function groupJobs(jobs: readonly Job[]): ListItem[] {
   }
   for (const group of batches.values()) {
     group.jobs.sort((a, b) => (a.playlistIndex ?? 0) - (b.playlistIndex ?? 0));
-    group.total = Math.max(group.jobs[0].batchEntryCount ?? 0, group.jobs.length);
-    group.completed = group.jobs.filter((j) => j.status === 'completed').length;
-    group.failed = group.jobs.filter((j) => j.status === 'failed').length;
-    group.running = group.jobs.filter(
+    const members = all.filter((j) => j.batchId === group.batchId);
+    group.total = Math.max(group.jobs[0].batchEntryCount ?? 0, members.length);
+    group.completed = members.filter((j) => j.status === 'completed').length;
+    group.failed = members.filter((j) => j.status === 'failed').length;
+    group.running = members.filter(
       (j) => j.status === 'downloading' || j.status === 'processing',
     ).length;
   }
@@ -84,22 +91,30 @@ export function groupJobs(jobs: readonly Job[]): ListItem[] {
 /** One card per DownloadJob, live through `JobsService`; a playlist groups its jobs. */
 @Component({
   selector: 'app-downloads',
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, Icon, Dismissable, MenuKeys],
   templateUrl: './downloads.html',
-  styleUrl: './downloads.css',
 })
 export class Downloads {
   protected readonly jobsService = inject(JobsService);
   private readonly system = inject(SystemService);
 
   protected readonly texts = TEXTS;
+  protected readonly tab = signal<'active' | 'history'>('active');
+  /** Job whose "⋮" menu is open. */
+  protected readonly menuFor = signal<string | null>(null);
   /** "En curso": queued, downloading and processing jobs. */
   protected readonly queueItems = computed(() =>
-    groupJobs(this.jobsService.jobs().filter(isInProgress)),
+    groupJobs(this.jobsService.jobs().filter(isInProgress), this.jobsService.jobs()),
+  );
+  protected readonly activeCount = computed(
+    () => this.jobsService.jobs().filter(isInProgress).length,
   );
   /** "Historial": the finished ones, newest first. */
   protected readonly historyItems = computed(() =>
-    groupJobs(this.jobsService.jobs().filter((job) => !isInProgress(job))),
+    groupJobs(
+      this.jobsService.jobs().filter((job) => !isInProgress(job)),
+      this.jobsService.jobs(),
+    ),
   );
   /** Label of the reveal button: the file manager of the server's platform. */
   protected readonly revealLabel = computed(() => {
@@ -122,6 +137,24 @@ export class Downloads {
   protected readonly actionMessage = signal<string | null>(null);
   protected readonly folderMessage = signal<{ ok: boolean; text: string } | null>(null);
 
+  private knownActive = new Set<string>();
+
+  constructor() {
+    // A job that just joined the Queue shows up in "En curso", wherever the user was looking.
+    effect(() => {
+      const ids = new Set(
+        this.jobsService
+          .jobs()
+          .filter(isInProgress)
+          .map((job) => job.id),
+      );
+      if ([...ids].some((id) => !this.knownActive.has(id))) {
+        this.tab.set('active');
+      }
+      this.knownActive = ids;
+    });
+  }
+
   /** "3/10 completadas", plus the failed ones when there are any. */
   protected summary(group: BatchGroup): string {
     const texts = TEXTS.downloads;
@@ -140,11 +173,39 @@ export class Downloads {
     return job.status === 'downloading' && job.downloadedBytes === null;
   }
 
-  protected statusLabel(job: Job): string {
-    if (this.isPreparing(job)) {
-      return TEXTS.downloads.preparing;
+  /** The one status line of a row: "Audio · MP3 · 45 % · quedan 0:12", "En cola", "Fallida". */
+  protected statusLine(job: Job): string {
+    const texts = TEXTS.downloads;
+    const parts: string[] = [];
+    switch (job.status) {
+      case 'queued':
+      case 'failed':
+      case 'canceled':
+      case 'interrupted':
+        parts.push(texts.status[job.status]);
+        break;
+      case 'downloading':
+        if (this.isPreparing(job)) {
+          parts.push(texts.preparing);
+          break;
+        }
+        parts.push(this.options(job), `${this.percent(job)} %`);
+        if (job.eta !== null) {
+          parts.push(`${texts.eta} ${formatDuration(job.eta)}`);
+        }
+        break;
+      default:
+        parts.push(this.options(job), texts.status[job.status] ?? texts.unknownStatus);
     }
-    return TEXTS.downloads.status[job.status] ?? TEXTS.downloads.unknownStatus;
+    if (job.attempt > 1) {
+      parts.push(`${texts.attempt} ${job.attempt}`);
+    }
+    return parts.join(' · ');
+  }
+
+  /** Bytes and speed, as the tooltip of the progress bar. */
+  protected progressDetail(job: Job): string {
+    return [this.bytes(job), this.speed(job)].filter(Boolean).join(' · ');
   }
 
   protected title(job: Job): string {
@@ -190,16 +251,30 @@ export class Downloads {
     return job.status === 'downloading' && job.speed ? `${formatBytes(job.speed)}/s` : null;
   }
 
-  protected eta(job: Job): string | null {
-    return job.status === 'downloading' && job.eta !== null ? formatDuration(job.eta) : null;
-  }
-
   protected canCancel(job: Job): boolean {
     return job.status === 'queued' || this.showsProgress(job);
   }
 
   protected canRetry(job: Job): boolean {
     return job.status === 'failed' || job.status === 'canceled' || job.status === 'interrupted';
+  }
+
+  protected hasMenu(job: Job): boolean {
+    return job.status === 'completed' || job.status === 'failed' || this.canRemove(job);
+  }
+
+  protected closeMenu(reason: 'escape' | 'outside', jobId: string, trigger: HTMLElement): void {
+    if (this.menuFor() !== jobId) {
+      return;
+    }
+    this.menuFor.set(null);
+    if (reason === 'escape') {
+      trigger.focus();
+    }
+  }
+
+  protected toggleMenu(job: Job): void {
+    this.menuFor.set(this.menuFor() === job.id ? null : job.id);
   }
 
   protected canRemove(job: Job): boolean {
@@ -235,6 +310,7 @@ export class Downloads {
 
   /** Opens or closes the yt-dlp output of the failed Attempt (fetched when opened). */
   protected toggleDetail(job: Job): void {
+    this.menuFor.set(null);
     if (this.detail(job)) {
       this.setDetail(job.id, null);
       return;
@@ -278,6 +354,7 @@ export class Downloads {
   }
 
   protected remove(job: Job): void {
+    this.menuFor.set(null);
     this.setDetail(job.id, null);
     this.send(job, this.jobsService.remove(job.id));
   }
@@ -322,6 +399,7 @@ export class Downloads {
   }
 
   protected openFolder(): void {
+    this.menuFor.set(null);
     this.folderMessage.set(null);
     this.system.openDownloads().subscribe({
       next: () => this.folderMessage.set({ ok: true, text: TEXTS.downloads.folderOpened }),

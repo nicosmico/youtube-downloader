@@ -23,8 +23,20 @@ describe('Downloads', () => {
     await fixture.whenStable();
     fixture.detectChanges();
   };
+  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+    if (
+      list.length > 0 &&
+      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
+    ) {
+      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
+      await settle();
+    }
+  };
+  const openMenu = async (index = 0) => {
+    root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
     await settle();
   };
 
@@ -46,9 +58,42 @@ describe('Downloads', () => {
 
   afterEach(() => http.verify());
 
-  it('says there is nothing yet', () => {
-    expect(el('downloads-empty')?.textContent).toContain('Todavía no hay descargas');
+  it('has the tabs "En curso · N" and "Historial", with a one-line empty state each', async () => {
+    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 0');
+    expect(el('tab-history')?.textContent?.trim()).toBe('Historial');
+    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
+    expect(el('downloads-empty')?.textContent).toContain('No hay descargas en curso');
     expect(all('job-card')).toHaveLength(0);
+
+    el('tab-history')!.click();
+    await settle();
+
+    expect(el('tab-history')?.getAttribute('aria-selected')).toBe('true');
+    expect(el('downloads-empty')?.textContent).toContain('Todavía no hay descargas');
+  });
+
+  it('counts only the jobs in progress on the first tab', async () => {
+    await show({ status: 'downloading' }, { status: 'queued' }, { status: 'completed' });
+
+    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 2');
+  });
+
+  it('shows the thumbnail of the job, or a neutral placeholder without one', async () => {
+    await show({ status: 'queued' }, { status: 'queued', thumbnail: null });
+
+    expect(el('job-thumbnail')?.getAttribute('src')).toBe(JOB.thumbnail);
+    expect(el('job-thumbnail')?.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(all('job-thumbnail')).toHaveLength(1);
+    expect(all('job-thumbnail-placeholder')).toHaveLength(1);
+  });
+
+  it('shows no explanatory text: icon buttons carry a tooltip and a label', async () => {
+    await show({ status: 'downloading' });
+
+    const cancel = el('cancel-job')!;
+    expect(cancel.getAttribute('title')).toBe('Cancelar');
+    expect(cancel.getAttribute('aria-label')).toBe('Cancelar');
+    expect(cancel.textContent?.trim()).toBe('');
   });
 
   it('shows a queued job with its title and no progress bar', async () => {
@@ -66,10 +111,10 @@ describe('Downloads', () => {
     [{ mode: 'audio', quality: null, audioFormat: 'mp3' }, 'Audio · MP3'],
     [{ mode: 'audio', quality: null, audioFormat: 'm4a' }, 'Audio · M4A'],
     [{ mode: 'audio', quality: null, audioFormat: 'opus' }, 'Audio · Opus'],
-  ] as const)('shows what was requested: %j', async (options, label) => {
-    await show({ ...options });
+  ] as const)('shows what was requested on the status line: %j', async (options, label) => {
+    await show({ ...options, status: 'processing' });
 
-    expect(el('job-options')?.textContent?.trim()).toBe(label);
+    expect(el('job-status')?.textContent?.trim()).toBe(`${label} · Procesando`);
   });
 
   it('uses a generic title when the job has none', async () => {
@@ -78,35 +123,36 @@ describe('Downloads', () => {
     expect(el('job-title')?.textContent).toContain('Video de YouTube');
   });
 
-  it('shows progress, bytes, speed and ETA while downloading', async () => {
+  it('shows one status line with the options, percentage and time left, and a thin bar', async () => {
     await show({
       status: 'downloading',
-      progressPercent: 41.6,
+      mode: 'audio',
+      quality: null,
+      audioFormat: 'mp3',
+      progressPercent: 44.6,
       downloadedBytes: 5 * 1024 * 1024,
       totalBytes: 12 * 1024 * 1024,
       speed: 2.5 * 1024 * 1024,
-      eta: 75,
+      eta: 12,
     });
 
-    expect(el('job-status')?.textContent).toContain('Descargando');
-    expect((el('job-progress') as HTMLProgressElement).value).toBe(42);
-    expect(el('job-percent')?.textContent).toContain('42%');
-    expect(el('job-bytes')?.textContent).toContain('5,0 MB / 12,0 MB');
-    expect(el('job-speed')?.textContent).toContain('2,5 MB/s');
-    expect(el('job-eta')?.textContent).toContain('Quedan 1:15');
+    expect(el('job-status')?.textContent?.trim()).toBe('Audio · MP3 · 45 % · quedan 0:12');
+    const bar = el('job-progress')!;
+    expect(bar.getAttribute('role')).toBe('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('45');
+    expect(el('job-progress-fill')?.style.width).toBe('45%');
+    expect(bar.getAttribute('title')).toBe('5,0 MB / 12,0 MB · 2,5 MB/s');
   });
 
   it('shows "Preparando…" without a bar while no byte has arrived', async () => {
     await show({ status: 'downloading', progressPercent: 0, downloadedBytes: null });
 
-    expect(el('job-status')?.textContent).toContain('Preparando…');
-    expect(el('job-status')?.textContent).not.toContain('Descargando');
+    expect(el('job-status')?.textContent?.trim()).toBe('Preparando…');
     expect(el('job-progress')).toBeNull();
-    expect(el('job-percent')).toBeNull();
     expect(el('cancel-job')).not.toBeNull();
   });
 
-  it('switches to "Descargando" with the first progress update, and back on retry', async () => {
+  it('switches to the progress line with the first progress update, and back on retry', async () => {
     jobs.connect();
     const stream = FakeEventSource.instances[0];
     stream.emit('job.updated', { ...JOB, status: 'downloading' });
@@ -120,8 +166,8 @@ describe('Downloads', () => {
       downloadedBytes: 4096,
     });
     await settle();
-    expect(el('job-status')?.textContent).toContain('Descargando');
-    expect((el('job-progress') as HTMLProgressElement).value).toBe(3);
+    expect(el('job-status')?.textContent).toContain('3 %');
+    expect(el('job-progress')?.getAttribute('aria-valuenow')).toBe('3');
 
     // retry: the backend clears the progress of the previous Attempt
     stream.emit('job.updated', { ...JOB, status: 'queued', attempt: 2 });
@@ -134,13 +180,11 @@ describe('Downloads', () => {
   it('copes with unknown totals, speed and ETA', async () => {
     await show({ status: 'downloading', downloadedBytes: 2048, totalBytes: null });
 
-    expect(el('job-bytes')?.textContent).toContain('2,0 KB');
-    expect(el('job-bytes')?.textContent).not.toContain('/');
-    expect(el('job-speed')).toBeNull();
-    expect(el('job-eta')).toBeNull();
+    expect(el('job-progress')?.getAttribute('title')).toBe('2,0 KB');
+    expect(el('job-status')?.textContent).not.toContain('quedan');
   });
 
-  it('shows a full bar without speed or ETA while processing', async () => {
+  it('shows a full bar without ETA while processing', async () => {
     await show({
       status: 'processing',
       progressPercent: 99,
@@ -151,9 +195,8 @@ describe('Downloads', () => {
     });
 
     expect(el('job-status')?.textContent).toContain('Procesando');
-    expect((el('job-progress') as HTMLProgressElement).value).toBe(100);
-    expect(el('job-speed')).toBeNull();
-    expect(el('job-eta')).toBeNull();
+    expect(el('job-progress')?.getAttribute('aria-valuenow')).toBe('100');
+    expect(el('job-status')?.textContent).not.toContain('quedan');
   });
 
   it('offers "Abrir carpeta" on a completed job and shows the result', async () => {
@@ -161,6 +204,7 @@ describe('Downloads', () => {
     expect(el('job-status')?.textContent).toContain('Completada');
     expect(el('job-progress')).toBeNull();
 
+    await openMenu();
     (el('open-folder') as HTMLButtonElement).click();
     const req = http.expectOne('/api/system/open-downloads');
     expect(req.request.method).toBe('POST');
@@ -174,6 +218,7 @@ describe('Downloads', () => {
   it('shows the server message when the folder cannot be opened', async () => {
     await show({ status: 'completed' });
 
+    await openMenu();
     (el('open-folder') as HTMLButtonElement).click();
     http
       .expectOne('/api/system/open-downloads')
@@ -190,8 +235,10 @@ describe('Downloads', () => {
   it('shows the error of a failed job, without a folder button', async () => {
     await show({ status: 'failed', error: 'El video no está disponible.' });
 
-    expect(el('job-status')?.textContent).toContain('Fallida');
+    expect(el('job-status')?.textContent?.trim()).toBe('Fallida');
+    expect(el('job-status')?.className).toContain('text-accent');
     expect(el('job-error')?.textContent).toContain('El video no está disponible.');
+    await openMenu();
     expect(el('open-folder')).toBeNull();
   });
 
@@ -207,23 +254,23 @@ describe('Downloads', () => {
     expect(el('job-error')?.textContent).toContain('La aplicación se cerró durante la descarga.');
     expect(el('job-progress')).toBeNull();
     expect(el('open-folder')).toBeNull();
+    expect(el('retry-job')).not.toBeNull();
   });
 
-  it('shows the queue counts from queue.updated and follows the jobs without a reload', async () => {
+  it('follows the jobs without a reload: the count and each status line', async () => {
     jobs.connect();
     const stream = FakeEventSource.instances[0];
-    expect(el('queue-summary')).toBeNull();
+    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 0');
 
-    for (const id of ['a', 'b', 'c']) {
-      stream.emit('job.updated', {
-        ...JOB,
-        id,
-        createdAt: `2026-11-15T12:00:0${id === 'a' ? 1 : id === 'b' ? 2 : 3}.000000+00:00`,
-      });
+    for (const [id, n] of [
+      ['a', 1],
+      ['b', 2],
+      ['c', 3],
+    ] as const) {
+      stream.emit('job.updated', { ...JOB, id, createdAt: `2026-11-15T12:00:0${n}.000000+00:00` });
     }
-    stream.emit('queue.updated', { active: 0, queued: 3 });
     await settle();
-    expect(el('queue-summary')?.textContent).toMatch(/0 activas\s*·\s*3 en cola/);
+    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 3');
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'En cola',
       'En cola',
@@ -231,32 +278,24 @@ describe('Downloads', () => {
     ]);
 
     // two slots are taken: the oldest two start, the newest keeps waiting
-    stream.emit('job.updated', {
-      ...JOB,
-      id: 'a',
-      createdAt: '2026-11-15T12:00:01.000000+00:00',
-      status: 'downloading',
-      downloadedBytes: 1024,
-    });
-    stream.emit('job.updated', {
-      ...JOB,
-      id: 'b',
-      createdAt: '2026-11-15T12:00:02.000000+00:00',
-      status: 'downloading',
-      downloadedBytes: 1024,
-    });
-    stream.emit('queue.updated', { active: 2, queued: 1 });
+    for (const [id, n] of [
+      ['a', 1],
+      ['b', 2],
+    ] as const) {
+      stream.emit('job.updated', {
+        ...JOB,
+        id,
+        createdAt: `2026-11-15T12:00:0${n}.000000+00:00`,
+        status: 'downloading',
+        downloadedBytes: 1024,
+      });
+    }
     await settle();
-    expect(el('queue-summary')?.textContent).toMatch(/2 activas\s*·\s*1 en cola/);
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'En cola',
-      'Descargando',
-      'Descargando',
+      'Video · Mejor disponible · 0 %',
+      'Video · Mejor disponible · 0 %',
     ]);
-
-    stream.emit('queue.updated', { active: 0, queued: 0 });
-    await settle();
-    expect(el('queue-summary')).toBeNull();
   });
 
   it('renders one card per job, newest first, and follows SSE updates', async () => {
@@ -281,7 +320,7 @@ describe('Downloads', () => {
     await settle();
 
     expect(all('job-card')).toHaveLength(2);
-    expect(all('job-status')[1].textContent).toContain('Descargando');
+    expect(all('job-status')[1].textContent).toContain('10 %');
     expect(all('job-card')[1].getAttribute('data-status')).toBe('downloading');
   });
 
@@ -289,6 +328,8 @@ describe('Downloads', () => {
     jobs.connect();
     FakeEventSource.instances[0].open();
     flushRehydration(http, { history: [{ ...JOB, status: 'failed', error: 'Falló.' }] });
+    await settle();
+    el('tab-history')!.click();
     await settle();
 
     expect(el('job-error')?.textContent).toContain('Falló.');
@@ -312,6 +353,11 @@ describe('batches', () => {
     Array.from(root().querySelectorAll<HTMLElement>(`[data-testid=${testId}]`));
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const showHistory = async () => {
+    root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
     await fixture.whenStable();
     fixture.detectChanges();
   };
@@ -342,6 +388,11 @@ describe('batches', () => {
     expect(all('batch-title')[0].textContent).toContain('Mi playlist');
     expect(all('batch-summary')[0].textContent).toContain('0/3 completadas');
     expect(all('batch-summary')[0].textContent).toContain('2 en curso');
+    expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
+      'Video · Mejor disponible · Procesando',
+      'Preparando…',
+      'En cola',
+    ]);
     const cards = all('job-card');
     expect(cards).toHaveLength(3);
     expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
@@ -359,10 +410,11 @@ describe('batches', () => {
       batchJob(3, { status: 'completed' }),
     );
 
+    await showHistory();
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
-      'Completada',
+      'Video · Mejor disponible · Completada',
       'Fallida',
-      'Completada',
+      'Video · Mejor disponible · Completada',
     ]);
     expect(all('job-error')).toHaveLength(1);
     expect(all('batch-summary')[0].textContent).toContain('2/3 completadas');
@@ -420,8 +472,20 @@ describe('Downloads cancel and retry', () => {
     await fixture.whenStable();
     fixture.detectChanges();
   };
+  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+    if (
+      list.length > 0 &&
+      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
+    ) {
+      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
+      await settle();
+    }
+  };
+  const openMenu = async (index = 0) => {
+    root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
     await settle();
   };
 
@@ -466,10 +530,10 @@ describe('Downloads cancel and retry', () => {
 
   it('shows the attempt only from the second one', async () => {
     await show({ status: 'queued', attempt: 1 });
-    expect(el('job-attempt')).toBeNull();
+    expect(el('job-status')?.textContent?.trim()).toBe('En cola');
 
     await show({ status: 'queued', attempt: 2 });
-    expect(el('job-attempt')?.textContent?.trim()).toBe('Intento 2');
+    expect(el('job-status')?.textContent?.trim()).toBe('En cola · Intento 2');
   });
 
   it('cancels a queued job at once, without asking', async () => {
@@ -483,6 +547,8 @@ describe('Downloads cancel and retry', () => {
     expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
     req.flush({ ...JOB, id: 'job0', status: 'canceled' });
     await settle();
+    expect(el('downloads-empty')).not.toBeNull(); // it left "En curso"
+    await click('tab-history');
     expect(el('job-status')?.textContent).toContain('Cancelada');
     expect(el('retry-job')).not.toBeNull();
     expect(el('cancel-job')).toBeNull();
@@ -501,6 +567,7 @@ describe('Downloads cancel and retry', () => {
     expect((el('cancel-job') as HTMLButtonElement).disabled).toBe(true);
     req.flush({ ...JOB, id: 'job0', status: 'canceled' });
     await settle();
+    await click('tab-history');
     expect(el('job-status')?.textContent).toContain('Cancelada');
   });
 
@@ -525,8 +592,9 @@ describe('Downloads cancel and retry', () => {
     expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
     req.flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
     await settle();
-    expect(el('job-status')?.textContent).toContain('En cola');
-    expect(el('job-attempt')?.textContent).toContain('Intento 2');
+    // the retried job shows up in "En curso" at once, wherever the user was looking
+    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
+    expect(el('job-status')?.textContent?.trim()).toBe('En cola · Intento 2');
     expect(el('job-error')).toBeNull();
     expect(el('retry-job')).toBeNull();
   });
@@ -543,6 +611,7 @@ describe('Downloads cancel and retry', () => {
     await settle();
 
     expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+    await click('tab-history');
     expect(el('job-status')?.textContent).toContain('Completada');
     expect(el('cancel-job')).toBeNull();
   });
@@ -568,8 +637,20 @@ describe('Downloads history', () => {
     all(testId)[index].click();
     await settle();
   };
+  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+    if (
+      list.length > 0 &&
+      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
+    ) {
+      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
+      await settle();
+    }
+  };
+  const openMenu = async (index = 0) => {
+    root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
     await settle();
   };
 
@@ -592,7 +673,7 @@ describe('Downloads history', () => {
 
   afterEach(() => http.verify());
 
-  it('splits "En curso" from "Historial"', async () => {
+  it('splits "En curso" from "Historial" in two tabs', async () => {
     await show(
       { status: 'downloading', title: 'A' },
       { status: 'queued', title: 'B' },
@@ -603,46 +684,51 @@ describe('Downloads history', () => {
       { status: 'interrupted', title: 'G' },
     );
 
-    const titles = (section: string) =>
-      within(section, 'job-title').map((t) => t.textContent?.trim());
-    expect(titles('queue-section')).toEqual(['A', 'B', 'C']);
-    expect(titles('history-section')).toEqual(['D', 'E', 'F', 'G']);
-    expect(el('queue-section')?.textContent).toContain('En curso');
-    expect(el('history-section')?.textContent).toContain('Historial');
+    const titles = () => all('job-title').map((t) => t.textContent?.trim());
+    expect(el('queue-section')).not.toBeNull();
+    expect(titles()).toEqual(['A', 'B', 'C']);
+    await click('tab-history');
+    expect(el('history-section')).not.toBeNull();
+    expect(titles()).toEqual(['D', 'E', 'F', 'G']);
   });
 
-  it('hides a section that has nothing and keeps the "nothing yet" text for an empty list', async () => {
-    await show({ status: 'completed' });
-    expect(el('queue-section')).toBeNull();
-    expect(el('history-section')).not.toBeNull();
+  it('keeps the tab the user chose when jobs change, but a new job brings back "En curso"', async () => {
+    await show({ status: 'completed', title: 'Viejo' });
+    expect(el('tab-history')?.getAttribute('aria-selected')).toBe('true');
 
-    await show({ status: 'queued' });
-    expect(el('history-section')).toBeNull();
-    expect(el('queue-section')).not.toBeNull();
+    jobs.jobs.update((list) => [
+      { ...JOB, id: 'new', title: 'Nuevo', createdAt: '2026-11-15T13:00:00.000000+00:00' },
+      ...list,
+    ]);
+    await settle();
 
-    await show();
-    expect(el('downloads-empty')).not.toBeNull();
+    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Nuevo']);
   });
 
   it('moves a job from the Queue to the History when it finishes, and back on retry', async () => {
     await show({ status: 'downloading' });
-    expect(within('queue-section', 'job-card')).toHaveLength(1);
+    expect(all('job-card')).toHaveLength(1);
 
     jobs.jobs.set([{ ...JOB, id: 'job0', status: 'failed', error: 'x' }]);
     await settle();
-    expect(el('queue-section')).toBeNull();
-    expect(within('history-section', 'job-card')).toHaveLength(1);
+    expect(el('queue-section')).not.toBeNull();
+    expect(all('job-card')).toHaveLength(0);
+    await click('tab-history');
+    expect(all('job-card')).toHaveLength(1);
 
     await click('retry-job');
     http
       .expectOne('/api/jobs/job0/retry')
       .flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
     await settle();
-    expect(within('queue-section', 'job-card')).toHaveLength(1);
-    expect(el('history-section')).toBeNull();
+    expect(el('queue-section')).not.toBeNull();
+    expect(all('job-card')).toHaveLength(1);
+    await click('tab-history');
+    expect(all('job-card')).toHaveLength(0);
   });
 
-  it('keeps the Batch grouping in both sections', async () => {
+  it('keeps the Batch grouping in both tabs', async () => {
     const entry = (n: number, status: Job['status']): Partial<Job> => ({
       batchId: 'b1',
       batchTitle: 'Mi playlist',
@@ -653,23 +739,40 @@ describe('Downloads history', () => {
     });
     await show(entry(1, 'completed'), entry(2, 'completed'), entry(3, 'downloading'));
 
-    expect(within('queue-section', 'batch')).toHaveLength(1);
-    expect(within('queue-section', 'job-title').map((t) => t.textContent?.trim())).toEqual([
-      'Video 3',
-    ]);
-    expect(within('history-section', 'batch')).toHaveLength(1);
-    expect(within('history-section', 'batch-summary')[0].textContent).toContain('2/3 completadas');
-    expect(within('history-section', 'job-title').map((t) => t.textContent?.trim())).toEqual([
-      'Video 1',
-      'Video 2',
-    ]);
+    expect(all('batch')).toHaveLength(1);
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Video 3']);
+    expect(all('batch-summary')[0].textContent).toContain('2/3 completadas · 1 en curso');
+    await click('tab-history');
+    expect(all('batch')).toHaveLength(1);
+    expect(all('batch-summary')[0].textContent).toContain('2/3 completadas · 1 en curso');
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Video 1', 'Video 2']);
   });
 
-  it('says that removing from the History keeps the file', async () => {
+  it('keeps "Quitar del historial" in the "⋮" menu, with a tooltip saying the file stays', async () => {
     await show({ status: 'completed' });
 
-    expect(el('history-hint')?.textContent).toContain('no borra el archivo');
+    expect(el('remove-job')).toBeNull();
+    await openMenu();
+
+    expect(el('remove-job')?.textContent).toContain('Quitar del historial');
     expect(el('remove-job')?.getAttribute('title')).toContain('el archivo descargado no se borra');
+    expect(root().textContent).not.toContain('no borra el archivo');
+  });
+
+  it('opens the menu with the keyboard and closes it with Esc, back on the button', async () => {
+    document.body.appendChild(root());
+    await show({ status: 'completed' });
+
+    await openMenu();
+    expect(el('job-menu')?.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(el('open-folder'));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await settle();
+
+    expect(el('remove-job')).toBeNull();
+    expect(document.activeElement).toBe(el('job-menu'));
+    root().remove();
   });
 
   it.each(['completed', 'failed', 'canceled', 'interrupted'] as const)(
@@ -677,6 +780,7 @@ describe('Downloads history', () => {
     async (status) => {
       await show({ status, title: 'A' }, { status: 'completed', title: 'B' });
 
+      await openMenu(0);
       await click('remove-job', 0);
 
       const req = http.expectOne('/api/jobs/job0');
@@ -691,12 +795,14 @@ describe('Downloads history', () => {
   it('does not offer to remove queued or running jobs', async () => {
     await show({ status: 'queued' }, { status: 'downloading' }, { status: 'processing' });
 
+    expect(el('job-menu')).toBeNull();
     expect(el('remove-job')).toBeNull();
   });
 
   it('shows an error and the real state when a removal fails', async () => {
     await show({ status: 'completed' });
 
+    await openMenu();
     await click('remove-job');
     http
       .expectOne('/api/jobs/job0')
@@ -706,11 +812,13 @@ describe('Downloads history', () => {
 
     expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
     expect(el('remove-job')).toBeNull();
+    expect(el('job-status')?.textContent?.trim()).toBe('En cola');
   });
 
   it('removes a job another tab removed (job.removed)', async () => {
     jobs.connect();
     await show({ status: 'completed' });
+    expect(el('job-card')).not.toBeNull();
 
     FakeEventSource.instances[0].emit('job.removed', { id: 'job0' });
     await settle();
@@ -722,16 +830,18 @@ describe('Downloads history', () => {
   describe('reveal', () => {
     it('only completed jobs have the button, labelled for the platform', async () => {
       await show({ status: 'completed' }, { status: 'failed' }, { status: 'queued' });
+      await click('tab-history');
       expect(all('reveal-job')).toHaveLength(1);
-      expect(el('reveal-job')?.textContent).toContain('Mostrar archivo');
+      expect(el('reveal-job')?.getAttribute('aria-label')).toBe('Mostrar archivo');
+      expect(el('reveal-job')?.getAttribute('title')).toBe('Mostrar archivo');
 
       system.platform.set('darwin');
       await settle();
-      expect(el('reveal-job')?.textContent).toContain('Mostrar en Finder');
+      expect(el('reveal-job')?.getAttribute('aria-label')).toBe('Mostrar en Finder');
 
       system.platform.set('win32');
       await settle();
-      expect(el('reveal-job')?.textContent).toContain('Mostrar en el Explorador');
+      expect(el('reveal-job')?.getAttribute('title')).toBe('Mostrar en el Explorador');
     });
 
     it('asks the server and is disabled while it works', async () => {
@@ -792,6 +902,8 @@ describe('Downloads history', () => {
         nextBefore: 'h2',
       });
       await settle();
+      expect(el('load-more')).toBeNull(); // only in "Historial"
+      await click('tab-history');
       expect(el('load-more')?.textContent).toContain('Cargar más');
 
       await click('load-more');
@@ -825,8 +937,20 @@ describe('Downloads "Ver detalle"', () => {
     el(testId)!.click();
     await settle();
   };
+  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
+    await settle();
+    if (
+      list.length > 0 &&
+      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
+    ) {
+      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
+      await settle();
+    }
+  };
+  const openMenu = async (index = 0) => {
+    root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
     await settle();
   };
   const FAILED = { status: 'failed', error: 'No se pudo descargar.' } as const;
@@ -853,6 +977,9 @@ describe('Downloads "Ver detalle"', () => {
     'is not offered for a %s job',
     async (status) => {
       await show({ status });
+      if (el('job-menu')) {
+        await openMenu();
+      }
 
       expect(el('job-detail-toggle')).toBeNull();
     },
@@ -860,6 +987,7 @@ describe('Downloads "Ver detalle"', () => {
 
   it('asks nothing until "Ver detalle" is pressed, then shows the output', async () => {
     await show(FAILED);
+    await openMenu();
     expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
     http.expectNone('/api/jobs/job0/output');
 
@@ -871,24 +999,29 @@ describe('Downloads "Ver detalle"', () => {
     await settle();
 
     expect(el('job-detail')?.textContent).toBe('WARNING: algo\nERROR: Video unavailable');
+    await openMenu();
     expect(el('job-detail-toggle')?.textContent).toContain('Ocultar detalle');
     expect(el('job-detail-toggle')?.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('hides the output again', async () => {
     await show(FAILED);
+    await openMenu();
     await click('job-detail-toggle');
     http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['x'] });
     await settle();
 
+    await openMenu();
     await click('job-detail-toggle');
 
     expect(el('job-detail')).toBeNull();
+    await openMenu();
     expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
   });
 
   it('says so when there is no stored detail', async () => {
     await show(FAILED);
+    await openMenu();
     await click('job-detail-toggle');
 
     http
@@ -904,6 +1037,7 @@ describe('Downloads "Ver detalle"', () => {
 
   it('says so when the detail cannot be loaded', async () => {
     await show(FAILED);
+    await openMenu();
     await click('job-detail-toggle');
 
     http.expectOne('/api/jobs/job0/output').flush({}, { status: 500, statusText: 'Error' });
@@ -914,6 +1048,7 @@ describe('Downloads "Ver detalle"', () => {
 
   it('closes the detail on retry and does not show the old one after a new failure', async () => {
     await show(FAILED);
+    await openMenu();
     await click('job-detail-toggle');
     http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['old output'] });
     await settle();
@@ -927,17 +1062,21 @@ describe('Downloads "Ver detalle"', () => {
 
     jobs.jobs.set([{ ...JOB, id: 'job0', ...FAILED, attempt: 2 }]);
     await settle();
+    await click('tab-history');
 
     expect(el('job-detail')).toBeNull();
+    await openMenu();
     expect(el('job-detail-toggle')?.textContent).toContain('Ver detalle');
   });
 
   it('forgets the detail when the job leaves the History', async () => {
     await show(FAILED);
+    await openMenu();
     await click('job-detail-toggle');
     http.expectOne('/api/jobs/job0/output').flush({ attempt: 1, lines: ['old output'] });
     await settle();
 
+    await openMenu();
     await click('remove-job');
     http.expectOne('/api/jobs/job0').flush({ status: 'removed' });
     await settle();

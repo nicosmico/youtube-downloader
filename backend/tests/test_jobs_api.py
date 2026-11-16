@@ -41,6 +41,33 @@ def downloads(download_dir: Path) -> list[str]:
 
 
 class TestCreate:
+    def test_the_thumbnail_of_the_preview_is_stored_and_listed(self, make_jobs_client) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+        thumbnail = "https://i.ytimg.com/vi/jNQXAC9IVRw/maxresdefault.jpg"
+
+        (job,) = enqueue(client, thumbnail=thumbnail).json()["jobs"]
+
+        assert job["thumbnail"] == thumbnail
+        assert get_job(client, job["id"])["thumbnail"] == thumbnail
+        assert client.get("/api/jobs").json()["jobs"][0]["thumbnail"] == thumbnail
+
+    def test_without_a_thumbnail_the_field_is_null(self, make_jobs_client) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+
+        (job,) = enqueue(client).json()["jobs"]
+
+        assert job["thumbnail"] is None
+
+    @pytest.mark.parametrize("value", ["javascript:alert(1)", "http://insecure.example/a.jpg", " "])
+    def test_a_thumbnail_that_is_not_an_https_url_is_dropped(
+        self, make_jobs_client, value: str
+    ) -> None:
+        client = make_jobs_client(spawn_job=lambda fn: None)
+
+        (job,) = enqueue(client, thumbnail=value).json()["jobs"]
+
+        assert job["thumbnail"] is None
+
     def test_a_single_video_has_no_batch_and_is_queued(self, make_jobs_client) -> None:
         # a spawn that never runs: the job stays as it was created
         client = make_jobs_client(spawn_job=lambda fn: None)

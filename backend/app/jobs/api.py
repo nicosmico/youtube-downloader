@@ -24,6 +24,7 @@ DEFAULT_PAGE = 50
 MAX_PAGE = 200
 MAX_TITLE = 300
 MAX_ENTRIES = 500
+MAX_THUMBNAIL = 500
 
 
 class CreateEntry(BaseModel):
@@ -31,6 +32,7 @@ class CreateEntry(BaseModel):
     url: str
     index: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=MAX_TITLE)
+    thumbnail: str | None = Field(default=None, max_length=MAX_THUMBNAIL)
 
 
 class CreateJob(BaseModel):
@@ -43,8 +45,15 @@ class CreateJob(BaseModel):
     # Spec addition: the client sends the title of the MediaPreview it already showed, so the
     # Queue has something to display before yt-dlp runs.
     title: str | None = Field(default=None, max_length=MAX_TITLE)
+    # The thumbnail of the MediaPreview, shown in the lists. Anything but an https URL is dropped.
+    thumbnail: str | None = Field(default=None, max_length=MAX_THUMBNAIL)
     # Playlist: the Entries the user kept selected. The URL is then the playlist's.
     entries: list[CreateEntry] | None = Field(default=None, max_length=MAX_ENTRIES)
+
+
+def _clean_thumbnail(value: str | None) -> str | None:
+    value = (value or "").strip()
+    return value if value.startswith("https://") else None
 
 
 def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevealer) -> APIRouter:
@@ -69,6 +78,7 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevea
             quality=body.quality,
             audio_format=body.audio_format,
             title=title,
+            thumbnail=_clean_thumbnail(body.thumbnail),
         )
         return {"batchId": None, "jobs": [job.to_dict()]}
 
@@ -92,6 +102,7 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevea
                     "url": url,
                     "index": entry.index,
                     "title": (entry.title or "").strip() or None,
+                    "thumbnail": _clean_thumbnail(entry.thumbnail),
                 }
             )
         entries.sort(key=lambda e: e["index"])

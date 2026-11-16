@@ -29,6 +29,8 @@ export interface Job {
   playlistIndex: number | null;
   url: string;
   title: string | null;
+  /** URL of the thumbnail the preview showed; null when there was none (older jobs). */
+  thumbnail: string | null;
   mode: 'video' | 'audio';
   quality: Quality | null;
   audioFormat: AudioFormat | null;
@@ -54,6 +56,7 @@ export interface EnqueueEntry {
   url: string;
   index: number;
   title: string;
+  thumbnail: string | null;
 }
 
 export interface QueueCounts {
@@ -190,10 +193,14 @@ export class JobsService {
     options: DownloadOptions,
     title: string | null,
     entries?: EnqueueEntry[],
+    thumbnail?: string | null,
   ): Observable<Job[]> {
     const body: Record<string, unknown> = { url, ...options };
     if (title) {
       body['title'] = title;
+    }
+    if (thumbnail) {
+      body['thumbnail'] = thumbnail;
     }
     if (entries) {
       body['entries'] = entries;

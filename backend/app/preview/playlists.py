@@ -29,6 +29,7 @@ _LIVE_STATUSES = frozenset({"is_live", "is_upcoming", "post_live"})
 # fixture `playlist_unavailable.json` has three of them).
 _NO_TITLE_REASON = "Video privado o eliminado"
 _LIVE_REASON = "Directo o estreno pendiente"
+_THUMBNAIL_HOST = "https://i.ytimg.com"
 
 
 def to_playlist_preview(data: dict[str, Any], classified: ClassifiedUrl) -> dict[str, Any]:
@@ -76,6 +77,10 @@ def _entry(index: int, raw: dict[str, Any]) -> dict[str, Any]:
         "title": title or UNTITLED_ENTRY,
         "duration": round(duration) if isinstance(duration, int | float) and duration > 0 else None,
         "available": reason is None,
+        # flat playlists carry no thumbnails: YouTube serves them at a fixed address
+        "thumbnail": f"{_THUMBNAIL_HOST}/vi/{video_id}/mqdefault.jpg"
+        if _VIDEO_ID.match(video_id)
+        else None,
     }
     if reason:
         entry["unavailableReason"] = reason

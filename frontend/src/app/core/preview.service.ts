@@ -28,6 +28,7 @@ export interface PlaylistEntry {
   /** Position in the playlist, starting at 1. */
   index: number;
   title: string;
+  thumbnail: string | null;
   /** Seconds. */
   duration: number | null;
   available: boolean;

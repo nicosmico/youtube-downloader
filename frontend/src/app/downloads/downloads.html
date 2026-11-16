@@ -1,222 +1,319 @@
-<section class="card" aria-labelledby="downloads-heading">
-  <h2 id="downloads-heading">{{ texts.downloads.heading }}</h2>
-
-  @if (jobsService.queue(); as queue) {
-    @if (queue.active + queue.queued > 0) {
-      <p class="meta" role="status" data-testid="queue-summary">
-        {{ queue.active }} {{ texts.downloads.activeCount }} · {{ queue.queued }}
-        {{ texts.downloads.queuedCount }}
-      </p>
-    }
-  }
-
-  @if (jobsService.jobs().length === 0) {
-    <p class="meta" data-testid="downloads-empty">{{ texts.downloads.empty }}</p>
-  }
-
-  @if (queueItems().length > 0) {
-    <section class="list" data-testid="queue-section" aria-labelledby="queue-heading">
-      <h3 id="queue-heading" class="section">{{ texts.downloads.queueHeading }}</h3>
-      <ng-container *ngTemplateOutlet="itemList; context: { $implicit: queueItems() }" />
-    </section>
-  }
-
-  @if (historyItems().length > 0) {
-    <section class="list" data-testid="history-section" aria-labelledby="history-heading">
-      <h3 id="history-heading" class="section">{{ texts.downloads.historyHeading }}</h3>
-      <p class="meta" data-testid="history-hint">{{ texts.downloads.historyHint }}</p>
-      <ng-container *ngTemplateOutlet="itemList; context: { $implicit: historyItems() }" />
-    </section>
-  }
-
-  @if (jobsService.hasMoreHistory()) {
+<section class="flex min-w-0 flex-col gap-3" [attr.aria-label]="texts.downloads.heading">
+  <div class="flex items-center gap-2" role="tablist" [attr.aria-label]="texts.downloads.heading">
     <button
       type="button"
-      class="action"
-      data-testid="load-more"
-      [disabled]="jobsService.loadingMore()"
-      (click)="jobsService.loadMore()"
+      role="tab"
+      id="tab-active"
+      data-testid="tab-active"
+      class="h-9 rounded-full px-4 text-sm font-medium"
+      [class]="tab() === 'active' ? 'bg-fg text-bg' : 'bg-surface hover:bg-surface-2'"
+      [attr.aria-selected]="tab() === 'active'"
+      aria-controls="downloads-panel"
+      (click)="tab.set('active')"
     >
-      {{ jobsService.loadingMore() ? texts.downloads.loadingMore : texts.downloads.loadMore }}
+      {{ texts.downloads.queueHeading }} · {{ activeCount() }}
     </button>
-  }
+    <button
+      type="button"
+      role="tab"
+      id="tab-history"
+      data-testid="tab-history"
+      class="h-9 rounded-full px-4 text-sm font-medium"
+      [class]="tab() === 'history' ? 'bg-fg text-bg' : 'bg-surface hover:bg-surface-2'"
+      [attr.aria-selected]="tab() === 'history'"
+      aria-controls="downloads-panel"
+      (click)="tab.set('history')"
+    >
+      {{ texts.downloads.historyHeading }}
+    </button>
+  </div>
 
-  <ng-template #itemList let-items>
+  <div
+    id="downloads-panel"
+    role="tabpanel"
+    class="flex min-w-0 flex-col gap-1"
+    [attr.aria-labelledby]="tab() === 'active' ? 'tab-active' : 'tab-history'"
+    [attr.data-testid]="tab() === 'active' ? 'queue-section' : 'history-section'"
+  >
+    @let items = tab() === 'active' ? queueItems() : historyItems();
+    @if (items.length === 0) {
+      <p class="m-0 py-6 text-center text-sm text-muted" data-testid="downloads-empty">
+        {{ tab() === 'active' ? texts.downloads.emptyActive : texts.downloads.emptyHistory }}
+      </p>
+    }
+
     @for (item of items; track item.kind === 'batch' ? item.batchId : item.job.id) {
       @if (item.kind === 'batch') {
-        <section class="batch" data-testid="batch" [attr.aria-label]="item.title">
-          <header>
-            <h4 data-testid="batch-title">{{ item.title }}</h4>
-            <span class="status" data-testid="batch-summary">{{ summary(item) }}</span>
+        <section
+          class="rounded-xl border border-line p-1"
+          data-testid="batch"
+          [attr.aria-label]="item.title"
+        >
+          <header class="flex items-baseline justify-between gap-3 px-2 pb-1 pt-2">
+            <h3 class="m-0 truncate text-sm font-semibold" data-testid="batch-title">
+              {{ item.title }}
+            </h3>
+            <span class="shrink-0 text-xs text-muted" data-testid="batch-summary">{{
+              summary(item)
+            }}</span>
           </header>
           @for (job of item.jobs; track job.id) {
-            <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: job }" />
+            <ng-container *ngTemplateOutlet="jobRow; context: { $implicit: job }" />
           }
         </section>
       } @else {
-        <ng-container *ngTemplateOutlet="jobCard; context: { $implicit: item.job }" />
+        <ng-container *ngTemplateOutlet="jobRow; context: { $implicit: item.job }" />
       }
     }
-  </ng-template>
 
-  <ng-template #jobCard let-job>
-    <article class="job" data-testid="job-card" [attr.data-status]="job.status">
-      <header>
-        <h4 data-testid="job-title">{{ title(job) }}</h4>
-        <span class="status" [class]="job.status" data-testid="job-status">
-          {{ statusLabel(job) }}
-        </span>
-      </header>
-      @if (job.attempt > 1) {
-        <p class="meta" data-testid="job-attempt">
-          {{ texts.downloads.attempt }} {{ job.attempt }}
-        </p>
-      }
-      <p class="meta" data-testid="job-options">{{ options(job) }}</p>
+    @if (tab() === 'history' && jobsService.hasMoreHistory()) {
+      <button
+        type="button"
+        data-testid="load-more"
+        class="mt-2 h-9 self-center rounded-full bg-surface px-4 text-sm font-medium hover:bg-surface-2 disabled:opacity-60"
+        [disabled]="jobsService.loadingMore()"
+        (click)="jobsService.loadMore()"
+      >
+        {{ jobsService.loadingMore() ? texts.downloads.loadingMore : texts.downloads.loadMore }}
+      </button>
+    }
+  </div>
+
+  <ng-template #jobRow let-job>
+    <article
+      class="flex flex-col gap-1 rounded-xl px-2 py-2 hover:bg-surface/60"
+      data-testid="job-card"
+      [attr.data-status]="job.status"
+    >
+      <div class="flex items-center gap-3">
+        <div
+          class="grid h-10 w-[72px] shrink-0 place-items-center overflow-hidden rounded-md bg-surface text-muted"
+          data-testid="job-thumbnail-box"
+        >
+          @if (job.thumbnail) {
+            <img
+              class="size-full object-cover"
+              alt=""
+              referrerpolicy="no-referrer"
+              loading="lazy"
+              data-testid="job-thumbnail"
+              [src]="job.thumbnail"
+            />
+          } @else {
+            <app-icon name="film" class="size-5" data-testid="job-thumbnail-placeholder" />
+          }
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <h4 class="m-0 truncate text-sm font-medium" data-testid="job-title" [title]="title(job)">
+            {{ title(job) }}
+          </h4>
+          <p
+            class="m-0 truncate text-xs"
+            [class]="job.status === 'failed' ? 'font-medium text-accent' : 'text-muted'"
+            data-testid="job-status"
+          >
+            {{ statusLine(job) }}
+          </p>
+        </div>
+
+        <div class="flex shrink-0 items-center">
+          @if (canCancel(job)) {
+            <button
+              type="button"
+              data-testid="cancel-job"
+              class="grid size-9 place-items-center rounded-full hover:bg-surface disabled:opacity-50"
+              [attr.aria-label]="texts.downloads.cancel"
+              [title]="texts.downloads.cancel"
+              [disabled]="isBusy(job)"
+              (click)="cancel(job)"
+            >
+              <app-icon name="close" class="size-5" />
+            </button>
+          }
+          @if (canRetry(job)) {
+            <button
+              type="button"
+              data-testid="retry-job"
+              class="grid size-9 place-items-center rounded-full hover:bg-surface disabled:opacity-50"
+              [attr.aria-label]="texts.downloads.retry"
+              [title]="texts.downloads.retry"
+              [disabled]="isBusy(job)"
+              (click)="retry(job)"
+            >
+              <app-icon name="retry" class="size-5" />
+            </button>
+          }
+          @if (job.status === 'completed') {
+            <button
+              type="button"
+              data-testid="reveal-job"
+              class="grid size-9 place-items-center rounded-full hover:bg-surface disabled:opacity-50"
+              [attr.aria-label]="revealLabel()"
+              [title]="revealLabel()"
+              [disabled]="isBusy(job)"
+              (click)="reveal(job)"
+            >
+              <app-icon name="external" class="size-5" />
+            </button>
+          }
+          @if (hasMenu(job)) {
+            <div class="relative" appDismissable (dismissed)="closeMenu($event, job.id, more)">
+              <button
+                #more
+                type="button"
+                data-testid="job-menu"
+                aria-haspopup="menu"
+                class="grid size-9 place-items-center rounded-full hover:bg-surface"
+                [attr.aria-label]="texts.downloads.moreActions"
+                [title]="texts.downloads.moreActions"
+                [attr.aria-expanded]="menuFor() === job.id"
+                (click)="toggleMenu(job)"
+              >
+                <app-icon name="more" class="size-5" />
+              </button>
+              @if (menuFor() === job.id) {
+                <div
+                  role="menu"
+                  appMenuKeys
+                  [attr.aria-label]="texts.downloads.moreActions"
+                  class="absolute right-0 z-30 mt-1 w-56 rounded-xl border border-line bg-bg py-2 shadow-lg"
+                >
+                  @if (job.status === 'completed') {
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="open-folder"
+                      class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                      (click)="openFolder()"
+                    >
+                      <app-icon name="folder" class="size-4" />
+                      {{ texts.downloads.openFolder }}
+                    </button>
+                  }
+                  @if (job.status === 'failed') {
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="job-detail-toggle"
+                      class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                      [attr.aria-expanded]="detail(job) !== null"
+                      (click)="toggleDetail(job)"
+                    >
+                      <app-icon name="detail" class="size-4" />
+                      {{ detail(job) ? texts.downloads.hideDetail : texts.downloads.showDetail }}
+                    </button>
+                  }
+                  @if (canRemove(job)) {
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="remove-job"
+                      class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface disabled:opacity-50"
+                      [title]="texts.downloads.removeTooltip"
+                      [disabled]="isBusy(job)"
+                      (click)="remove(job)"
+                    >
+                      <app-icon name="trash" class="size-4" />
+                      {{ texts.downloads.remove }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
 
       @if (showsBar(job)) {
-        <progress
-          max="100"
+        <div
+          class="h-1 overflow-hidden rounded-full bg-surface-2"
+          role="progressbar"
           data-testid="job-progress"
-          [value]="percent(job)"
-          [attr.aria-label]="statusLabel(job)"
-        ></progress>
-        <p class="meta numbers">
-          <span data-testid="job-percent">{{ percent(job) }}%</span>
-          @if (bytes(job); as text) {
-            <span data-testid="job-bytes">{{ text }}</span>
-          }
-          @if (speed(job); as text) {
-            <span data-testid="job-speed">{{ text }}</span>
-          }
-          @if (eta(job); as text) {
-            <span data-testid="job-eta">{{ texts.downloads.eta }} {{ text }}</span>
-          }
-        </p>
+          aria-valuemin="0"
+          aria-valuemax="100"
+          [attr.aria-valuenow]="percent(job)"
+          [attr.aria-label]="title(job)"
+          [title]="progressDetail(job)"
+        >
+          <div
+            class="h-full rounded-full bg-accent"
+            data-testid="job-progress-fill"
+            [style.width.%]="percent(job)"
+          ></div>
+        </div>
       }
 
       @if (job.error) {
-        <p class="error" role="alert" data-testid="job-error">{{ job.error }}</p>
+        <p class="m-0 line-clamp-2 text-xs text-accent" data-testid="job-error">{{ job.error }}</p>
       }
 
-      @if (job.status === 'failed') {
-        <button
-          type="button"
-          class="action"
-          data-testid="job-detail-toggle"
-          [attr.aria-expanded]="detail(job) !== null"
-          (click)="toggleDetail(job)"
+      @if (confirming() === job.id) {
+        <div
+          class="flex items-center gap-2 text-sm"
+          role="group"
+          [attr.aria-label]="texts.downloads.cancelConfirm"
         >
-          {{ detail(job) ? texts.downloads.hideDetail : texts.downloads.showDetail }}
-        </button>
-        @if (detail(job); as info) {
-          @switch (info.state) {
-            @case ('loading') {
-              <p class="meta" role="status" data-testid="job-detail-loading">
-                {{ texts.downloads.loadingDetail }}
-              </p>
-            }
-            @case ('error') {
-              <p class="error" role="alert" data-testid="job-detail-error">{{ info.message }}</p>
-            }
-            @default {
-              <pre class="detail" data-testid="job-detail" tabindex="0">{{
-                info.lines.join('\n')
-              }}</pre>
-            }
-          }
-        }
-      }
-
-      @if (canCancel(job)) {
-        @if (confirming() === job.id) {
-          <div class="confirm" role="group" [attr.aria-label]="texts.downloads.cancelConfirm">
-            <span data-testid="cancel-confirm-text">{{ texts.downloads.cancelConfirm }}</span>
-            <button
-              type="button"
-              class="action"
-              data-testid="cancel-confirm-yes"
-              (click)="confirmCancel(job)"
-            >
-              {{ texts.downloads.cancelConfirmYes }}
-            </button>
-            <button
-              type="button"
-              class="action"
-              data-testid="cancel-confirm-no"
-              (click)="keepDownloading()"
-            >
-              {{ texts.downloads.cancelConfirmNo }}
-            </button>
-          </div>
-        } @else {
+          <span data-testid="cancel-confirm-text">{{ texts.downloads.cancelConfirm }}</span>
           <button
             type="button"
-            class="action"
-            data-testid="cancel-job"
-            [disabled]="isBusy(job)"
-            (click)="cancel(job)"
+            data-testid="cancel-confirm-yes"
+            class="h-8 rounded-full bg-accent-solid px-3 text-sm font-medium text-on-accent"
+            (click)="confirmCancel(job)"
           >
-            {{ isBusy(job) ? texts.downloads.canceling : texts.downloads.cancel }}
+            {{ texts.downloads.cancelConfirmYes }}
           </button>
+          <button
+            type="button"
+            data-testid="cancel-confirm-no"
+            class="h-8 rounded-full bg-surface px-3 text-sm font-medium hover:bg-surface-2"
+            (click)="keepDownloading()"
+          >
+            {{ texts.downloads.cancelConfirmNo }}
+          </button>
+        </div>
+      }
+
+      @if (detail(job); as info) {
+        @switch (info.state) {
+          @case ('loading') {
+            <p class="m-0 text-xs text-muted" role="status" data-testid="job-detail-loading">
+              {{ texts.downloads.loadingDetail }}
+            </p>
+          }
+          @case ('error') {
+            <p class="m-0 text-xs text-accent" role="alert" data-testid="job-detail-error">
+              {{ info.message }}
+            </p>
+          }
+          @default {
+            <pre
+              class="m-0 max-h-64 overflow-auto rounded-lg bg-surface p-3 text-xs"
+              data-testid="job-detail"
+              tabindex="0"
+              >{{ info.lines.join('\n') }}</pre>
+          }
         }
-      }
-
-      @if (canRetry(job)) {
-        <button
-          type="button"
-          class="action"
-          data-testid="retry-job"
-          [disabled]="isBusy(job)"
-          (click)="retry(job)"
-        >
-          {{ isBusy(job) ? texts.downloads.retrying : texts.downloads.retry }}
-        </button>
-      }
-
-      @if (job.status === 'completed') {
-        <button
-          type="button"
-          class="action"
-          data-testid="reveal-job"
-          [disabled]="isBusy(job)"
-          (click)="reveal(job)"
-        >
-          {{ isBusy(job) ? texts.downloads.revealing : revealLabel() }}
-        </button>
-        <button type="button" class="action" data-testid="open-folder" (click)="openFolder()">
-          {{ texts.downloads.openFolder }}
-        </button>
-      }
-
-      @if (canRemove(job)) {
-        <button
-          type="button"
-          class="action"
-          data-testid="remove-job"
-          [title]="texts.downloads.removeTooltip"
-          [disabled]="isBusy(job)"
-          (click)="remove(job)"
-        >
-          {{ texts.downloads.remove }}
-        </button>
       }
 
       @if (revealError(); as failure) {
         @if (failure.jobId === job.id) {
-          <p class="error" role="alert" data-testid="reveal-error">{{ failure.text }}</p>
+          <p class="m-0 text-xs text-accent" role="alert" data-testid="reveal-error">
+            {{ failure.text }}
+          </p>
         }
       }
     </article>
   </ng-template>
 
   @if (actionMessage(); as text) {
-    <p class="error" role="alert" data-testid="action-message">{{ text }}</p>
+    <p class="m-0 text-sm text-accent" role="alert" data-testid="action-message">{{ text }}</p>
   }
 
   @if (folderMessage(); as message) {
     <p
-      [class]="message.ok ? 'meta' : 'error'"
+      class="m-0 text-sm"
+      [class]="message.ok ? 'sr-only' : 'text-accent'"
       [attr.role]="message.ok ? 'status' : 'alert'"
       data-testid="folder-message"
     >

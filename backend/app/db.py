@@ -87,6 +87,12 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        6,
+        """
+        ALTER TABLE jobs ADD COLUMN thumbnail TEXT;
+        """,
+    ),
 )
 
 
