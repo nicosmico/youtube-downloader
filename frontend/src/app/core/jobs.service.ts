@@ -199,7 +199,7 @@ export class JobsService {
       body['entries'] = entries;
     }
     return this.http.post<{ batchId: string | null; jobs: Job[] }>('/api/jobs', body).pipe(
-      tap((response) => response.jobs.forEach((job) => this.upsert(job))),
+      tap((response) => response.jobs.forEach((job) => this.adopt(job))),
       map((response) => response.jobs),
       catchError((error: unknown) => throwError(() => toEnqueueError(error))),
     );
@@ -217,7 +217,7 @@ export class JobsService {
 
   private command(jobId: string, action: 'cancel' | 'retry'): Observable<Job> {
     return this.http.post<Job>(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {}).pipe(
-      tap((job) => this.upsert(job)),
+      tap((job) => (action === 'retry' ? this.adopt(job) : this.upsert(job))),
       catchError((error: unknown) => this.failed(error)),
     );
   }
@@ -235,6 +235,19 @@ export class JobsService {
 
   private drop(jobId: string): void {
     this.jobs.update((jobs) => jobs.filter((j) => j.id !== jobId));
+  }
+
+  /**
+   * Takes a job from an HTTP response (enqueue, retry). The response is a snapshot from before
+   * the job was dispatched and can arrive after the SSE `job.updated` that already says
+   * `downloading`, so SSE wins: the job is added only when it is unknown or the response starts
+   * a newer Attempt than the one the list has. It never overwrites a state of the same Attempt.
+   */
+  private adopt(job: Job): void {
+    const known = this.jobs().find((j) => j.id === job.id);
+    if (!known || known.attempt < job.attempt) {
+      this.upsert(job);
+    }
   }
 
   private upsert(job: Job): void {

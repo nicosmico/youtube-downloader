@@ -287,4 +287,73 @@ describe('JobsService', () => {
     expect((error as EnqueueError).code).toBe('job_not_retryable');
     expect(service.jobs()).toEqual([JOB]);
   });
+
+  describe('arrival order of the HTTP response and the SSE event', () => {
+    const DOWNLOADING = {
+      ...JOB,
+      status: 'downloading' as const,
+      startedAt: '2026-11-15T12:00:01Z',
+    };
+
+    it('does not bring a job back to queued when job.updated arrived before the POST response', () => {
+      service.connect();
+      service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, null).subscribe();
+      const req = http.expectOne('/api/jobs');
+
+      stream().emit('job.updated', DOWNLOADING);
+      req.flush({ batchId: null, jobs: [JOB] });
+
+      expect(service.jobs()).toHaveLength(1);
+      expect(service.jobs()[0].status).toBe('downloading');
+    });
+
+    it('adds the job from the response and then applies the SSE update', () => {
+      service.connect();
+      service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, null).subscribe();
+      http.expectOne('/api/jobs').flush({ batchId: null, jobs: [JOB] });
+      expect(service.jobs()[0].status).toBe('queued');
+
+      stream().emit('job.updated', DOWNLOADING);
+
+      expect(service.jobs()).toHaveLength(1);
+      expect(service.jobs()[0].status).toBe('downloading');
+    });
+
+    it('keeps the SSE state of every job of a playlist enqueue', () => {
+      service.connect();
+      const second = { ...JOB, id: 'job2', createdAt: '2026-11-15T12:00:00.000001+00:00' };
+      service.enqueue(JOB.url, { mode: 'video', quality: 'best' }, null, []).subscribe();
+      const req = http.expectOne('/api/jobs');
+
+      stream().emit('job.updated', DOWNLOADING);
+      req.flush({ batchId: 'b1', jobs: [JOB, second] });
+
+      expect(service.jobs().find((j) => j.id === 'job1')?.status).toBe('downloading');
+      expect(service.jobs().find((j) => j.id === 'job2')?.status).toBe('queued');
+    });
+
+    it('does not bring a retried job back to queued when job.updated arrived first', () => {
+      service.connect();
+      service.jobs.set([{ ...JOB, status: 'failed' }]);
+      service.retry(JOB.id).subscribe();
+      const req = http.expectOne(`/api/jobs/${JOB.id}/retry`);
+
+      stream().emit('job.updated', { ...DOWNLOADING, attempt: 2 });
+      req.flush({ ...JOB, status: 'queued', attempt: 2 });
+
+      expect(service.jobs()[0]).toMatchObject({ status: 'downloading', attempt: 2 });
+    });
+
+    it('applies the retry response first and then the SSE update', () => {
+      service.connect();
+      service.jobs.set([{ ...JOB, status: 'failed' }]);
+      service.retry(JOB.id).subscribe();
+      http.expectOne(`/api/jobs/${JOB.id}/retry`).flush({ ...JOB, status: 'queued', attempt: 2 });
+      expect(service.jobs()[0]).toMatchObject({ status: 'queued', attempt: 2 });
+
+      stream().emit('job.updated', { ...DOWNLOADING, attempt: 2 });
+
+      expect(service.jobs()[0]).toMatchObject({ status: 'downloading', attempt: 2 });
+    });
+  });
 });
