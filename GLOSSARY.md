@@ -87,5 +87,5 @@ Aviso, comprobado una sola vez al arrancar, de que existe un Release de la app m
 _Evitar_: auto-update, actualización automática
 
 **Idle Shutdown**:
-Cierre automático de la app cuando lleva un tiempo sin pestañas conectadas y con la `Queue` vacía.
+Cierre automático de la app unos 15 s después de cerrarse la última pestaña, si la `Queue` está vacía y el `Engine` no está instalándose ni actualizándose; si aún no se ha conectado ninguna pestaña desde el arranque, espera 60 s. Una descarga en curso lo retrasa: los 15 s cuentan desde que la `Queue` se vacía. `IDLE_SHUTDOWN_SECONDS` lo ajusta (`0` lo desactiva).
 _Evitar_: timeout, autocierre

@@ -9,7 +9,11 @@ download is skipped in that mode: yt-dlp's own binary reads the same variables.
 
 Starts the executable with `--no-browser` and temporary DATA_DIR / DOWNLOAD_DIR, then checks:
 health, Engine `ready` (real binaries downloaded and verified), "open folder", a real download
-and a clean shutdown (process exits, runtime.json removed).
+and a clean shutdown (process exits, runtime.json removed). No browser tab is ever connected, so
+the run sets IDLE_SHUTDOWN_SECONDS high: otherwise Idle Shutdown would close the app between steps.
+Afterwards (unless `--empty-ca-store`) it starts the app again on the same data, with a 3 s Idle
+Shutdown, opens and closes an SSE connection like a browser tab would, and checks that the
+process exits by itself.
 
     python packaging/smoke.py --reopen <path to YouTube Downloader.app>     (macOS only)
 
@@ -36,6 +40,9 @@ from pathlib import Path
 VIDEO_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 ENGINE_TIMEOUT = 600
 DOWNLOAD_TIMEOUT = 300
+IDLE_SECONDS_HIGH = "600"  # the packaged smoke has no tab: keep Idle Shutdown out of the way
+IDLE_SECONDS_SHORT = 3
+IDLE_EXIT_TIMEOUT = 30  # after the last SSE client leaves: the 3 s plus the orderly shutdown
 BOT_MARKER = "YouTube bloqueó"  # message of the job error for the bot check (jobs/failures.py)
 EXIT_BOT_CHECK = 10
 
@@ -90,6 +97,7 @@ def run(exe: Path, work: Path, empty_ca_store: bool = False) -> int:
     download_dir.mkdir()
     env = {**os.environ, "DATA_DIR": str(data_dir), "DOWNLOAD_DIR": str(download_dir)}
     env.pop("ENGINE_BIN_DIR", None)
+    env["IDLE_SHUTDOWN_SECONDS"] = IDLE_SECONDS_HIGH
     env["YTDL_SERVER_CHILD"] = "1"  # run the server itself: on macOS it would detach otherwise
     if empty_ca_store:
         (work / "empty-ca.pem").write_text("")
@@ -167,12 +175,62 @@ def run(exe: Path, work: Path, empty_ca_store: bool = False) -> int:
         print(f"exit code: {proc.returncode}", flush=True)
         if runtime_file.exists():
             raise SmokeError("runtime.json still exists after shutdown")
+        if not empty_ca_store:
+            run_idle_shutdown(exe, env, data_dir)
         return EXIT_BOT_CHECK if bot_blocked else 0
     except BaseException:
         log = data_dir / "app.log"
         print("\n----- app.log -----", flush=True)
         print(log.read_text(encoding="utf-8", errors="replace") if log.exists() else "(none)")
         raise
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def run_idle_shutdown(exe: Path, env: dict[str, str], data_dir: Path) -> None:
+    """Idle Shutdown on the packaged app: a tab connects, leaves, and the app closes by itself.
+
+    Starts again on the same data dir, where the Engine is already installed (an install in
+    progress would count as work and hold the shutdown back).
+    """
+    step(f"Idle Shutdown: starting again with IDLE_SHUTDOWN_SECONDS={IDLE_SECONDS_SHORT}")
+    runtime_file = data_dir / "runtime.json"
+    proc = subprocess.Popen(
+        [str(exe), "--no-browser"], env={**env, "IDLE_SHUTDOWN_SECONDS": str(IDLE_SECONDS_SHORT)}
+    )
+    try:
+        info = wait_for(
+            "runtime.json", 60, lambda: json.loads(runtime_file.read_text(encoding="utf-8"))
+        )
+        client = Client(info["port"])
+        wait_for("/api/health", 60, lambda: client.call("GET", "/api/health")[1] or None)
+
+        step("Idle Shutdown: a tab connects to /api/events and stays longer than the timeout")
+        request = urllib.request.Request(client.base + "/api/events")
+        request.add_header("Host", client.host)
+        with urllib.request.urlopen(request, timeout=30) as stream:
+            stream.read(1)  # the stream is open: the server counts this client
+            time.sleep(IDLE_SECONDS_SHORT + 2)
+            if proc.poll() is not None:
+                raise SmokeError("The app closed while an SSE client was connected")
+        # leaving the `with` closed the connection: the tab is gone
+        step(f"Idle Shutdown: tab closed, waiting for the app to exit (up to {IDLE_EXIT_TIMEOUT}s)")
+        started = time.monotonic()
+        try:
+            proc.wait(timeout=IDLE_EXIT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise SmokeError(
+                f"The app did not exit within {IDLE_EXIT_TIMEOUT}s of the last tab closing"
+            ) from None
+        print(
+            f"exited {time.monotonic() - started:.1f}s after the tab closed "
+            f"(exit code {proc.returncode})",
+            flush=True,
+        )
+        if runtime_file.exists():
+            raise SmokeError("runtime.json still exists after the idle shutdown")
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -216,7 +274,7 @@ def server_processes(exe: Path) -> list[int]:
 
 def open_app(app: Path, env: dict[str, str]) -> None:
     cmd = ["open"]
-    for key in ("DATA_DIR", "DOWNLOAD_DIR", "OPEN_BROWSER"):
+    for key in ("DATA_DIR", "DOWNLOAD_DIR", "OPEN_BROWSER", "IDLE_SHUTDOWN_SECONDS"):
         cmd += ["--env", f"{key}={env[key]}"]
     cmd.append(str(app))
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -231,7 +289,12 @@ def run_reopen(app: Path, work: Path) -> int:
     download_dir = work / "downloads"
     data_dir.mkdir()
     download_dir.mkdir()
-    env = {"DATA_DIR": str(data_dir), "DOWNLOAD_DIR": str(download_dir), "OPEN_BROWSER": "0"}
+    env = {
+        "DATA_DIR": str(data_dir),
+        "DOWNLOAD_DIR": str(download_dir),
+        "OPEN_BROWSER": "0",
+        "IDLE_SHUTDOWN_SECONDS": IDLE_SECONDS_HIGH,  # no tab here either
+    }
     runtime_file = data_dir / "runtime.json"
     log = data_dir / "app.log"
     try:
