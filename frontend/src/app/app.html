@@ -1,88 +1,42 @@
-<main class="shell">
-  <h1>{{ texts.appTitle }}</h1>
-
-  @if (shutdownState() === 'done' || shutdownState() === 'closedIdle') {
-    <section class="card" role="status">
-      <h2 data-testid="closed-title">
+@if (shutdownState() === 'done' || shutdownState() === 'closedIdle') {
+  <main class="grid min-h-screen place-items-center px-4">
+    <section class="flex max-w-sm flex-col items-center text-center" role="status">
+      <span class="grid size-14 place-items-center rounded-2xl bg-accent-solid text-on-accent">
+        <app-icon name="arrow-down-to-line" class="size-8" />
+      </span>
+      <h1 class="mb-2 mt-5 text-xl font-semibold" data-testid="closed-title">
         {{ shutdownState() === 'closedIdle' ? texts.shutdown.idle : texts.shutdown.done }}
-      </h2>
-      <p>{{ texts.shutdown.doneHint }}</p>
+      </h1>
+      <p class="m-0 text-sm text-muted">{{ texts.shutdown.doneHint }}</p>
     </section>
-  } @else {
+  </main>
+} @else {
+  <app-top-bar
+    [health]="health()"
+    [unreachable]="unreachable()"
+    [closing]="shutdownState() === 'closing'"
+    (logsRequested)="logsOpen.set(true)"
+    (shutdownRequested)="shutdown()"
+  />
+
+  @if (shutdownState() === 'failed') {
+    <p
+      class="mx-auto mt-3 max-w-[1400px] px-4 text-sm text-accent"
+      role="alert"
+      data-testid="shutdown-error"
+    >
+      {{ texts.shutdown.failed }}
+    </p>
+  }
+
+  <main
+    class="mx-auto grid max-w-[1400px] grid-cols-1 gap-6 px-4 py-6 wide:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]"
+  >
     <app-url-preview />
     <app-downloads />
+  </main>
 
-    <section class="card" aria-labelledby="engine-heading">
-      <h2 id="engine-heading">{{ texts.engine.heading }}</h2>
-      @if (unreachable()) {
-        <p class="error" role="alert">{{ texts.health.unreachable }}</p>
-      } @else {
-        <p class="engine-status" data-testid="engine-status">{{ engineLabel() }}</p>
-        @if (engineService.engine(); as engine) {
-          @if (engine.status === 'ready') {
-            <p class="meta" data-testid="engine-versions">
-              @for (v of versionList(); track v.name; let last = $last) {
-                {{ v.name }} {{ v.value }}
-                @if (!last) {
-                  ·
-                }
-              }
-            </p>
-            @if (engine.updatePending) {
-              <p class="meta" role="status" data-testid="engine-update-pending">
-                {{ texts.engine.updatePending }}
-              </p>
-            }
-            @if (engine.updateMessage) {
-              <p class="error" role="alert">
-                {{ texts.engine.updateFailed }} {{ engine.updateMessage }}
-              </p>
-            }
-            <button
-              type="button"
-              class="action"
-              data-testid="engine-update"
-              [disabled]="engine.updating || engine.updatePending"
-              (click)="engineService.update()"
-            >
-              {{ engine.updating ? texts.engine.updating : texts.engine.update }}
-            </button>
-          }
-          @if (engine.status === 'error') {
-            <p class="error" role="alert" data-testid="engine-error">{{ engine.message }}</p>
-            <button
-              type="button"
-              class="action"
-              data-testid="engine-retry"
-              (click)="engineService.install()"
-            >
-              {{ texts.engine.retry }}
-            </button>
-          }
-        }
-        @if (engineService.actionError()) {
-          <p class="error" role="alert">{{ texts.engine.actionFailed }}</p>
-        }
-        @if (health(); as h) {
-          <p class="meta">
-            {{ texts.health.version }} {{ h.version }} · {{ texts.health.port }} {{ h.port }}
-          </p>
-        }
-      }
-    </section>
-
-    <app-logs />
-
-    <button
-      type="button"
-      class="danger"
-      [disabled]="shutdownState() === 'closing'"
-      (click)="shutdown()"
-    >
-      {{ shutdownState() === 'closing' ? texts.shutdown.closing : texts.shutdown.button }}
-    </button>
-    @if (shutdownState() === 'failed') {
-      <p class="error" role="alert">{{ texts.shutdown.failed }}</p>
-    }
+  @if (logsOpen()) {
+    <app-logs (closed)="closeLogs()" />
   }
-</main>
+}

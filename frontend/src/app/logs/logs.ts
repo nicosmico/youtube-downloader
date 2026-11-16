@@ -1,13 +1,24 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  afterNextRender,
+  computed,
+  inject,
+  output,
+  signal,
+  viewChild,
+  ElementRef,
+} from '@angular/core';
 import { ERROR_LOG_CLOCK, ErrorLogService } from '../core/error-log.service';
 import { LogsService } from '../core/logs.service';
 import { TEXTS } from '../core/texts';
+import { Dismissable } from '../ui/dismissable';
+import { Icon } from '../ui/icon';
 
-/** "Registros": the server log and this tab's errors. Collapsed; reads only on demand. */
+/** "Registros": side panel with the server log and this tab's errors. Reads when it opens. */
 @Component({
   selector: 'app-logs',
+  imports: [Dismissable, Icon],
   templateUrl: './logs.html',
-  styleUrl: './logs.css',
 })
 export class Logs {
   private readonly logs = inject(LogsService);
@@ -15,7 +26,8 @@ export class Logs {
   protected readonly errorLog = inject(ErrorLogService);
 
   protected readonly texts = TEXTS.logs;
-  protected readonly open = signal(false);
+  readonly closed = output<void>();
+  private readonly closeButton = viewChild<ElementRef<HTMLButtonElement>>('closeButton');
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly includeRequests = signal(false);
@@ -30,11 +42,9 @@ export class Logs {
   /** Whether the lines on screen were read with requests (what the report must say). */
   private loadedWithRequests = false;
 
-  protected toggle(): void {
-    this.open.update((value) => !value);
-    if (this.open()) {
-      this.refresh();
-    }
+  constructor() {
+    this.refresh();
+    afterNextRender(() => this.closeButton()?.nativeElement.focus());
   }
 
   protected toggleRequests(checked: boolean): void {

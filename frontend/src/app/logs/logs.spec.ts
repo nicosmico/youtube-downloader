@@ -11,6 +11,7 @@ import { Logs } from './logs';
 describe('Logs', () => {
   let fixture: ComponentFixture<Logs>;
   let http: HttpTestingController;
+  let closed: number;
 
   const root = () => fixture.nativeElement as HTMLElement;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -43,41 +44,33 @@ describe('Logs', () => {
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
+    closed = 0;
     fixture = TestBed.createComponent(Logs);
+    fixture.componentInstance['closed'].subscribe(() => closed++);
     await settle();
   });
 
   afterEach(() => http.verify());
 
-  it('is collapsed by default and asks the server for nothing', () => {
-    expect(el('logs-toggle')?.getAttribute('aria-expanded')).toBe('false');
-    expect(el('logs-body')).toBeNull();
-    http.expectNone('/api/logs');
-  });
-
-  it('loads the log when opened and shows the lines', async () => {
-    await click('logs-toggle');
+  it('reads the server log as soon as it opens', async () => {
     await answer(['one', 'two']);
 
-    expect(el('logs-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    expect(el('logs-panel')?.getAttribute('role')).toBe('dialog');
     expect(el('logs-server')?.textContent).toBe('one\ntwo');
-    expect(el('logs-frontend-empty')).not.toBeNull();
   });
 
-  it('does not ask again when closed and does when reopened', async () => {
-    await click('logs-toggle');
-    await answer(['one']);
-    await click('logs-toggle');
-    expect(el('logs-body')).toBeNull();
+  it('focuses the close button and closes with the button, the backdrop and Esc', async () => {
+    await answer([]);
+    expect(document.activeElement).toBe(el('logs-close'));
 
-    await click('logs-toggle');
-    await answer(['one', 'two']);
+    el('logs-close')!.click();
+    el('logs-backdrop')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
-    expect(el('logs-server')?.textContent).toBe('one\ntwo');
+    expect(closed).toBe(3);
   });
 
   it('reloads only on "Actualizar"', async () => {
-    await click('logs-toggle');
     await answer(['one']);
 
     await click('logs-refresh');
@@ -87,7 +80,6 @@ describe('Logs', () => {
   });
 
   it('reloads with requests when the toggle is switched', async () => {
-    await click('logs-toggle');
     await answer(['one']);
 
     await click('logs-requests');
@@ -97,7 +89,6 @@ describe('Logs', () => {
   });
 
   it('says so when the server log cannot be read, and when it is empty', async () => {
-    await click('logs-toggle');
     http.expectOne(logsUrl(false)).flush({}, { status: 500, statusText: 'Error' });
     await settle();
     expect(el('logs-load-error')?.textContent).toContain('No se pudo leer');
@@ -110,7 +101,6 @@ describe('Logs', () => {
 
   it('shows the errors captured in this tab', async () => {
     TestBed.inject(ErrorLogService).record('http', 'GET /api/jobs -> 500');
-    await click('logs-toggle');
     await answer([]);
 
     expect(el('logs-frontend')?.textContent).toBe(
@@ -131,7 +121,6 @@ describe('Logs', () => {
       TestBed.inject(SystemService).platform.set('darwin');
       TestBed.inject(EngineService).engine.set(ENGINE_READY);
       TestBed.inject(ErrorLogService).record('js', 'TypeError: boom');
-      await click('logs-toggle');
       await answer(['2026 INFO app: hola']);
     });
 

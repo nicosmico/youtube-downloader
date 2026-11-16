@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { EngineService } from './core/engine.service';
 import { EventStreamService, eventData } from './core/event-stream.service';
 import { JobsService } from './core/jobs.service';
@@ -7,26 +7,29 @@ import { TEXTS } from './core/texts';
 import { Downloads } from './downloads/downloads';
 import { Logs } from './logs/logs';
 import { UrlPreview } from './preview/url-preview';
+import { TopBar } from './topbar/top-bar';
+import { Icon } from './ui/icon';
 
 /** `closedIdle`: the server closed itself after 10 minutes without use (Idle Shutdown). */
 type ShutdownState = 'idle' | 'closing' | 'done' | 'closedIdle' | 'failed';
 
 @Component({
   selector: 'app-root',
-  imports: [UrlPreview, Downloads, Logs],
+  imports: [UrlPreview, Downloads, Logs, TopBar, Icon],
   templateUrl: './app.html',
-  styleUrl: './app.css',
 })
 export class App implements OnInit {
   private readonly system = inject(SystemService);
-  protected readonly engineService = inject(EngineService);
+  private readonly engineService = inject(EngineService);
   private readonly jobsService = inject(JobsService);
   private readonly stream = inject(EventStreamService);
+  private readonly topBar = viewChild(TopBar);
 
   protected readonly texts = TEXTS;
   protected readonly health = signal<Health | null>(null);
   protected readonly unreachable = signal(false);
   protected readonly shutdownState = signal<ShutdownState>('idle');
+  protected readonly logsOpen = signal(false);
 
   ngOnInit(): void {
     this.engineService.connect();
@@ -38,22 +41,9 @@ export class App implements OnInit {
     });
   }
 
-  protected engineLabel(): string {
-    const status = this.engineService.engine()?.status;
-    if (status === undefined) {
-      return TEXTS.engine.loading;
-    }
-    return TEXTS.engine.status[status] ?? TEXTS.engine.unknownStatus;
-  }
-
-  protected versionList(): { name: string; value: string }[] {
-    const versions = this.engineService.engine()?.versions;
-    if (!versions) {
-      return [];
-    }
-    return (Object.keys(TEXTS.engine.versions) as (keyof typeof TEXTS.engine.versions)[])
-      .filter((key) => versions[key])
-      .map((key) => ({ name: TEXTS.engine.versions[key], value: versions[key] as string }));
+  protected closeLogs(): void {
+    this.logsOpen.set(false);
+    this.topBar()?.focusSettings();
   }
 
   /** The server announced its end: show the closed screen and stop reconnecting to it. */

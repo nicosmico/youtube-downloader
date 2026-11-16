@@ -1,0 +1,83 @@
+<div class="relative" appDismissable (dismissed)="close($event, trigger)">
+  <button
+    #trigger
+    type="button"
+    data-testid="engine-chip"
+    aria-haspopup="dialog"
+    [attr.aria-expanded]="open()"
+    [attr.aria-label]="texts.heading + ': ' + state().label"
+    class="inline-flex h-9 items-center gap-2 rounded-full bg-surface px-3 text-sm hover:bg-surface-2"
+    (click)="open.set(!open())"
+  >
+    <span class="size-2.5 rounded-full" [class]="dotClass(state().tone)" aria-hidden="true"></span>
+    <span data-testid="engine-status">{{ state().label }}</span>
+  </button>
+
+  @if (open()) {
+    <div
+      role="dialog"
+      [attr.aria-label]="texts.heading"
+      data-testid="engine-popover"
+      class="absolute right-0 z-30 mt-2 w-72 rounded-xl border border-line bg-bg p-4 shadow-lg"
+    >
+      @if (unreachable()) {
+        <p class="text-sm text-accent" role="alert">{{ healthTexts.unreachable }}</p>
+      } @else if (engineService.engine(); as engine) {
+        @if (versions().length > 0) {
+          <ul class="m-0 list-none space-y-1 p-0 text-sm" data-testid="engine-versions">
+            @for (v of versions(); track v.name) {
+              <li class="flex justify-between gap-4">
+                <span class="text-muted">{{ v.name }}</span>
+                <span>{{ v.value }}</span>
+              </li>
+            }
+          </ul>
+        }
+        @if (engine.updatePending) {
+          <p class="mt-3 text-sm text-muted" role="status" data-testid="engine-update-pending">
+            {{ texts.updatePending }}
+          </p>
+        }
+        @if (engine.updateMessage) {
+          <p class="mt-3 text-sm text-accent" role="alert">
+            {{ texts.updateFailed }} {{ engine.updateMessage }}
+          </p>
+        }
+        @if (engine.status === 'ready') {
+          <button
+            type="button"
+            data-testid="engine-update"
+            class="mt-3 h-9 w-full rounded-full bg-surface px-4 text-sm font-medium hover:bg-surface-2 disabled:opacity-60"
+            [disabled]="engine.updating || engine.updatePending"
+            (click)="engineService.update()"
+          >
+            {{ engine.updating ? texts.updating : texts.update }}
+          </button>
+        }
+        @if (engine.status === 'error') {
+          <p class="text-sm text-accent" role="alert" data-testid="engine-error">
+            {{ engine.message }}
+          </p>
+          <button
+            type="button"
+            data-testid="engine-retry"
+            class="mt-3 h-9 w-full rounded-full bg-surface px-4 text-sm font-medium hover:bg-surface-2"
+            (click)="engineService.install()"
+          >
+            {{ texts.retry }}
+          </button>
+        }
+      } @else {
+        <p class="text-sm text-muted">{{ state().label }}</p>
+      }
+      @if (engineService.actionError()) {
+        <p class="mt-3 text-sm text-accent" role="alert">{{ texts.actionFailed }}</p>
+      }
+      @if (health(); as h) {
+        <p class="mt-3 text-xs text-muted" data-testid="app-version">
+          v{{ h.version }} · {{ h.port }}
+        </p>
+      }
+    </div>
+  }
+</div>

@@ -3,6 +3,16 @@ export const TEXTS = {
   appTitle: 'YouTube Downloader',
   engine: {
     heading: 'Motor de descarga',
+    chip: {
+      checking: 'Comprobando…',
+      ready: 'Motor listo',
+      missing: 'Motor no instalado',
+      installing: 'Instalando…',
+      updating: 'Actualizando…',
+      updatePending: 'Actualización pendiente',
+      error: 'Motor con error',
+      unreachable: 'Sin conexión',
+    },
     loading: 'Comprobando…',
     status: {
       missing: 'No instalado',
@@ -18,6 +28,15 @@ export const TEXTS = {
     updatePending: 'Actualización pendiente: se aplicará al terminar las descargas en curso.',
     actionFailed: 'No se pudo enviar la orden al servidor local.',
     updateFailed: 'No se pudo actualizar yt-dlp:',
+  },
+  menu: {
+    settings: 'Ajustes',
+    theme: 'Tema',
+    themeSystem: 'Sistema',
+    themeLight: 'Claro',
+    themeDark: 'Oscuro',
+    toggleTheme: 'Cambiar tema',
+    logs: 'Registros',
   },
   preview: {
     heading: 'Descargar',
@@ -143,8 +162,7 @@ export const TEXTS = {
   },
   logs: {
     heading: 'Registros',
-    open: 'Mostrar registros',
-    close: 'Ocultar registros',
+    close: 'Cerrar registros',
     refresh: 'Actualizar',
     refreshing: 'Actualizando…',
     showRequests: 'Mostrar peticiones',

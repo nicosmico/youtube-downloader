@@ -1,0 +1,94 @@
+<header class="sticky top-0 z-20 border-b border-line bg-bg">
+  <div class="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-3 px-4">
+    <div class="flex items-center gap-2.5">
+      <span
+        class="grid size-8 place-items-center rounded-lg bg-accent-solid text-on-accent"
+        data-testid="brand-icon"
+      >
+        <app-icon name="arrow-down-to-line" class="size-5" />
+      </span>
+      <h1 class="m-0 text-lg font-semibold tracking-tight">{{ texts.appTitle }}</h1>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <app-engine-chip [health]="health()" [unreachable]="unreachable()" />
+
+      <button
+        type="button"
+        data-testid="theme-toggle"
+        class="grid size-9 place-items-center rounded-full hover:bg-surface"
+        [attr.aria-label]="texts.menu.toggleTheme"
+        [title]="texts.menu.toggleTheme"
+        (click)="theme.toggle()"
+      >
+        <app-icon [name]="theme.effective() === 'dark' ? 'sun' : 'moon'" class="size-5" />
+      </button>
+
+      <div class="relative" appDismissable (dismissed)="closeMenu($event, gear)">
+        <button
+          #gear
+          type="button"
+          data-testid="gear-menu"
+          aria-haspopup="menu"
+          class="grid size-9 place-items-center rounded-full hover:bg-surface"
+          [attr.aria-expanded]="menuOpen()"
+          [attr.aria-label]="texts.menu.settings"
+          [title]="texts.menu.settings"
+          (click)="menuOpen.set(!menuOpen())"
+        >
+          <app-icon name="settings" class="size-5" />
+        </button>
+
+        @if (menuOpen()) {
+          <div
+            role="menu"
+            appMenuKeys
+            [attr.aria-label]="texts.menu.settings"
+            class="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-line bg-bg py-2 shadow-lg"
+          >
+            <p class="m-0 px-4 pb-1 text-xs font-medium text-muted">{{ texts.menu.theme }}</p>
+            @for (option of themes; track option.value) {
+              <button
+                type="button"
+                role="menuitemradio"
+                class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                [attr.data-testid]="'theme-' + option.value"
+                [attr.aria-checked]="theme.preference() === option.value"
+                (click)="theme.set(option.value)"
+              >
+                <span class="grid size-4 place-items-center">
+                  @if (theme.preference() === option.value) {
+                    <app-icon name="check" class="size-4" />
+                  }
+                </span>
+                {{ option.label }}
+              </button>
+            }
+            <hr class="my-2 border-line" />
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="open-logs"
+              class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+              (click)="openLogs()"
+            >
+              <app-icon name="logs" class="size-4" />
+              {{ texts.menu.logs }}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="shutdown"
+              class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm text-accent hover:bg-surface disabled:opacity-60"
+              [disabled]="closing()"
+              (click)="shutdown()"
+            >
+              <app-icon name="power" class="size-4" />
+              {{ closing() ? texts.shutdown.closing : texts.shutdown.button }}
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</header>
