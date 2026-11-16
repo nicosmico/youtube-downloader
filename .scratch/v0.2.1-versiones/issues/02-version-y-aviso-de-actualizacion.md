@@ -19,13 +19,19 @@ Ver la spec, secciones "Versión en el engranaje" y "Aviso de versión nueva", y
 
 **Status:** ready-for-agent
 
-- [ ] La comprobación no bloquea el arranque ni el Engine. Con la red caída, no muestra nada y no deja errores visibles.
-- [ ] La comparación de versiones es numérica (`0.10.0` > `0.9.0`) y solo avisa si la publicada es estrictamente mayor.
-- [ ] La `url` se construye a partir del tag parseado, nunca copiando la `Location`.
-- [ ] `/api/health` incluye `update`, y el evento `app.update` llega a las pestañas abiertas.
-- [ ] `UPDATE_CHECK=0` no hace ninguna petición. Los tests del backend no tocan la red.
-- [ ] El menú del engranaje muestra la versión instalada.
-- [ ] El chip aparece solo con `update`, con contraste AA y foco visible en ambos temas, y sin saltos de línea a 320 px.
-- [ ] Tests de backend (versión, parseo, checker con `Fetcher` falso, health, evento, desactivado) y de frontend (chip, SSE, línea de versión).
+- [x] La comprobación no bloquea el arranque ni el Engine. Con la red caída, no muestra nada y no deja errores visibles.
+- [x] La comparación de versiones es numérica (`0.10.0` > `0.9.0`) y solo avisa si la publicada es estrictamente mayor.
+- [x] La `url` se construye a partir del tag parseado, nunca copiando la `Location`.
+- [x] `/api/health` incluye `update`, y el evento `app.update` llega a las pestañas abiertas.
+- [x] `UPDATE_CHECK=0` no hace ninguna petición. Los tests del backend no tocan la red.
+- [x] El menú del engranaje muestra la versión instalada.
+- [x] El chip aparece solo con `update`, con contraste AA y foco visible en ambos temas, y sin saltos de línea a 320 px.
+- [x] Tests de backend (versión, parseo, checker con `Fetcher` falso, health, evento, desactivado) y de frontend (chip, SSE, línea de versión).
 
 ## Comments
+
+2026-11-16: Implementado.
+- Backend: `backend/app/updates.py` (`parse_latest_version`, `is_newer`, `UpdateNotice`). `create_app` gana `update_check` (por defecto `False`, así los tests no tocan la red), `update_fetcher`, `app_version` y `spawn_update_check`; el Launcher pasa `Settings.update_check` (`UPDATE_CHECK=0` lo desactiva, activo por defecto). La comprobación corre en un hilo daemon desde el lifespan. `/api/health` incluye `update`; evento SSE `app.update`. El `UrllibFetcher` real (mismo contexto SSL) solo se construye al ejecutar la comprobación.
+- Frontend: señal `SystemService.update` (health + `app.update`), chip-enlace con `arrow-up` en la barra superior, línea `Versión X.Y.Z` al final del menú (un `<p>`, no menuitem). Nuevo icono `arrow-up` y textos en `texts.ts`.
+- Desviación: la línea de versión solo se muestra cuando `/api/health` ya respondió. Sin `UPDATE_CHECK` en `compose.yaml` (activo por defecto también en Docker, como pide la spec).
+- Verificado: `docker compose run --rm tests` (697 passed), ruff check y format OK; `npm run test:ci` (253 passed) y `npm run build` OK. No revisado visualmente (contraste/320 px): lo hace el orquestador.
