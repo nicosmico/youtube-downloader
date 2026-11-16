@@ -22,8 +22,10 @@ services:
       # Published on the host loopback only.
       - "127.0.0.1:${PORT:-8765}:${PORT:-8765}"
     volumes:
-      # Never the real ~/.youtube-downloader: the container would fill it with Linux Engine binaries.
-      - "${HOST_DATA_DIR:-./.dev-data}:/data"
+      # Named volume, not a host folder: SQLite (WAL) on a bind mount shared with macOS got
+      # corrupted. It also holds /data/bin (Engine binaries), so they are downloaded once.
+      # Never the real ~/.youtube-downloader: the container would fill it with Linux binaries.
+      - "ytdl-dev-data:/data"
       - "${HOST_DOWNLOAD_DIR:-${HOME}/Downloads}:/downloads"
 
   # `docker compose run --rm tests [command]` runs pytest (default), ruff, etc.
@@ -35,3 +37,6 @@ services:
       target: backend
     volumes:
       - ./backend:/srv/backend
+
+volumes:
+  ytdl-dev-data:

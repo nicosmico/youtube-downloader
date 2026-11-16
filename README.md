@@ -61,7 +61,7 @@ docs/              ADRs y documentación de agentes
 
 El backend y los tests corren en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24 local. Ni `ffmpeg` ni Deno se instalan: los gestiona la app.
 
-Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y `./.dev-data` (nunca el `~/.youtube-downloader` real, que se llenaría de binarios Linux) y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
+Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y un volumen de Docker para los datos (nunca el `~/.youtube-downloader` real, que se llenaría de binarios Linux) y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
 
 ### Arrancar la app
 
@@ -72,11 +72,23 @@ curl http://127.0.0.1:8765/api/health
 docker compose down              # o el botón "Cerrar aplicación" de la UI
 ```
 
-Variables útiles: `PORT`, `HOST_DATA_DIR` y `HOST_DOWNLOAD_DIR` (carpetas del host que se montan en `/data` y `/downloads`).
+Variables útiles: `PORT` y `HOST_DOWNLOAD_DIR` (carpeta del host que se monta en `/downloads`, para ver las descargas desde macOS).
 
-En el primer arranque con `./.dev-data/bin` vacío, la app descarga el Engine Linux (~240 MB) en segundo plano: `curl http://127.0.0.1:8765/api/system/engine` pasa de `installing` a `ready` y `./.dev-data/engine.json` guarda versión y SHA-256 de cada binario. Si falla (sin red, hash incorrecto), el estado es `error`; se reintenta con el botón "Reintentar" o con `POST /api/system/engine/install`. `ENGINE_BIN_DIR=<carpeta>` (carpeta montada en el contenedor) usa esos binarios tal cual, sin descargar ni fijar hashes: solo comprueba `--version`.
+En el primer arranque con el volumen vacío (`/data/bin`), la app descarga el Engine Linux (~240 MB) en segundo plano: `curl http://127.0.0.1:8765/api/system/engine` pasa de `installing` a `ready` y `/data/engine.json` guarda versión y SHA-256 de cada binario. Si falla (sin red, hash incorrecto), el estado es `error`; se reintenta con el botón "Reintentar" o con `POST /api/system/engine/install`. `ENGINE_BIN_DIR=<carpeta>` (carpeta montada en el contenedor) usa esos binarios tal cual, sin descargar ni fijar hashes: solo comprueba `--version`.
 
-Single Instance en Compose: el lock vive en el directorio de datos montado, así que un segundo contenedor con el mismo `HOST_DATA_DIR` falla con "Another instance is starting or stuck" (cada contenedor tiene su propia red y no puede alcanzar el puerto del otro). Fuera de Docker, el segundo `Launcher` abre el navegador en la instancia existente y termina.
+Single Instance en Compose: el lock vive en el directorio de datos (el volumen), así que un segundo contenedor con el mismo volumen falla con "Another instance is starting or stuck" (cada contenedor tiene su propia red y no puede alcanzar el puerto del otro). Fuera de Docker, el segundo `Launcher` abre el navegador en la instancia existente y termina.
+
+### Datos de desarrollo (volumen)
+
+`DATA_DIR` (`/data`: base de datos SQLite, `engine.json`, binarios del Engine en `/data/bin`, lock) vive en el volumen nombrado `ytdl-dev-data`, no en una carpeta del host: SQLite en modo WAL sobre una carpeta compartida con macOS dejó la base de datos corrupta (cabecera a ceros). Los binarios están en el mismo volumen, así que el Engine se descarga una sola vez y sobrevive a `down`/`up`/`restart`. Las descargas siguen en una carpeta del host (`HOST_DOWNLOAD_DIR`), porque son ficheros que se escriben una vez. El producto (app nativa) no se ve afectado.
+
+```sh
+docker compose exec app ls -la /data                # inspeccionar
+docker compose cp app:/data/db.sqlite3 ./db.sqlite3  # copiar un fichero del volumen al host
+docker compose down -v                               # borrar el volumen (historial y Engine) y empezar de cero
+```
+
+`./.dev-data/` ya no se usa: puedes borrarla.
 
 ### Tests y lint (backend)
 
