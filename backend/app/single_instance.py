@@ -13,13 +13,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-from app import APP_ID
+from app import APP_ID, __version__
 from app.runtime import RuntimeInfo, read_runtime, remove_runtime
+from app.updates import is_newer
 
 LOCK_FILE = "instance.lock"
 log = logging.getLogger(__name__)
 
-Probe = Callable[[int], bool]
+CSRF_HEADER = "X-Requested-With"
+TAKEOVER_ATTEMPTS = 60  # x 0.25 s = 15 s for the old instance to release the lock
+
+
+@dataclass(frozen=True)
+class Health:
+    """A running instance of this app; ``version`` is None when it does not report one."""
+
+    version: str | None
+
+
+Probe = Callable[[int], Health | None]
+Shutdown = Callable[[int], None]
 
 
 class InstanceLock:
@@ -76,15 +89,44 @@ def _unlock(handle: IO[bytes]) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def probe_health(port: int, timeout: float = 1.0) -> bool:
-    """True if something on 127.0.0.1:<port> answers /api/health as this app."""
+def probe_health(port: int, timeout: float = 1.0) -> Health | None:
+    """The instance on 127.0.0.1:<port> if it answers /api/health as this app, else None."""
     url = f"http://127.0.0.1:{port}/api/health"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310
             payload = json.load(response)
     except (OSError, ValueError, urllib.error.URLError):
-        return False
-    return isinstance(payload, dict) and payload.get("app") == APP_ID
+        return None
+    if not isinstance(payload, dict) or payload.get("app") != APP_ID:
+        return None
+    version = payload.get("version")
+    return Health(version if isinstance(version, str) else None)
+
+
+def request_shutdown(port: int, timeout: float = 2.0) -> None:
+    """Ask the instance on 127.0.0.1:<port> to shut down. Errors are logged, never raised."""
+    request = urllib.request.Request(  # noqa: S310
+        f"http://127.0.0.1:{port}/api/system/shutdown",
+        data=b"",
+        method="POST",
+        headers={CSRF_HEADER: APP_ID},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout):  # noqa: S310
+            pass
+    except (OSError, urllib.error.URLError) as error:
+        # It may already be closing; the caller waits for the lock either way.
+        log.info("Shutdown request to port %s failed: %s", port, error)
+
+
+def _is_older(running: str | None, own: str) -> bool:
+    """True if the running version is older than ours; missing or unparseable counts as older."""
+    if running is None:
+        return True
+    try:
+        return is_newer(own, running)
+    except ValueError:
+        return True
 
 
 @dataclass(frozen=True)
@@ -109,17 +151,31 @@ def acquire_instance(
     data_dir: Path,
     *,
     probe: Probe = probe_health,
+    shutdown: Shutdown = request_shutdown,
+    own_version: str = __version__,
     sleep: Callable[[float], None] = time.sleep,
     attempts: int = 20,
+    takeover_attempts: int = TAKEOVER_ATTEMPTS,
     interval: float = 0.25,
 ) -> Reuse | Start:
     lock = InstanceLock(data_dir / LOCK_FILE)
     if lock.acquire():
         info = read_runtime(data_dir)
-        if info is not None and probe(info.port):
+        health = probe(info.port) if info is not None else None
+        if info is not None and health is not None:
             # Healthy instance that did not hold our lock (e.g. a filesystem without locks).
             lock.release()
-            return Reuse(info)
+            return _reuse_or_take_over(
+                data_dir,
+                info,
+                health,
+                own_version,
+                lock,
+                shutdown,
+                sleep,
+                takeover_attempts,
+                interval,
+            )
         if info is not None:
             log.info("Replacing stale runtime.json (port %s)", info.port)
             remove_runtime(data_dir)
@@ -128,7 +184,46 @@ def acquire_instance(
     # Another process holds the lock: it is starting up or running. Wait for it to answer.
     for _ in range(attempts):
         info = read_runtime(data_dir)
-        if info is not None and probe(info.port):
-            return Reuse(info)
+        health = probe(info.port) if info is not None else None
+        if info is not None and health is not None:
+            return _reuse_or_take_over(
+                data_dir,
+                info,
+                health,
+                own_version,
+                lock,
+                shutdown,
+                sleep,
+                takeover_attempts,
+                interval,
+            )
         sleep(interval)
     raise InstanceBusy("Another instance holds the lock but is not answering.")
+
+
+def _reuse_or_take_over(
+    data_dir: Path,
+    info: RuntimeInfo,
+    health: Health,
+    own_version: str,
+    lock: InstanceLock,
+    shutdown: Shutdown,
+    sleep: Callable[[float], None],
+    attempts: int,
+    interval: float,
+) -> Reuse | Start:
+    """Reuse a healthy instance, unless it is older than us: then replace it (never downgrade)."""
+    if not _is_older(health.version, own_version):
+        return Reuse(info)
+
+    log.info("Taking over from version %s (running %s)", own_version, health.version)
+    shutdown(info.port)
+    for _ in range(attempts):
+        if lock.acquire():
+            remove_runtime(data_dir)
+            return Start(lock)
+        sleep(interval)
+    log.warning(
+        "Instance %s on port %s did not shut down in time; reusing it", health.version, info.port
+    )
+    return Reuse(info)

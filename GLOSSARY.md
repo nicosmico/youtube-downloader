@@ -79,7 +79,7 @@ Proceso que prepara el entorno, inicia el servidor local y abre el navegador.
 _Evitar_: main, arranque
 
 **Single Instance**:
-Regla por la que solo puede existir un `Launcher` activo; un segundo intento reutiliza el servidor en curso.
+Regla por la que solo puede existir un `Launcher` activo; un segundo intento reutiliza el servidor en curso, salvo que este sea de una versión menor (o no informe versión): entonces lo releva (le pide cerrarse, espera a que suelte el lock y arranca). Nunca se baja de versión.
 _Evitar_: instancia única, bloqueo
 
 **App Update Notice**:
