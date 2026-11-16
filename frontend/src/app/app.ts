@@ -10,7 +10,7 @@ import { UrlPreview } from './preview/url-preview';
 import { TopBar } from './topbar/top-bar';
 import { Icon } from './ui/icon';
 
-/** `closedIdle`: the server closed itself after 10 minutes without use (Idle Shutdown). */
+/** `closedIdle`: the server closed itself (Idle Shutdown: no tab and nothing to do). */
 type ShutdownState = 'idle' | 'closing' | 'done' | 'closedIdle' | 'failed';
 
 @Component({

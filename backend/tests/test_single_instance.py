@@ -213,7 +213,7 @@ class TestVersionTakeover:
         assert isinstance(outcome, Start)
         assert shutdowns == [4242]
         assert read_runtime(data_dir) is None  # stale runtime.json removed
-        assert f"Taking over from version 0.2.3 (running {running})" in caplog.text
+        assert f"Version 0.2.3 taking over from running version {running}" in caplog.text
         outcome.lock.release()
 
     def test_waits_until_the_old_instance_releases_the_lock(self, data_dir: Path) -> None:

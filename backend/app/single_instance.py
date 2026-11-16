@@ -216,7 +216,7 @@ def _reuse_or_take_over(
     if not _is_older(health.version, own_version):
         return Reuse(info)
 
-    log.info("Taking over from version %s (running %s)", own_version, health.version)
+    log.info("Version %s taking over from running version %s", own_version, health.version)
     shutdown(info.port)
     for _ in range(attempts):
         if lock.acquire():
