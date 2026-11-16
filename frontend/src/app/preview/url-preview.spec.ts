@@ -251,6 +251,9 @@ describe('UrlPreview', () => {
       await type(URL_A, 'insertFromPaste');
 
       expect(el('preview-loading')?.textContent).toContain('Obteniendo información');
+      expect(el('preview-loading')?.getAttribute('aria-live')).toBe('polite');
+      expect(el('preview-skeleton')?.getAttribute('aria-hidden')).toBe('true');
+      expect(el('preview-skeleton')?.querySelector('.aspect-video')).not.toBeNull();
       expect(el('preview-card')).toBeNull();
 
       await answer(http.expectOne('/api/preview'), MEDIA);

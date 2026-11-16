@@ -75,6 +75,15 @@ describe('App', () => {
     fixture.detectChanges();
   };
 
+  it('keeps the brand name and the chip label for screen readers on narrow windows', async () => {
+    http.expectOne('/api/health').flush(HEALTH);
+    await pushEngine({});
+
+    expect(el('header h1')?.className).toContain('max-sm:sr-only');
+    expect(el('[data-testid=engine-status]')?.className).toContain('max-sm:sr-only');
+    expect(el('[data-testid=engine-chip]')?.getAttribute('aria-label')).toContain('Motor listo');
+  });
+
   it('has the brand on the left and no text field in the top bar', async () => {
     http.expectOne('/api/health').flush(HEALTH);
     await fixture.whenStable();

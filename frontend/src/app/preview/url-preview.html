@@ -77,9 +77,20 @@
       }
     }
     @case ('loading') {
+      <div class="flex min-w-0 gap-4" data-testid="preview-skeleton" aria-hidden="true">
+        <div
+          class="aspect-video w-44 shrink-0 rounded-xl bg-surface motion-safe:animate-pulse sm:w-56"
+        ></div>
+        <div class="flex min-w-0 flex-1 flex-col justify-center gap-2">
+          <div class="h-4 w-4/5 rounded bg-surface motion-safe:animate-pulse"></div>
+          <div class="h-4 w-3/5 rounded bg-surface motion-safe:animate-pulse"></div>
+          <div class="h-3.5 w-2/5 rounded bg-surface motion-safe:animate-pulse"></div>
+        </div>
+      </div>
       <p
-        class="m-0 animate-pulse rounded-xl bg-surface px-4 py-6 text-sm text-muted"
+        class="m-0 text-sm text-muted"
         role="status"
+        aria-live="polite"
         data-testid="preview-loading"
       >
         {{ texts.preview.loading }}
