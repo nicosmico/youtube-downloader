@@ -24,7 +24,7 @@ Navegador  ──HTTP/SSE──►  FastAPI (127.0.0.1)
                               └── Engine: yt-dlp + Deno + ffmpeg
 ```
 
-El ejecutable levanta un servidor local, sirve la SPA de Angular y abre el navegador por defecto. Las descargas corren en el servidor: cerrar la pestaña no las detiene. Si no queda ninguna pestaña abierta ni nada en cola durante 10 minutos, la app se cierra sola. El estado vive en SQLite dentro de `~/.youtube-downloader`.
+El ejecutable levanta un servidor local, sirve la SPA de Angular y abre el navegador por defecto. Las descargas corren en el servidor: cerrar la pestaña no las detiene. Unos 15 segundos después de cerrar la última pestaña, si no queda nada en cola, la app se cierra sola. El estado vive en SQLite dentro de `~/.youtube-downloader`.
 
 ## Stack
 
@@ -122,8 +122,8 @@ Descarga el `.zip` de tu sistema desde la última versión en [GitHub Releases](
 
 1. Descomprime y mueve `YouTube Downloader.app` a Aplicaciones.
 2. Al abrirla, macOS la bloquea. En macOS 15 o superior ve a Ajustes del Sistema › Privacidad y seguridad y pulsa "Abrir igualmente". En versiones anteriores, clic derecho sobre la app › Abrir.
-3. La app abre el navegador con su interfaz. Sigue funcionando en segundo plano, sin icono en el Dock, hasta que pulses "Cerrar aplicación" o pasen 10 minutos sin uso.
-4. Para volver a la interfaz después de cerrar la pestaña, haz doble clic en la app otra vez: abre una pestaña nueva en la instancia que sigue en marcha.
+3. La app abre el navegador con su interfaz. Funciona sin icono en el Dock y se cierra con "Cerrar aplicación" o sola, unos segundos después de cerrar su pestaña. Las descargas en curso terminan antes.
+4. Para volver a abrirla, haz doble clic en la app.
 
 **Windows 10/11 (x64)**: `YouTube-Downloader-<versión>-windows-x64.zip`
 
@@ -132,6 +132,16 @@ Descarga el `.zip` de tu sistema desde la última versión en [GitHub Releases](
 3. Se abre el navegador; se cierra igual que en macOS.
 
 En el primer arranque la app descarga el Engine (`yt-dlp`, `ffmpeg` y Deno, unos 250 MB), así que necesita conexión a internet.
+
+### Actualizar
+
+Cuando hay una versión nueva, la app muestra un aviso en la barra superior con el enlace para descargarla.
+
+1. Cierra la app: "Cerrar aplicación" en el engranaje, o cierra su pestaña y espera unos segundos.
+2. Descarga el `.zip` nuevo y reemplaza la app anterior (en macOS, la de Aplicaciones).
+3. Ábrela. El historial y los ajustes se conservan.
+
+Si abres la versión nueva con la anterior todavía en marcha, la nueva la cierra y toma el relevo. En macOS, reemplazar la app mientras sigue abierta puede dar el error `-47`: ciérrala primero.
 
 ## Empaquetado
 
