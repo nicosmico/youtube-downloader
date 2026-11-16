@@ -4,14 +4,14 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Con la app abierta, un doble clic en el `.app` abre una pestaña nueva en la instancia existente, sin avisos de Finder.
+- [x] Con la app abierta, un doble clic en el `.app` abre una pestaña nueva en la instancia existente, sin avisos de Finder.
 - [x] Con la app cerrada, un doble clic la arranca y abre el navegador.
 - [ ] El lanzador termina en segundos; el servidor sigue vivo tras cerrar la pestaña y respeta `Idle Shutdown` y "Cerrar aplicación".
 - [x] El hijo hereda `DATA_DIR`/`DOWNLOAD_DIR` y escribe `runtime.json` y `app.log` como hoy.
 - [x] El smoke de CI arranca el `.app` con `open` en `macos-latest` y comprueba que una segunda apertura reutiliza la instancia.
-- [ ] Verificado a mano en un Mac real desde el zip del Release.
+- [x] Verificado a mano en un Mac real desde el zip del Release.
 - [x] README (sin icono en el Dock) y ADR-0001 actualizados.
 
 ## Comments
@@ -23,3 +23,5 @@ CI (run Native 43780483071, verde en macos-arm64 y windows-x64; CI 43780483079 v
 Sin marcar (a mano en un Mac real desde el zip del Release): doble clic con la app abierta sin aviso de Finder; el servidor sigue vivo tras cerrar la pestaña y respeta `Idle Shutdown` y "Cerrar aplicación" (la parte de `Idle Shutdown` no cambia respecto a v0.1.0, pero no se probó con el `.app` desacoplado).
 
 **2026-11-15 — Publicado en `v0.1.1`** (Native/Release `43782090965`). Pendiente la verificación a mano en un Mac real desde el zip del Release.
+
+**2026-11-15 — Resuelto.** El usuario confirmó en su Mac, con la `v0.1.1` del Release, que reabrir la app abierta abre una pestaña sin el aviso de Finder.
