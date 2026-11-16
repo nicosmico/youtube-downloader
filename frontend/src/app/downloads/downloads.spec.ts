@@ -3,8 +3,10 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
+import { NOW } from '../core/clock';
 import { EVENT_SOURCE_FACTORY } from '../core/event-stream.service';
-import { JOB } from '../../testing/fixtures';
+import { installDialogPolyfill } from '../../testing/dialog';
+import { JOB, jobAt, localIso } from '../../testing/fixtures';
 import { flushRehydration } from '../../testing/rehydration';
 import { Job, JobsService } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
@@ -23,17 +25,10 @@ describe('Downloads', () => {
     await fixture.whenStable();
     fixture.detectChanges();
   };
-  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
+  /** Shows the jobs. */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
     await settle();
-    if (
-      list.length > 0 &&
-      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
-    ) {
-      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
-      await settle();
-    }
   };
   const openMenu = async (index = 0) => {
     root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
@@ -58,24 +53,42 @@ describe('Downloads', () => {
 
   afterEach(() => http.verify());
 
-  it('has the tabs "En curso · N" and "Historial", with a one-line empty state each', async () => {
-    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 0');
-    expect(el('tab-history')?.textContent?.trim()).toBe('Historial');
-    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
-    expect(el('downloads-empty')?.textContent).toContain('No hay descargas en curso');
-    expect(all('job-card')).toHaveLength(0);
-
-    el('tab-history')!.click();
-    await settle();
-
-    expect(el('tab-history')?.getAttribute('aria-selected')).toBe('true');
-    expect(el('downloads-empty')?.textContent).toContain('Todavía no hay descargas');
+  it('has no tabs: one list with the filters above it, "Todas" first and pressed', async () => {
+    expect(root().querySelector('[role=tablist]')).toBeNull();
+    expect(all('filters')).toHaveLength(1);
+    expect(all('filters')[0].getAttribute('role')).toBe('group');
+    const chips = Array.from(el('filters')!.querySelectorAll('button'));
+    expect(chips.map((c) => c.textContent?.trim())).toEqual([
+      'Todas',
+      'En curso · 0',
+      'Completadas',
+      'Con error',
+      'Canceladas',
+    ]);
+    expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+      'false',
+    ]);
   });
 
-  it('counts only the jobs in progress on the first tab', async () => {
-    await show({ status: 'downloading' }, { status: 'queued' }, { status: 'completed' });
+  it('counts the jobs of the Queue on the "En curso" chip (active + queued)', async () => {
+    jobs.queue.set({ active: 2, queued: 3 });
+    await settle();
 
-    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 2');
+    expect(el('filter-active')?.textContent?.trim()).toBe('En curso · 5');
+  });
+
+  it('keeps the filters in one row that scrolls instead of wrapping', async () => {
+    const group = el('filters')!;
+    expect(group.className).toContain('overflow-x-auto');
+    expect(group.className).not.toContain('flex-wrap');
+    for (const chip of Array.from(group.querySelectorAll('button'))) {
+      expect(chip.className).toContain('shrink-0');
+      expect(chip.className).toContain('whitespace-nowrap');
+    }
   });
 
   it('shows the thumbnail of the job, or a neutral placeholder without one', async () => {
@@ -260,7 +273,7 @@ describe('Downloads', () => {
   it('follows the jobs without a reload: the count and each status line', async () => {
     jobs.connect();
     const stream = FakeEventSource.instances[0];
-    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 0');
+    expect(el('filter-active')?.textContent?.trim()).toBe('En curso · 0');
 
     for (const [id, n] of [
       ['a', 1],
@@ -269,8 +282,9 @@ describe('Downloads', () => {
     ] as const) {
       stream.emit('job.updated', { ...JOB, id, createdAt: `2026-11-15T12:00:0${n}.000000+00:00` });
     }
+    stream.emit('queue.updated', { active: 0, queued: 3 });
     await settle();
-    expect(el('tab-active')?.textContent?.trim()).toBe('En curso · 3');
+    expect(el('filter-active')?.textContent?.trim()).toBe('En curso · 3');
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'En cola',
       'En cola',
@@ -329,8 +343,6 @@ describe('Downloads', () => {
     FakeEventSource.instances[0].open();
     flushRehydration(http, { history: [{ ...JOB, status: 'failed', error: 'Falló.' }] });
     await settle();
-    el('tab-history')!.click();
-    await settle();
 
     expect(el('job-error')?.textContent).toContain('Falló.');
   });
@@ -353,11 +365,6 @@ describe('batches', () => {
     Array.from(root().querySelectorAll<HTMLElement>(`[data-testid=${testId}]`));
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
-    await fixture.whenStable();
-    fixture.detectChanges();
-  };
-  const showHistory = async () => {
-    root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
     await fixture.whenStable();
     fixture.detectChanges();
   };
@@ -410,7 +417,6 @@ describe('batches', () => {
       batchJob(3, { status: 'completed' }),
     );
 
-    await showHistory();
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'Video · Mejor disponible · Completada',
       'Fallida',
@@ -472,17 +478,10 @@ describe('Downloads cancel and retry', () => {
     await fixture.whenStable();
     fixture.detectChanges();
   };
-  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
+  /** Shows the jobs. */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
     await settle();
-    if (
-      list.length > 0 &&
-      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
-    ) {
-      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
-      await settle();
-    }
   };
   const openMenu = async (index = 0) => {
     root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
@@ -547,8 +546,7 @@ describe('Downloads cancel and retry', () => {
     expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
     req.flush({ ...JOB, id: 'job0', status: 'canceled' });
     await settle();
-    expect(el('downloads-empty')).not.toBeNull(); // it left "En curso"
-    await click('tab-history');
+    expect(el('downloads-empty')).toBeNull(); // it stays in the list
     expect(el('job-status')?.textContent).toContain('Cancelada');
     expect(el('retry-job')).not.toBeNull();
     expect(el('cancel-job')).toBeNull();
@@ -567,7 +565,6 @@ describe('Downloads cancel and retry', () => {
     expect((el('cancel-job') as HTMLButtonElement).disabled).toBe(true);
     req.flush({ ...JOB, id: 'job0', status: 'canceled' });
     await settle();
-    await click('tab-history');
     expect(el('job-status')?.textContent).toContain('Cancelada');
   });
 
@@ -592,8 +589,6 @@ describe('Downloads cancel and retry', () => {
     expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
     req.flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
     await settle();
-    // the retried job shows up in "En curso" at once, wherever the user was looking
-    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
     expect(el('job-status')?.textContent?.trim()).toBe('En cola · Intento 2');
     expect(el('job-error')).toBeNull();
     expect(el('retry-job')).toBeNull();
@@ -611,7 +606,6 @@ describe('Downloads cancel and retry', () => {
     await settle();
 
     expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
-    await click('tab-history');
     expect(el('job-status')?.textContent).toContain('Completada');
     expect(el('cancel-job')).toBeNull();
   });
@@ -637,17 +631,10 @@ describe('Downloads history', () => {
     all(testId)[index].click();
     await settle();
   };
-  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
+  /** Shows the jobs. */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
     await settle();
-    if (
-      list.length > 0 &&
-      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
-    ) {
-      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
-      await settle();
-    }
   };
   const openMenu = async (index = 0) => {
     root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
@@ -673,28 +660,40 @@ describe('Downloads history', () => {
 
   afterEach(() => http.verify());
 
-  it('splits "En curso" from "Historial" in two tabs', async () => {
+  it('shows every status in one list, newest first, wherever it is in the lifecycle', async () => {
+    const at = (n: number) => `2026-11-15T12:00:0${n}.000000+00:00`;
     await show(
-      { status: 'downloading', title: 'A' },
-      { status: 'queued', title: 'B' },
-      { status: 'processing', title: 'C' },
-      { status: 'completed', title: 'D' },
-      { status: 'failed', title: 'E' },
-      { status: 'canceled', title: 'F' },
-      { status: 'interrupted', title: 'G' },
+      { status: 'downloading', title: 'A', createdAt: at(7) },
+      { status: 'queued', title: 'B', createdAt: at(6) },
+      { status: 'processing', title: 'C', createdAt: at(5) },
+      { status: 'completed', title: 'D', createdAt: at(4) },
+      { status: 'failed', title: 'E', createdAt: at(3) },
+      { status: 'canceled', title: 'F', createdAt: at(2) },
+      { status: 'interrupted', title: 'G', createdAt: at(1) },
     );
 
-    const titles = () => all('job-title').map((t) => t.textContent?.trim());
-    expect(el('queue-section')).not.toBeNull();
-    expect(titles()).toEqual(['A', 'B', 'C']);
-    await click('tab-history');
-    expect(el('history-section')).not.toBeNull();
-    expect(titles()).toEqual(['D', 'E', 'F', 'G']);
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+      'F',
+      'G',
+    ]);
   });
 
-  it('keeps the tab the user chose when jobs change, but a new job brings back "En curso"', async () => {
-    await show({ status: 'completed', title: 'Viejo' });
-    expect(el('tab-history')?.getAttribute('aria-selected')).toBe('true');
+  it('brings back "Todas" when a new job joins the Queue under a filter that hides it', async () => {
+    const old = { ...JOB, id: 'old', title: 'Viejo', status: 'completed' as const };
+    jobs.connect();
+    FakeEventSource.instances[0].open();
+    flushRehydration(http, { history: [old] });
+    await click('filter-completed');
+    http
+      .expectOne((r) => r.params.get('status') === 'completed')
+      .flush({ jobs: [old], nextBefore: null });
+    await settle();
+    expect(el('filter-completed')?.getAttribute('aria-pressed')).toBe('true');
 
     jobs.jobs.update((list) => [
       { ...JOB, id: 'new', title: 'Nuevo', createdAt: '2026-11-15T13:00:00.000000+00:00' },
@@ -702,33 +701,58 @@ describe('Downloads history', () => {
     ]);
     await settle();
 
-    expect(el('tab-active')?.getAttribute('aria-selected')).toBe('true');
+    expect(el('filter-all')?.getAttribute('aria-pressed')).toBe('true');
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Nuevo', 'Viejo']);
+  });
+
+  it('stays on "En curso" when the new job is shown there', async () => {
+    await show({ status: 'completed', title: 'Viejo' });
+    jobs.select('active');
+    await settle();
+
+    jobs.jobs.update((list) => [
+      { ...JOB, id: 'new', title: 'Nuevo', createdAt: '2026-11-15T13:00:00.000000+00:00' },
+      ...list,
+    ]);
+    await settle();
+
+    expect(el('filter-active')?.getAttribute('aria-pressed')).toBe('true');
     expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Nuevo']);
   });
 
-  it('moves a job from the Queue to the History when it finishes, and back on retry', async () => {
-    await show({ status: 'downloading' });
-    expect(all('job-card')).toHaveLength(1);
+  it('a job keeps its place when it finishes, and when it is retried', async () => {
+    const at = (n: number) => `2026-11-15T12:00:0${n}.000000+00:00`;
+    await show(
+      { status: 'queued', title: 'Nuevo', createdAt: at(3) },
+      { status: 'downloading', title: 'Medio', createdAt: at(2) },
+      { status: 'completed', title: 'Viejo', createdAt: at(1) },
+    );
+    const titles = () => all('job-title').map((t) => t.textContent?.trim());
+    expect(titles()).toEqual(['Nuevo', 'Medio', 'Viejo']);
 
-    jobs.jobs.set([{ ...JOB, id: 'job0', status: 'failed', error: 'x' }]);
+    jobs.jobs.update((list) =>
+      list.map((j) => (j.id === 'job1' ? { ...j, status: 'failed', error: 'x' } : j)),
+    );
     await settle();
-    expect(el('queue-section')).not.toBeNull();
-    expect(all('job-card')).toHaveLength(0);
-    await click('tab-history');
-    expect(all('job-card')).toHaveLength(1);
+    expect(titles()).toEqual(['Nuevo', 'Medio', 'Viejo']);
+    expect(all('job-card')[1].getAttribute('data-status')).toBe('failed');
 
     await click('retry-job');
-    http
-      .expectOne('/api/jobs/job0/retry')
-      .flush({ ...JOB, id: 'job0', status: 'queued', attempt: 2 });
+    http.expectOne('/api/jobs/job1/retry').flush({
+      ...JOB,
+      id: 'job1',
+      title: 'Medio',
+      createdAt: at(2),
+      status: 'queued',
+      attempt: 2,
+    });
     await settle();
-    expect(el('queue-section')).not.toBeNull();
-    expect(all('job-card')).toHaveLength(1);
-    await click('tab-history');
-    expect(all('job-card')).toHaveLength(0);
+
+    expect(titles()).toEqual(['Nuevo', 'Medio', 'Viejo']);
+    expect(all('job-card')[1].getAttribute('data-status')).toBe('queued');
   });
 
-  it('keeps the Batch grouping in both tabs', async () => {
+  it('keeps the Batch grouping whatever the status of its jobs', async () => {
     const entry = (n: number, status: Job['status']): Partial<Job> => ({
       batchId: 'b1',
       batchTitle: 'Mi playlist',
@@ -740,12 +764,19 @@ describe('Downloads history', () => {
     await show(entry(1, 'completed'), entry(2, 'completed'), entry(3, 'downloading'));
 
     expect(all('batch')).toHaveLength(1);
+    expect(all('batch-summary')[0].textContent).toContain('2/3 completadas · 1 en curso');
+    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual([
+      'Video 1',
+      'Video 2',
+      'Video 3',
+    ]);
+
+    // a filter shows only its jobs of the Batch, and the summary still counts them all
+    jobs.select('active');
+    await settle();
+    expect(all('batch')).toHaveLength(1);
     expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Video 3']);
     expect(all('batch-summary')[0].textContent).toContain('2/3 completadas · 1 en curso');
-    await click('tab-history');
-    expect(all('batch')).toHaveLength(1);
-    expect(all('batch-summary')[0].textContent).toContain('2/3 completadas · 1 en curso');
-    expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Video 1', 'Video 2']);
   });
 
   it('keeps "Quitar del historial" in the "⋮" menu, with a tooltip saying the file stays', async () => {
@@ -830,7 +861,6 @@ describe('Downloads history', () => {
   describe('reveal', () => {
     it('only completed jobs have the button, labelled for the platform', async () => {
       await show({ status: 'completed' }, { status: 'failed' }, { status: 'queued' });
-      await click('tab-history');
       expect(all('reveal-job')).toHaveLength(1);
       expect(el('reveal-job')?.getAttribute('aria-label')).toBe('Mostrar archivo');
       expect(el('reveal-job')?.getAttribute('title')).toBe('Mostrar archivo');
@@ -902,8 +932,6 @@ describe('Downloads history', () => {
         nextBefore: 'h2',
       });
       await settle();
-      expect(el('load-more')).toBeNull(); // only in "Historial"
-      await click('tab-history');
       expect(el('load-more')?.textContent).toContain('Cargar más');
 
       await click('load-more');
@@ -937,17 +965,10 @@ describe('Downloads "Ver detalle"', () => {
     el(testId)!.click();
     await settle();
   };
-  /** Shows the jobs; a list of only finished ones is looked at in "Historial". */
+  /** Shows the jobs. */
   const show = async (...list: Partial<Job>[]) => {
     jobs.jobs.set(list.map((j, i) => ({ ...JOB, id: `job${i}`, ...j })));
     await settle();
-    if (
-      list.length > 0 &&
-      list.every((j) => !['queued', 'downloading', 'processing'].includes(j.status ?? 'queued'))
-    ) {
-      root().querySelector<HTMLElement>('[data-testid=tab-history]')!.click();
-      await settle();
-    }
   };
   const openMenu = async (index = 0) => {
     root().querySelectorAll<HTMLElement>('[data-testid=job-menu]')[index].click();
@@ -1062,7 +1083,6 @@ describe('Downloads "Ver detalle"', () => {
 
     jobs.jobs.set([{ ...JOB, id: 'job0', ...FAILED, attempt: 2 }]);
     await settle();
-    await click('tab-history');
 
     expect(el('job-detail')).toBeNull();
     await openMenu();
@@ -1083,6 +1103,549 @@ describe('Downloads "Ver detalle"', () => {
     await show({ ...JOB, ...FAILED });
 
     expect(el('job-detail')).toBeNull();
+  });
+});
+
+describe('Downloads filters, days and cleaning', () => {
+  let fixture: ComponentFixture<Downloads>;
+  let http: HttpTestingController;
+  let jobs: JobsService;
+
+  const root = () => fixture.nativeElement as HTMLElement;
+  const all = (testId: string) =>
+    Array.from(root().querySelectorAll<HTMLElement>(`[data-testid=${testId}]`));
+  const el = (testId: string) => all(testId)[0] ?? null;
+  const settle = async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const click = async (testId: string, index = 0) => {
+    all(testId)[index].click();
+    await settle();
+  };
+  const titles = () => all('job-title').map((t) => t.textContent?.trim());
+  const headers = () => all('day-header').map((h) => h.textContent?.trim());
+  const status = (r: { params: { get(name: string): string | null } }) => r.params.get('status');
+  const page = (list: Job[], nextBefore: string | null = null) => ({ jobs: list, nextBefore });
+  /** Answers the request of a filter's page. */
+  const answer = (statuses: string, body: ReturnType<typeof page>) =>
+    http.expectOne((r) => r.url === '/api/jobs' && status(r) === statuses).flush(body);
+  /** The browser's local time of 16 November 2026, 15:00. */
+  const NOW_AT = () => new Date(2026, 10, 16, 15, 0);
+  const at = (day: number, hour = 12, month = 11, year = 2026) => localIso(year, month, day, hour);
+
+  beforeEach(async () => {
+    installDialogPolyfill();
+    FakeEventSource.reset();
+    await TestBed.configureTestingModule({
+      imports: [Downloads],
+      providers: [
+        provideHttpClient(withInterceptors([appHeaderInterceptor])),
+        provideHttpClientTesting(),
+        { provide: EVENT_SOURCE_FACTORY, useValue: FakeEventSource.factory() },
+        { provide: NOW, useValue: NOW_AT },
+      ],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    jobs = TestBed.inject(JobsService);
+    fixture = TestBed.createComponent(Downloads);
+    await settle();
+  });
+
+  afterEach(() => {
+    root().remove();
+    http.verify();
+  });
+
+  describe('filters', () => {
+    const list: Job[] = [
+      jobAt('q', at(16, 14), { status: 'queued' }),
+      jobAt('d', at(16, 13), { status: 'downloading' }),
+      jobAt('c', at(16, 12), { status: 'completed' }),
+      jobAt('f', at(16, 11), { status: 'failed' }),
+      jobAt('i', at(16, 10), { status: 'interrupted' }),
+      jobAt('x', at(16, 9), { status: 'canceled' }),
+    ];
+
+    it('uses toggle buttons, with only the current filter pressed', async () => {
+      jobs.jobs.set(list);
+      await settle();
+
+      await click('filter-completed');
+      answer('completed', page([list[2]]));
+      await settle();
+
+      const pressed = all('filters')[0].querySelectorAll('[aria-pressed=true]');
+      expect(pressed).toHaveLength(1);
+      expect(pressed[0].textContent?.trim()).toBe('Completadas');
+    });
+
+    it.each([
+      ['all', ['q', 'd', 'c', 'f', 'i', 'x']],
+      ['active', ['q', 'd']],
+      ['completed', ['c']],
+      ['failed', ['f', 'i']],
+      ['canceled', ['x']],
+    ] as const)('"%s" shows %j', async (filter, expected) => {
+      jobs.jobs.set(list);
+      await settle();
+      if (filter !== 'all') {
+        await click(`filter-${filter}`);
+        if (filter !== 'active') {
+          http.match((r) => r.url === '/api/jobs'); // its page: the list is already known
+        }
+      }
+
+      expect(titles()).toEqual(expected);
+    });
+
+    it.each([
+      ['completed', 'completed'],
+      ['failed', 'failed,interrupted'],
+      ['canceled', 'canceled'],
+    ] as const)('"%s" asks for its own jobs (status=%s) and shows them', async (filter, query) => {
+      await click(`filter-${filter}`);
+
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(status(req.request)).toBe(query);
+      expect(req.request.params.get('limit')).toBe('50');
+      req.flush(
+        page([
+          jobAt('on-server', at(1), {
+            status:
+              filter === 'completed' ? 'completed' : filter === 'failed' ? 'failed' : 'canceled',
+          }),
+        ]),
+      );
+      await settle();
+
+      expect(titles()).toEqual(['on-server']);
+    });
+
+    it('does not say "no hay descargas" while the first page of a filter is on its way', async () => {
+      await click('filter-completed');
+      expect(el('downloads-empty')).toBeNull();
+
+      answer('completed', page([]));
+      await settle();
+
+      expect(el('downloads-empty')?.textContent?.trim()).toBe('No hay descargas completadas.');
+    });
+
+    it.each([
+      ['all', 'No hay descargas.'],
+      ['active', 'No hay descargas en curso.'],
+      ['completed', 'No hay descargas completadas.'],
+      ['failed', 'No hay descargas con error.'],
+      ['canceled', 'No hay descargas canceladas.'],
+    ] as const)(
+      'says "%s" is empty with a short sentence and no help',
+      async (filter, sentence) => {
+        if (filter !== 'all') {
+          await click(`filter-${filter}`);
+          if (filter !== 'active') {
+            http.match((r) => r.url === '/api/jobs').forEach((r) => r.flush(page([])));
+            await settle();
+          }
+        }
+
+        expect(el('downloads-empty')?.textContent?.trim()).toBe(sentence);
+        expect(all('downloads-empty')).toHaveLength(1);
+        expect(el('job-card')).toBeNull();
+      },
+    );
+
+    it('offers "Cargar más" per filter, with the cursor of that filter', async () => {
+      await click('filter-completed');
+      answer('completed', page([jobAt('c2', at(5), { status: 'completed' })], 'c2'));
+      await settle();
+      expect(el('load-more')?.textContent).toContain('Cargar más');
+
+      await click('load-more');
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(status(req.request)).toBe('completed');
+      expect(req.request.params.get('before')).toBe('c2');
+      expect((el('load-more') as HTMLButtonElement).disabled).toBe(true);
+      req.flush(page([jobAt('c1', at(4), { status: 'completed' })]));
+      await settle();
+
+      expect(titles()).toEqual(['c2', 'c1']);
+      expect(el('load-more')).toBeNull();
+
+      // another filter has no older page of its own
+      await click('filter-canceled');
+      answer('canceled', page([]));
+      await settle();
+      expect(el('load-more')).toBeNull();
+    });
+
+    it('goes back to "Todas" when a download is enqueued under a filter that hides it', async () => {
+      await click('filter-failed');
+      answer('failed,interrupted', page([jobAt('f', at(15), { status: 'failed' })]));
+      await settle();
+      expect(titles()).toEqual(['f']);
+
+      jobs.connect();
+      FakeEventSource.instances[0].emit(
+        'job.updated',
+        jobAt('new', at(16, 14), { status: 'queued' }),
+      );
+      await settle();
+      // "Todas" was never loaded in this test: it asks for its first page
+      http.match((r) => r.url === '/api/jobs');
+
+      expect(el('filter-all')?.getAttribute('aria-pressed')).toBe('true');
+      expect(titles()).toEqual(['new', 'f']);
+    });
+  });
+
+  describe('days', () => {
+    it('heads the list with "Hoy", "Ayer" and the short date, newest first', async () => {
+      jobs.jobs.set([
+        jobAt('today', at(16, 9), { status: 'completed' }),
+        jobAt('yesterday', at(15, 23), { status: 'completed' }),
+        jobAt('week', at(9, 10), { status: 'completed' }),
+        jobAt('also-week', at(9, 8), { status: 'completed' }),
+        jobAt('old', at(12, 10, 3), { status: 'completed' }),
+      ]);
+      await settle();
+
+      expect(headers()).toEqual(['Hoy', 'Ayer', '9 nov', '12 mar']);
+      const days = all('day-group');
+      expect(
+        days.map((d) =>
+          Array.from(d.querySelectorAll('[data-testid=job-title]')).map((t) =>
+            t.textContent?.trim(),
+          ),
+        ),
+      ).toEqual([['today'], ['yesterday'], ['week', 'also-week'], ['old']]);
+    });
+
+    it('adds the year only when it is not the current one', async () => {
+      jobs.jobs.set([
+        jobAt('now', at(10, 12, 11, 2026), { status: 'completed' }),
+        jobAt('last-year', at(31, 12, 12, 2025), { status: 'completed' }),
+      ]);
+      await settle();
+
+      expect(headers()).toEqual(['10 nov', '31 dic 2025']);
+    });
+
+    it('cuts the days at local midnight', async () => {
+      jobs.jobs.set([
+        jobAt('after', localIso(2026, 11, 16, 0, 5), { status: 'completed' }),
+        jobAt('before', localIso(2026, 11, 15, 23, 55), { status: 'completed' }),
+        jobAt('long-ago', localIso(2026, 11, 14, 23, 55), { status: 'completed' }),
+      ]);
+      await settle();
+
+      expect(headers()).toEqual(['Hoy', 'Ayer', '14 nov']);
+    });
+
+    it('has non-collapsible headings: plain text, no button', async () => {
+      jobs.jobs.set([jobAt('a', at(16, 9), { status: 'completed' })]);
+      await settle();
+
+      expect(el('day-header')?.querySelector('button')).toBeNull();
+      expect(el('day-header')?.tagName).toBe('H3');
+    });
+
+    it('shows a Batch as one card under the day of its most recent job', async () => {
+      const inBatch = (id: string, n: number, createdAt: string) =>
+        jobAt(id, createdAt, {
+          status: 'completed',
+          batchId: 'b1',
+          batchTitle: 'Mi lista',
+          batchEntryCount: 3,
+          playlistIndex: n,
+        });
+      jobs.jobs.set([
+        inBatch('b3', 3, at(16, 11)),
+        jobAt('solo', at(16, 10), { status: 'completed' }),
+        inBatch('b2', 2, at(15, 20)),
+        inBatch('b1', 1, at(15, 19)),
+        jobAt('older', at(15, 8), { status: 'completed' }),
+      ]);
+      await settle();
+
+      expect(headers()).toEqual(['Hoy', 'Ayer']);
+      const [today, yesterday] = all('day-group');
+      expect(today.querySelectorAll('[data-testid=batch]')).toHaveLength(1);
+      expect(yesterday.querySelectorAll('[data-testid=batch]')).toHaveLength(0);
+      expect(all('batch')).toHaveLength(1);
+      expect(
+        Array.from(today.querySelectorAll('[data-testid=batch] [data-testid=job-title]')).map((t) =>
+          t.textContent?.trim(),
+        ),
+      ).toEqual(['b1', 'b2', 'b3']);
+      expect(titles()).toEqual(['b1', 'b2', 'b3', 'solo', 'older']);
+    });
+
+    it('keeps a job under the day it was created when it finishes later', async () => {
+      jobs.jobs.set([jobAt('a', at(15, 23), { status: 'downloading' })]);
+      await settle();
+      expect(headers()).toEqual(['Ayer']);
+
+      jobs.jobs.set([jobAt('a', at(15, 23), { status: 'completed', finishedAt: at(16, 1) })]);
+      await settle();
+
+      expect(headers()).toEqual(['Ayer']);
+    });
+  });
+
+  describe('removing from the History', () => {
+    const batchJob = (id: string, n: number, state: Job['status']) =>
+      jobAt(id, at(16, 10 + n), {
+        status: state,
+        batchId: 'b1',
+        batchTitle: 'Mi lista',
+        batchEntryCount: 4,
+        playlistIndex: n,
+      });
+    const dialog = () => el('confirm-dialog') as HTMLDialogElement;
+    const openBatchMenu = async () => {
+      await click('batch-menu');
+      await click('remove-batch');
+    };
+    const openHistoryMenu = async () => {
+      await click('history-menu');
+      await click('clear-history');
+    };
+    const key = (target: Element, name: string) =>
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+
+    beforeEach(async () => {
+      document.body.appendChild(root());
+      jobs.jobs.set([
+        batchJob('b3', 3, 'downloading'),
+        batchJob('b2', 2, 'failed'),
+        batchJob('b1', 1, 'completed'),
+        jobAt('solo', at(16, 9), { status: 'completed' }),
+      ]);
+      await settle();
+    });
+
+    describe('a Batch', () => {
+      it('has a "⋮" menu with "Quitar del historial"', async () => {
+        await click('batch-menu');
+
+        expect(el('batch-menu')?.getAttribute('aria-expanded')).toBe('true');
+        expect(el('remove-batch')?.textContent?.trim()).toBe('Quitar del historial');
+        expect(document.activeElement).toBe(el('remove-batch'));
+        expect(dialog().hasAttribute('open')).toBe(false);
+      });
+
+      it('is disabled while the Batch has no finished job', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'downloading'), batchJob('b2', 2, 'queued')]);
+        await settle();
+
+        expect((el('batch-menu') as HTMLButtonElement).disabled).toBe(true);
+      });
+
+      it('asks first, with the number of finished jobs of the Batch and the files staying', async () => {
+        await openBatchMenu();
+
+        expect(dialog().hasAttribute('open')).toBe(true);
+        expect(dialog().getAttribute('aria-labelledby')).toBe(el('confirm-title')!.id);
+        expect(dialog().getAttribute('aria-describedby')).toBe(el('confirm-text')!.id);
+        expect(el('confirm-title')?.textContent?.trim()).toBe('¿Quitar 2 descargas del historial?');
+        expect(el('confirm-text')?.textContent?.trim()).toBe(
+          'Los archivos descargados no se borran.',
+        );
+        expect(el('confirm-no')?.textContent?.trim()).toBe('Cancelar');
+        expect(el('confirm-yes')?.textContent?.trim()).toBe('Quitar');
+        expect(document.activeElement).toBe(el('confirm-no'));
+        http.expectNone('/api/batches/b1');
+        expect(el('remove-batch')).toBeNull(); // the menu closed
+      });
+
+      it('speaks of one download in the singular', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'completed'), batchJob('b2', 2, 'downloading')]);
+        await settle();
+        await openBatchMenu();
+
+        expect(el('confirm-title')?.textContent?.trim()).toBe('¿Quitar 1 descarga del historial?');
+      });
+
+      it('counts the finished jobs it knows even when the filter hides some', async () => {
+        await click('filter-failed');
+        http.match((r) => r.url === '/api/jobs');
+        await openBatchMenu();
+
+        expect(titles()).toEqual(['b2']);
+        expect(el('confirm-title')?.textContent?.trim()).toBe('¿Quitar 2 descargas del historial?');
+      });
+
+      it('removes the finished jobs with DELETE /api/batches/{id} and keeps the running ones', async () => {
+        await openBatchMenu();
+        await click('confirm-yes');
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        const req = http.expectOne('/api/batches/b1');
+        expect(req.request.method).toBe('DELETE');
+        expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+        expect(titles()).toHaveLength(4); // nothing is dropped before the answer
+        req.flush({ removed: 2 });
+        await settle();
+
+        expect(titles()).toEqual(['b3', 'solo']);
+        expect(all('batch')).toHaveLength(1);
+        expect(el('action-message')).toBeNull();
+      });
+
+      it('takes the focus to the filters when the card that had it is gone', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'completed'), batchJob('b2', 2, 'failed')]);
+        await settle();
+        await openBatchMenu();
+        await click('confirm-yes');
+        http.expectOne('/api/batches/b1').flush({ removed: 2 });
+        await settle();
+
+        expect(all('batch')).toHaveLength(0);
+        expect(document.activeElement).toBe(el('filter-all'));
+      });
+
+      it('does nothing on "Cancelar" and gives the focus back to the "⋮"', async () => {
+        await openBatchMenu();
+        await click('confirm-no');
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        http.expectNone('/api/batches/b1');
+        expect(titles()).toHaveLength(4);
+        expect(document.activeElement).toBe(el('batch-menu'));
+      });
+
+      it('does nothing on Esc and gives the focus back to the "⋮"', async () => {
+        await openBatchMenu();
+        key(dialog(), 'Escape');
+        await settle();
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        http.expectNone('/api/batches/b1');
+        expect(titles()).toHaveLength(4);
+        expect(document.activeElement).toBe(el('batch-menu'));
+      });
+
+      it('does nothing on a click outside the dialog', async () => {
+        await openBatchMenu();
+        dialog().click();
+        await settle();
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        http.expectNone('/api/batches/b1');
+      });
+
+      it('shows the usual error when the server refuses, and the real state', async () => {
+        await openBatchMenu();
+        await click('confirm-yes');
+        http
+          .expectOne('/api/batches/b1')
+          .flush({ code: 'batch_not_found', message: 'x' }, { status: 404, statusText: 'x' });
+        http.match((r) => r.url === '/api/jobs').forEach((r) => r.flush(page([])));
+        await settle();
+
+        expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+        expect(el('action-message')?.getAttribute('role')).toBe('alert');
+      });
+    });
+
+    describe('the whole History', () => {
+      it('has a "⋮" menu in the filter row with "Vaciar historial"', async () => {
+        await click('history-menu');
+
+        expect(el('filters')!.parentElement!.contains(el('history-menu'))).toBe(true);
+        expect(el('filters')!.contains(el('history-menu'))).toBe(false);
+        expect(el('clear-history')?.textContent?.trim()).toBe('Vaciar historial');
+        expect(el('clear-history')?.getAttribute('role')).toBe('menuitem');
+      });
+
+      it('closes the menu with Esc and gives the focus back to the "⋮"', async () => {
+        await click('history-menu');
+        expect(document.activeElement).toBe(el('clear-history'));
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        await settle();
+
+        expect(el('clear-history')).toBeNull();
+        expect(document.activeElement).toBe(el('history-menu'));
+      });
+
+      it('asks first, saying that the files stay', async () => {
+        await openHistoryMenu();
+
+        expect(dialog().hasAttribute('open')).toBe(true);
+        expect(el('confirm-title')?.textContent?.trim()).toBe('¿Vaciar el historial?');
+        expect(el('confirm-text')?.textContent?.trim()).toBe(
+          'Se quitan todas las descargas terminadas. Los archivos descargados no se borran.',
+        );
+        expect(el('confirm-no')?.textContent?.trim()).toBe('Cancelar');
+        expect(el('confirm-yes')?.textContent?.trim()).toBe('Vaciar');
+        http.expectNone('/api/history');
+      });
+
+      it('empties it with DELETE /api/history and keeps the jobs in progress', async () => {
+        await openHistoryMenu();
+        await click('confirm-yes');
+
+        const req = http.expectOne('/api/history');
+        expect(req.request.method).toBe('DELETE');
+        expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+        req.flush({ removed: 3 });
+        await settle();
+
+        expect(titles()).toEqual(['b3']);
+        expect(document.activeElement).toBe(el('history-menu'));
+      });
+
+      it('shows the empty state once nothing is left', async () => {
+        jobs.jobs.set([jobAt('a', at(16, 9), { status: 'completed' })]);
+        await settle();
+        await openHistoryMenu();
+        await click('confirm-yes');
+        http.expectOne('/api/history').flush({ removed: 1 });
+        await settle();
+
+        expect(el('downloads-empty')?.textContent?.trim()).toBe('No hay descargas.');
+      });
+
+      it('does nothing on "Cancelar"', async () => {
+        await openHistoryMenu();
+        await click('confirm-no');
+
+        http.expectNone('/api/history');
+        expect(titles()).toHaveLength(4);
+        expect(document.activeElement).toBe(el('history-menu'));
+      });
+
+      it('does nothing on Esc', async () => {
+        await openHistoryMenu();
+        key(dialog(), 'Escape');
+        await settle();
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        http.expectNone('/api/history');
+        expect(titles()).toHaveLength(4);
+        expect(document.activeElement).toBe(el('history-menu'));
+      });
+
+      it('shows the usual error when the server fails, and keeps the list', async () => {
+        await openHistoryMenu();
+        await click('confirm-yes');
+        http.expectOne('/api/history').flush({}, { status: 500, statusText: 'x' });
+        http.match((r) => r.url === '/api/jobs').forEach((r) => r.flush(page([])));
+        await settle();
+
+        expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+      });
+    });
+
+    it('drops what another tab removed (jobs.removed)', async () => {
+      jobs.connect();
+      FakeEventSource.instances[0].emit('jobs.removed', { ids: ['b1', 'b2', 'solo'] });
+      await settle();
+
+      expect(titles()).toEqual(['b3']);
+    });
   });
 });
 

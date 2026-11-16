@@ -83,3 +83,20 @@ function entry(index: number, title: string, available: boolean) {
     ...(available ? {} : { unavailableReason: 'Video privado o eliminado' }),
   };
 }
+
+/** A job with its own id and creation time, built from `JOB`. */
+export function jobAt(id: string, createdAt: string, extra: Partial<Job> = {}): Job {
+  return { ...JOB, id, title: id, createdAt, ...extra };
+}
+
+/** `createdAt` of a moment in the browser's local time (the day headings use local days). */
+export function localIso(
+  year: number,
+  month: number,
+  day: number,
+  hour = 12,
+  minute = 0,
+  second = 0,
+): string {
+  return new Date(year, month - 1, day, hour, minute, second).toISOString();
+}

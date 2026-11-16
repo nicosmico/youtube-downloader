@@ -1,11 +1,15 @@
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpRequest, provideHttpClient, withInterceptors } from '@angular/common/http';
+import {
+  HttpTestingController,
+  TestRequest,
+  provideHttpClientTesting,
+} from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from './api.interceptor';
 import { EVENT_SOURCE_FACTORY } from './event-stream.service';
 import { EnqueueError, Job, JobsService } from './jobs.service';
-import { JOB } from '../../testing/fixtures';
+import { JOB, jobAt } from '../../testing/fixtures';
 import { flushRehydration } from '../../testing/rehydration';
 
 describe('JobsService', () => {
@@ -66,7 +70,7 @@ describe('JobsService', () => {
     stream().open();
     const first = { ...JOB, id: 'h1', status: 'completed' as const };
     flushRehydration(http, { history: [first], nextBefore: 'h1' });
-    expect(service.hasMoreHistory()).toBe(true);
+    expect(service.hasMore()).toBe(true);
 
     service.loadMore();
     service.loadMore(); // already loading: ignored
@@ -80,7 +84,7 @@ describe('JobsService', () => {
     });
 
     expect(service.jobs().map((j) => j.id)).toEqual(['h1', 'h0']);
-    expect(service.hasMoreHistory()).toBe(false);
+    expect(service.hasMore()).toBe(false);
     expect(service.loadingMore()).toBe(false);
     service.loadMore();
     http.expectNone((r) => r.url === '/api/jobs');
@@ -110,7 +114,7 @@ describe('JobsService', () => {
     });
 
     expect(service.jobs().map((j) => j.id)).toEqual(['h1']);
-    expect(service.hasMoreHistory()).toBe(true);
+    expect(service.hasMore()).toBe(true);
   });
 
   it('removes from the History with DELETE and takes the job out of the list', () => {
@@ -372,6 +376,289 @@ describe('JobsService', () => {
       stream().emit('job.updated', { ...DOWNLOADING, attempt: 2 });
 
       expect(service.jobs()[0]).toMatchObject({ status: 'downloading', attempt: 2 });
+    });
+  });
+
+  describe('filters', () => {
+    const at = (n: number) => `2026-11-15T12:00:${String(n).padStart(2, '0')}.000000+00:00`;
+    const done = (id: string, n: number) => jobAt(id, at(n), { status: 'completed' });
+    const failed = (id: string, n: number) => jobAt(id, at(n), { status: 'failed' });
+    const queued = (id: string, n: number) => jobAt(id, at(n), { status: 'queued' });
+    const ids = () => service.visibleJobs().map((j) => j.id);
+    const statusOf = (r: HttpRequest<unknown> | TestRequest) =>
+      ('request' in r ? r.request : r).params.get('status');
+    /** Connects and answers the rehydration with the given jobs on the first page of "Todas". */
+    const connected = (answer: Parameters<typeof flushRehydration>[1]) => {
+      service.connect();
+      stream().open();
+      flushRehydration(http, answer);
+    };
+    const page = (jobs: Job[], nextBefore: string | null = null) => ({ jobs, nextBefore });
+
+    it('shows every job under "Todas", newest first, and a job keeps its place when it ends', () => {
+      connected({
+        queue: [queued('q', 5)],
+        history: [done('h1', 4), failed('h2', 3)],
+      });
+      expect(service.filter()).toBe('all');
+      expect(ids()).toEqual(['q', 'h1', 'h2']);
+
+      stream().emit('job.updated', { ...queued('q', 5), status: 'downloading' });
+      stream().emit('job.updated', { ...queued('q', 5), status: 'completed' });
+
+      expect(ids()).toEqual(['q', 'h1', 'h2']);
+    });
+
+    it.each([
+      ['active', ['q', 'd']],
+      ['completed', ['c1', 'c2']],
+      ['failed', ['f', 'i']],
+      ['canceled', ['x']],
+    ] as const)('"%s" shows only the statuses of its row', (filter, expected) => {
+      service.jobs.set([
+        queued('q', 9),
+        jobAt('d', at(8), { status: 'downloading' }),
+        done('c1', 7),
+        failed('f', 6),
+        jobAt('i', at(5), { status: 'interrupted' }),
+        jobAt('x', at(4), { status: 'canceled' }),
+        done('c2', 3),
+      ]);
+      service.select(filter);
+      http.match((r) => r.url === '/api/jobs'); // the first page of the filter, not under test
+
+      expect(ids()).toEqual(expected);
+    });
+
+    it.each([
+      ['completed', 'completed'],
+      ['failed', 'failed,interrupted'],
+      ['canceled', 'canceled'],
+    ] as const)('"%s" fetches its first page with status=%s, once', (filter, status) => {
+      connected({});
+
+      service.select(filter);
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(statusOf(req)).toBe(status);
+      expect(req.request.params.get('limit')).toBe('50');
+      expect(req.request.params.has('before')).toBe(false);
+      expect(service.loading()).toBe(true);
+      req.flush(page([]));
+      expect(service.loading()).toBe(false);
+
+      service.select('all');
+      service.select(filter);
+      http.expectNone((r) => r.url === '/api/jobs');
+    });
+
+    it('"En curso" needs no request: the Queue is always loaded whole', () => {
+      connected({ queue: [queued('q', 5)], history: [done('h', 4)] });
+
+      service.select('active');
+
+      http.expectNone((r) => r.url === '/api/jobs');
+      expect(ids()).toEqual(['q']);
+      expect(service.hasMore()).toBe(false);
+    });
+
+    it('never looks empty because its jobs sit on a page "Todas" has not loaded', () => {
+      // the first page of "Todas" is all failures; the completed ones are further back
+      connected({
+        history: [failed('f1', 9), failed('f2', 8)],
+        nextBefore: 'f2',
+      });
+      service.select('completed');
+      expect(ids()).toEqual([]);
+      expect(service.loading()).toBe(true);
+
+      http
+        .expectOne((r) => statusOf(r) === 'completed')
+        .flush(page([done('c1', 2), done('c2', 1)]));
+
+      expect(ids()).toEqual(['c1', 'c2']);
+      expect(service.loading()).toBe(false);
+    });
+
+    it('pages each filter with its own cursor', () => {
+      connected({ history: [done('h1', 9), failed('h2', 8)], nextBefore: 'h2' });
+      service.select('completed');
+      http
+        .expectOne((r) => statusOf(r) === 'completed')
+        .flush(page([done('c1', 7), done('c2', 6)], 'c2'));
+      expect(service.hasMore()).toBe(true);
+
+      service.loadMore();
+      service.loadMore(); // already loading: ignored
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(statusOf(req)).toBe('completed');
+      expect(req.request.params.get('before')).toBe('c2');
+      expect(req.request.params.get('limit')).toBe('50');
+      expect(service.loadingMore()).toBe(true);
+      req.flush(page([done('c3', 5)]));
+
+      expect(ids()).toEqual(['h1', 'c1', 'c2', 'c3']);
+      expect(service.hasMore()).toBe(false);
+
+      // "Todas" still has its own next page
+      service.select('all');
+      expect(service.hasMore()).toBe(true);
+      service.loadMore();
+      const all = http.expectOne((r) => r.url === '/api/jobs');
+      expect(statusOf(all)).toBe('completed,failed,canceled,interrupted');
+      expect(all.request.params.get('before')).toBe('h2');
+      all.flush(page([failed('h3', 4)]));
+      expect(service.hasMore()).toBe(false);
+    });
+
+    it('does not show, under "Todas", jobs older than its own pages that another filter loaded', () => {
+      connected({ history: [done('h1', 9), failed('h2', 8)], nextBefore: 'h2' });
+      service.select('completed');
+      http
+        .expectOne((r) => statusOf(r) === 'completed')
+        .flush(page([done('c1', 7), done('c2', 2)], 'c2'));
+
+      service.select('all');
+
+      // c1 and c2 are older than where "Todas" reaches: there could be failures between them
+      expect(ids()).toEqual(['h1', 'h2']);
+    });
+
+    it('applies a job that ends under the filter it belongs to, and drops it from the others', () => {
+      connected({ queue: [queued('q', 9)], history: [] });
+      service.select('completed');
+      http.expectOne((r) => statusOf(r) === 'completed').flush(page([]));
+      expect(ids()).toEqual([]);
+
+      stream().emit('job.updated', { ...queued('q', 9), status: 'completed' });
+      expect(ids()).toEqual(['q']);
+
+      stream().emit('job.updated', { ...queued('q', 9), status: 'failed' });
+      expect(ids()).toEqual([]);
+    });
+
+    it('starts over on reconnect: only the current filter is fetched again', () => {
+      connected({ history: [done('h1', 9)] });
+      service.select('completed');
+      http.expectOne((r) => statusOf(r) === 'completed').flush(page([done('c1', 5)], 'c1'));
+      service.select('canceled');
+      http.expectOne((r) => statusOf(r) === 'canceled').flush(page([]));
+
+      stream().open();
+      const requests = http.match((r) => r.url === '/api/jobs');
+      expect(requests.map(statusOf).sort()).toEqual(['canceled', 'queued,downloading,processing']);
+      requests.forEach((r) => r.flush(page([])));
+
+      // the filters that were not showing are unloaded: selecting one fetches it again
+      service.select('completed');
+      http.expectOne((r) => statusOf(r) === 'completed').flush(page([]));
+      expect(ids()).toEqual([]);
+    });
+
+    it('ignores the answer to a list that a reconnect replaced', () => {
+      service.connect();
+      stream().open();
+      const stale = http.match((r) => r.url === '/api/jobs');
+
+      stream().open();
+      flushRehydration(http, { history: [done('new', 5)] });
+      flushRehydration(http, { history: [done('old', 4)] }, stale);
+
+      expect(ids()).toEqual(['new']);
+    });
+
+    it('moves the cursor when the job it points at is removed, so "Cargar más" does not end early', () => {
+      connected({ history: [done('h1', 9), done('h2', 8)], nextBefore: 'h2' });
+
+      stream().emit('job.removed', { id: 'h2' });
+      service.loadMore();
+
+      const req = http.expectOne((r) => r.url === '/api/jobs');
+      expect(req.request.params.get('before')).toBe('h1');
+      req.flush(page([]));
+    });
+  });
+
+  describe('removing many', () => {
+    const at = (n: number) => `2026-11-15T12:00:${String(n).padStart(2, '0')}.000000+00:00`;
+    const inBatch = (id: string, n: number, status: Job['status']) =>
+      jobAt(id, at(n), { status, batchId: 'b1', batchTitle: 'Lista', batchEntryCount: 4 });
+
+    it('drops every id of jobs.removed', () => {
+      service.connect();
+      service.jobs.set([jobAt('a', at(3)), jobAt('b', at(2)), jobAt('c', at(1))]);
+
+      stream().emit('jobs.removed', { ids: ['a', 'c', 'unknown'] });
+
+      expect(service.jobs().map((j) => j.id)).toEqual(['b']);
+    });
+
+    it('removes the finished jobs of a Batch with DELETE /api/batches/{id} and drops them', () => {
+      service.jobs.set([
+        inBatch('a', 4, 'downloading'),
+        inBatch('b', 3, 'completed'),
+        inBatch('c', 2, 'failed'),
+        jobAt('other', at(1), { status: 'completed' }),
+      ]);
+      let done = false;
+      service.removeBatch('b1').subscribe(() => (done = true));
+
+      const req = http.expectOne('/api/batches/b1');
+      expect(req.request.method).toBe('DELETE');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      expect(service.jobs()).toHaveLength(4);
+      req.flush({ removed: 2 });
+
+      expect(done).toBe(true);
+      expect(service.jobs().map((j) => j.id)).toEqual(['a', 'other']);
+    });
+
+    it('shows the truth again when removing a Batch fails', () => {
+      service.jobs.set([inBatch('b', 3, 'completed')]);
+      let error: unknown;
+      service.removeBatch('b1').subscribe({ error: (e) => (error = e) });
+
+      http
+        .expectOne('/api/batches/b1')
+        .flush({ code: 'batch_not_found', message: 'x' }, { status: 404, statusText: 'x' });
+      flushRehydration(http, {});
+
+      expect((error as EnqueueError).code).toBe('batch_not_found');
+      expect(service.jobs()).toEqual([]);
+    });
+
+    it('empties the History with DELETE /api/history and keeps what is in progress', () => {
+      service.connect();
+      stream().open();
+      flushRehydration(http, {
+        queue: [jobAt('q', at(5), { status: 'queued' })],
+        history: [
+          jobAt('h1', at(4), { status: 'completed' }),
+          jobAt('h2', at(3), { status: 'failed' }),
+        ],
+        nextBefore: 'h2',
+      });
+      expect(service.hasMore()).toBe(true);
+      service.clearHistory().subscribe();
+
+      const req = http.expectOne('/api/history');
+      expect(req.request.method).toBe('DELETE');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      req.flush({ removed: 2 });
+
+      expect(service.jobs().map((j) => j.id)).toEqual(['q']);
+      expect(service.hasMore()).toBe(false); // nothing finished is left on the server
+    });
+
+    it('shows the truth again when emptying the History fails', () => {
+      service.jobs.set([jobAt('h', at(1), { status: 'completed' })]);
+      let failed = false;
+      service.clearHistory().subscribe({ error: () => (failed = true) });
+
+      http.expectOne('/api/history').flush({}, { status: 500, statusText: 'x' });
+      flushRehydration(http, { history: [jobAt('h', at(1), { status: 'completed' })] });
+
+      expect(failed).toBe(true);
+      expect(service.jobs().map((j) => j.id)).toEqual(['h']);
     });
   });
 });

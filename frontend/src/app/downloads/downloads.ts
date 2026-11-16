@@ -1,11 +1,23 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Job, JobsService, isInProgress } from '../core/jobs.service';
+import { NOW } from '../core/clock';
+import { JOB_FILTERS, Job, JobFilter, JobsService, isInProgress } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
 import { TEXTS } from '../core/texts';
 import { formatDuration } from '../preview/url-preview';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Dismissable } from '../ui/dismissable';
 import { Icon } from '../ui/icon';
 import { MenuKeys } from '../ui/menu-keys';
@@ -88,34 +100,100 @@ export function groupJobs(jobs: readonly Job[], all: readonly Job[] = jobs): Lis
   return items;
 }
 
+/** The cards of one local day, under its heading. */
+export interface DayGroup {
+  key: string;
+  label: string;
+  items: ListItem[];
+}
+
+/** `createdAt` of the newest job of a card: the day a Batch goes under. */
+function itemDate(item: ListItem): string {
+  return item.kind === 'job'
+    ? item.job.createdAt
+    : item.jobs.reduce((newest, job) => (job.createdAt > newest ? job.createdAt : newest), '');
+}
+
+function dayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+/** "Hoy", "Ayer", then "12 nov" ("12 nov 2025" when it is not this year); the browser's local day. */
+export function dayLabel(date: Date, now: Date): string {
+  const texts = TEXTS.downloads;
+  if (dayKey(date) === dayKey(now)) {
+    return texts.today;
+  }
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (dayKey(date) === dayKey(yesterday)) {
+    return texts.yesterday;
+  }
+  const short = `${date.getDate()} ${texts.months[date.getMonth()]}`;
+  return date.getFullYear() === now.getFullYear() ? short : `${short} ${date.getFullYear()}`;
+}
+
+/** Cards in order, split in a group per local day (they are newest first, so days are runs). */
+export function groupByDay(items: readonly ListItem[], now: Date): DayGroup[] {
+  const days: DayGroup[] = [];
+  for (const item of items) {
+    const date = new Date(itemDate(item));
+    const key = dayKey(date);
+    const last = days.at(-1);
+    if (last?.key === key) {
+      last.items.push(item);
+    } else {
+      days.push({ key, label: dayLabel(date, now), items: [item] });
+    }
+  }
+  return days;
+}
+
+/** What the user is asked to confirm. */
+type Confirmation = { kind: 'batch'; batchId: string; count: number } | { kind: 'history' };
+
 /** One card per DownloadJob, live through `JobsService`; a playlist groups its jobs. */
 @Component({
   selector: 'app-downloads',
-  imports: [NgTemplateOutlet, Icon, Dismissable, MenuKeys],
+  imports: [NgTemplateOutlet, Icon, Dismissable, MenuKeys, ConfirmDialog],
   templateUrl: './downloads.html',
 })
 export class Downloads {
   protected readonly jobsService = inject(JobsService);
   private readonly system = inject(SystemService);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly texts = TEXTS;
-  protected readonly tab = signal<'active' | 'history'>('active');
-  /** Job whose "⋮" menu is open. */
+  private readonly now = inject(NOW);
+  protected readonly filters = JOB_FILTERS;
+  /** Job whose "⋮" menu is open (a Batch's, as `batch:<id>`; the list's, as `history`). */
   protected readonly menuFor = signal<string | null>(null);
-  /** "En curso": queued, downloading and processing jobs. */
-  protected readonly queueItems = computed(() =>
-    groupJobs(this.jobsService.jobs().filter(isInProgress), this.jobsService.jobs()),
+  /** The jobs of the current filter, as cards under a heading per day. */
+  protected readonly days = computed(() =>
+    groupByDay(groupJobs(this.jobsService.visibleJobs(), this.jobsService.jobs()), this.now()),
   );
-  protected readonly activeCount = computed(
-    () => this.jobsService.jobs().filter(isInProgress).length,
-  );
-  /** "Historial": the finished ones, newest first. */
-  protected readonly historyItems = computed(() =>
-    groupJobs(
-      this.jobsService.jobs().filter((job) => !isInProgress(job)),
-      this.jobsService.jobs(),
-    ),
-  );
+  /** Jobs running and waiting: the counter of the "En curso" chip. */
+  protected readonly activeCount = computed(() => {
+    const { active, queued } = this.jobsService.queue();
+    return active + queued;
+  });
+  protected readonly confirmation = signal<Confirmation | null>(null);
+  private confirmTrigger: HTMLElement | null = null;
+  protected readonly confirmTexts = computed(() => {
+    const request = this.confirmation();
+    const texts = TEXTS.downloads;
+    if (request?.kind === 'batch') {
+      const dialog = texts.removeBatchConfirm;
+      return {
+        title:
+          request.count === 1 ? dialog.titleOne : dialog.title.replace('{n}', `${request.count}`),
+        text: dialog.text,
+        confirm: dialog.confirm,
+      };
+    }
+    const dialog = texts.clearHistoryConfirm;
+    return request ? dialog : { title: '', text: '', confirm: '' };
+  });
   /** Label of the reveal button: the file manager of the server's platform. */
   protected readonly revealLabel = computed(() => {
     const labels = TEXTS.downloads.reveal;
@@ -140,7 +218,8 @@ export class Downloads {
   private knownActive = new Set<string>();
 
   constructor() {
-    // A job that just joined the Queue shows up in "En curso", wherever the user was looking.
+    // A job that just joined the Queue (enqueued or retried) must be seen: a filter that hides
+    // it gives way to "Todas".
     effect(() => {
       const ids = new Set(
         this.jobsService
@@ -149,10 +228,19 @@ export class Downloads {
           .map((job) => job.id),
       );
       if ([...ids].some((id) => !this.knownActive.has(id))) {
-        this.tab.set('active');
+        untracked(() => {
+          if (this.jobsService.filter() !== 'active') {
+            this.jobsService.select('all');
+          }
+        });
       }
       this.knownActive = ids;
     });
+  }
+
+  protected filterLabel(filter: JobFilter): string {
+    const label = TEXTS.downloads.filters[filter];
+    return filter === 'active' ? `${label} · ${this.activeCount()}` : label;
   }
 
   /** "3/10 completadas", plus the failed ones when there are any. */
@@ -273,8 +361,75 @@ export class Downloads {
     }
   }
 
-  protected toggleMenu(job: Job): void {
-    this.menuFor.set(this.menuFor() === job.id ? null : job.id);
+  protected toggleMenu(key: string): void {
+    this.menuFor.set(this.menuFor() === key ? null : key);
+  }
+
+  /** Terminal jobs of a Batch that the client knows, whichever filter shows them. */
+  private removableOf(batchId: string): number {
+    return this.jobsService.jobs().filter((job) => job.batchId === batchId && !isInProgress(job))
+      .length;
+  }
+
+  protected canRemoveBatch(group: BatchGroup): boolean {
+    return this.removableOf(group.batchId) > 0;
+  }
+
+  protected askRemoveBatch(group: BatchGroup, trigger: HTMLElement): void {
+    this.ask(
+      { kind: 'batch', batchId: group.batchId, count: this.removableOf(group.batchId) },
+      trigger,
+    );
+  }
+
+  protected askClearHistory(trigger: HTMLElement): void {
+    this.ask({ kind: 'history' }, trigger);
+  }
+
+  private ask(request: Confirmation, trigger: HTMLElement): void {
+    this.menuFor.set(null);
+    this.confirmTrigger = trigger;
+    this.confirmation.set(request);
+  }
+
+  protected dismissConfirmation(): void {
+    this.confirmation.set(null);
+  }
+
+  protected confirm(): void {
+    const request = this.confirmation();
+    this.confirmation.set(null);
+    if (!request) {
+      return;
+    }
+    this.actionMessage.set(null);
+    const done =
+      request.kind === 'batch'
+        ? this.jobsService.removeBatch(request.batchId)
+        : this.jobsService.clearHistory();
+    done.subscribe({
+      // The card of a removed Batch takes its "⋮" with it: the focus must not fall to the page.
+      complete: () => afterNextRender(() => this.focusFilters(), { injector: this.injector }),
+      error: () => this.actionMessage.set(TEXTS.downloads.actionFailed),
+    });
+  }
+
+  private focusFilters(): void {
+    const host = this.host.nativeElement;
+    if (!host.contains(document.activeElement) || document.activeElement === host) {
+      host.querySelector<HTMLElement>('[data-testid=filters] [aria-pressed=true]')?.focus();
+    }
+  }
+
+  /** The dialog is closed: the focus goes back to the "⋮" that opened it (a gone Batch's: to the filters). */
+  protected restoreFocus(): void {
+    const trigger = this.confirmTrigger;
+    this.confirmTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+    } else {
+      this.focusFilters();
+    }
   }
 
   protected canRemove(job: Job): boolean {
