@@ -38,3 +38,6 @@ backend/app/static/
 
 # Directorio de datos del entorno Docker de desarrollo
 .dev-data/
+
+# Worktrees de los subagentes de Claude Code
+.claude/worktrees/
