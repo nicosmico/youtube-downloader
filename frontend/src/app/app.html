@@ -13,6 +13,7 @@
 } @else {
   <app-top-bar
     [health]="health()"
+    [update]="update()"
     [unreachable]="unreachable()"
     [closing]="shutdownState() === 'closing'"
     (logsRequested)="logsOpen.set(true)"

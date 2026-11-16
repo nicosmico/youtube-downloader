@@ -41,6 +41,7 @@ def build_router(
     port: int,
     request_shutdown: Callable[[], None],
     engine: EngineManager,
+    update: Callable[[], dict[str, str] | None],
     previews: PreviewService,
     download_dir: Path,
     open_folder: FolderOpener,
@@ -55,6 +56,7 @@ def build_router(
             "engine": engine.info().to_dict(),
             "port": port,
             "platform": sys.platform,
+            "update": update(),
         }
 
     @router.get("/logs")

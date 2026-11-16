@@ -2,6 +2,7 @@ import { Component, computed, inject, input } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
   ArrowDownToLine,
+  ArrowUp,
   Check,
   ChevronDown,
   CircleAlert,
@@ -32,6 +33,7 @@ import {
 /** The Lucide icons the app uses (ISC license), bundled: nothing is loaded from a CDN. */
 const ICONS = {
   'arrow-down-to-line': ArrowDownToLine,
+  'arrow-up': ArrowUp,
   check: Check,
   'chevron-down': ChevronDown,
   alert: CircleAlert,

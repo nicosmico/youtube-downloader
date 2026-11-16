@@ -82,6 +82,10 @@ _Evitar_: main, arranque
 Regla por la que solo puede existir un `Launcher` activo; un segundo intento reutiliza el servidor en curso.
 _Evitar_: instancia única, bloqueo
 
+**App Update Notice**:
+Aviso, comprobado una sola vez al arrancar, de que existe un Release de la app más nuevo que el instalado; enlaza a su página y nunca actualiza por sí solo (ADR-0011).
+_Evitar_: auto-update, actualización automática
+
 **Idle Shutdown**:
 Cierre automático de la app cuando lleva un tiempo sin pestañas conectadas y con la `Queue` vacía.
 _Evitar_: timeout, autocierre

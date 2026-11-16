@@ -37,6 +37,8 @@ export const TEXTS = {
     themeDark: 'Oscuro',
     toggleTheme: 'Cambiar tema',
     logs: 'Registros',
+    version: 'Versión',
+    newVersion: 'Hay una versión nueva:',
   },
   preview: {
     urlLabel: 'Enlace de YouTube',

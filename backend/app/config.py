@@ -23,6 +23,8 @@ class Settings:
     engine_bin_dir: Path | None = None
     # Idle Shutdown (ADR-0001): seconds without clients or work before the app closes; 0 disables.
     idle_shutdown_seconds: float = IDLE_SHUTDOWN_SECONDS
+    # One-shot check for a newer app Release at startup; `UPDATE_CHECK=0` turns it off.
+    update_check: bool = True
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -38,6 +40,7 @@ class Settings:
             if env.get("ENGINE_BIN_DIR")
             else None,
             idle_shutdown_seconds=_seconds(env.get("IDLE_SHUTDOWN_SECONDS")),
+            update_check=env.get("UPDATE_CHECK", "1") != "0",
         )
 
 
