@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Si el SSE `downloading` llega antes que la respuesta del `POST`, la tarjeta muestra "Preparando…" y no vuelve a "En cola".
 - [x] Si la respuesta llega primero, el job aparece y luego se actualiza con el SSE.
@@ -14,3 +14,5 @@
 ## Comments
 
 2026-11-15: `JobsService.adopt()` aplica la respuesta HTTP de `POST /api/jobs` y de `retry` solo si el job es desconocido o la respuesta inicia un `attempt` más nuevo que el de la lista; nunca pisa un estado del mismo intento recibido por SSE. Verificado con 5 tests de servicio (ambos órdenes de llegada, lote de playlist y reintento); `npm run test:ci` en verde. `cancel` sigue aplicando su respuesta (es terminal).
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.0` (Native/Release `43878583896`, CI `43878578070`), tras la revisión visual del orquestador en claro, oscuro y 320 px.

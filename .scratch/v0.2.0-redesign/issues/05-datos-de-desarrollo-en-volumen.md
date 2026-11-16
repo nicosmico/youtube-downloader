@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `docker compose up` usa un volumen para `DATA_DIR`; reiniciar el contenedor conserva el historial.
 - [x] El Engine no se vuelve a descargar entre reinicios.
@@ -16,3 +16,5 @@
 2026-11-15: Hecho. `compose.yaml` monta el volumen nombrado `ytdl-dev-data` en `/data`; `HOST_DOWNLOAD_DIR` sigue siendo un bind mount. Los binarios del Engine NO usan `ENGINE_BIN_DIR` (desactiva descarga, actualización y hashes por diseño, ADR-0008): `/data/bin` vive dentro del mismo volumen, así que se descargan una sola vez y se siguen actualizando y verificando con normalidad. Se retira `HOST_DATA_DIR`.
 
 Verificado con `PORT=8775`: Engine instalado una vez (`ready`), job de audio m4a creado; 3 ciclos `down`/`up` y 3 `restart`: Engine `ready` sin redescarga, el historial se conserva y `PRAGMA integrity_check` = `ok` en todos. Después `down -v` y se borró el material de prueba. README actualizado (sección "Datos de desarrollo (volumen)": inspeccionar, copiar, resetear; `.dev-data/` ya no se usa).
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.0` (Native/Release `43878583896`, CI `43878578070`), tras la revisión visual del orquestador en claro, oscuro y 320 px.

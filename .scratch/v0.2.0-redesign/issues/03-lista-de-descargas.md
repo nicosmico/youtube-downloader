@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (Base visual, tema y barra superior).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `thumbnail` se guarda al encolar videos y entradas de playlist; una base de datos de la v0.1.1 migra sin errores; sin miniatura se ve un marcador neutro.
 - [x] Una descarga recién encolada aparece arriba de "En curso" sin hacer scroll.
@@ -18,3 +18,5 @@
 2026-11-15: Backend: migración 6 (`jobs.thumbnail`), `thumbnail` en `POST /api/jobs` (video y `entries[]`; solo se guarda una URL https) y en el JSON de los jobs; las entradas del preview de playlist ahora traen `thumbnail` (`https://i.ytimg.com/vi/<id>/mqdefault.jpg`, porque `--flat-playlist` no la da). Una BD v0.1.1 migra sin errores (test) y se comprobó con la `.dev-data` real. Frontend: pestañas "En curso · N" / "Historial" (un job nuevo o reintentado vuelve a "En curso"), filas con miniatura de 72x40, una línea de estado, barra fina, iconos con tooltip (cancelar, reintentar, mostrar archivo) y menú "⋮" (abrir carpeta, ver detalle, quitar del historial). El resumen del lote cuenta todos sus jobs, no solo los de la pestaña. Verificado con tests de API y de componente, pytest, ruff y una descarga real (aparece como "Preparando…" desde el primer momento).
 
 2026-11-16: Tras la revisión visual: esqueleto de carga del preview (con `motion-safe`), barra superior sin saltos de línea bajo 640 px (solo icono y punto del motor; nombre y etiqueta quedan para lectores de pantalla), foco azul neutro (`--focus`) en lugar de rojo, "Mostrar archivo" con icono de carpeta con lupa y "Preparando…" con el formato.
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.0` (Native/Release `43878583896`, CI `43878578070`), tras la revisión visual del orquestador en claro, oscuro y 320 px.
