@@ -6,9 +6,13 @@
 
 **Status:** ready-for-agent
 
-- [ ] Con el campo vacío se ve el estado vacío; "Pegar" lee el portapapeles o, si el navegador no lo permite, enfoca el campo.
-- [ ] Preview de video y de playlist con el nuevo estilo, conservando los errores y la selección de entradas actuales.
-- [ ] El control de formato cubre todas las combinaciones válidas de la v0.1.1 y aplica el fallback a `best`.
-- [ ] La elección de formato se conserva al previsualizar otro enlace.
-- [ ] Sin pasos numerados ni notas de ayuda visibles.
-- [ ] Tests de componente del flujo completo.
+- [x] Con el campo vacío se ve el estado vacío; "Pegar" lee el portapapeles o, si el navegador no lo permite, enfoca el campo.
+- [x] Preview de video y de playlist con el nuevo estilo, conservando los errores y la selección de entradas actuales.
+- [x] El control de formato cubre todas las combinaciones válidas de la v0.1.1 y aplica el fallback a `best`.
+- [x] La elección de formato se conserva al previsualizar otro enlace.
+- [x] Sin pasos numerados ni notas de ayuda visibles.
+- [x] Tests de componente del flujo completo.
+
+## Comments
+
+2026-11-15: Columna izquierda reescrita (`UrlPreview`): campo con icono de enlace y "Pegar" (Clipboard API; si falla o está vacío, enfoca el campo), botón de borrar, estado vacío de una línea, preview compacto con duración sobre la miniatura, chips "Mejor video" / "MP3" / "Otro formato ▾" (menú agrupado Video/Audio con 2160p marcado "puede requerir VLC" y opciones no disponibles deshabilitadas), "Descargar" y aviso destacado con "Reintentar" cuando el motor falla. Sin textos de ayuda; `presets.ts` se conserva como origen de los dos chips. La elección de formato se conserva entre previews y el fallback a `best` sigue igual. Verificado con 95 tests de componente y una descarga real en el navegador.

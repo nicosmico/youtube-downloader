@@ -6,10 +6,14 @@
 
 **Status:** ready-for-agent
 
-- [ ] Tailwind integrado; `npm run build` y la imagen de Docker siguen funcionando.
-- [ ] El tema sigue al sistema por defecto, se puede fijar en claro u oscuro, se recuerda y no parpadea al cargar.
-- [ ] La barra superior no contiene ningún campo de texto.
-- [ ] El indicador del motor muestra verde, ámbar o rojo y su popover ofrece versiones, "Actualizar yt-dlp" y "Reintentar" según el estado.
-- [ ] "Registros" se abre en un panel lateral y "Cerrar aplicación" funciona desde el menú.
-- [ ] Contraste AA y foco visible en ambos temas; `Esc` cierra menús y paneles.
-- [ ] Tests de componente del tema, el indicador, el menú y el panel.
+- [x] Tailwind integrado; `npm run build` y la imagen de Docker siguen funcionando.
+- [x] El tema sigue al sistema por defecto, se puede fijar en claro u oscuro, se recuerda y no parpadea al cargar.
+- [x] La barra superior no contiene ningún campo de texto.
+- [x] El indicador del motor muestra verde, ámbar o rojo y su popover ofrece versiones, "Actualizar yt-dlp" y "Reintentar" según el estado.
+- [x] "Registros" se abre en un panel lateral y "Cerrar aplicación" funciona desde el menú.
+- [x] Contraste AA y foco visible en ambos temas; `Esc` cierra menús y paneles.
+- [x] Tests de componente del tema, el indicador, el menú y el panel.
+
+## Comments
+
+2026-11-15: Tailwind 4 (`tailwindcss` + `@tailwindcss/postcss`, vía `frontend/.postcssrc.json`, sin plugins de Angular). Tokens como variables CSS en `styles.css` (`:root` / `:root.dark`) expuestos con `@theme inline`; breakpoint `wide` = 900 px. Iconos: `lucide` (ISC) con imports con nombre, tree-shaken, renderizados por `<app-icon>`. Tema: `ThemeService` + script en línea de `index.html` (clase `dark` en `<html>`, `localStorage['theme']`). Verificado con tests de componente y de servicio (tema, chip, popover, menú, panel de Registros, pantallas de cierre), `npm run test:ci`, `npm run build`, `docker compose up --build` (la imagen compila con Tailwind) y una pasada manual en el navegador (tema oscuro, dos columnas). Desviación: los botones rellenos usan siempre `#e62117` (blanco sobre `#ff4e45` no llega a AA); el acento `#ff4e45` se usa en texto, barras y foco. Pendiente de la revisión visual: tema claro y ventana estrecha.
