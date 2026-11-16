@@ -147,7 +147,7 @@ describe('Downloads', () => {
   it('shows "Preparando…" without a bar while no byte has arrived', async () => {
     await show({ status: 'downloading', progressPercent: 0, downloadedBytes: null });
 
-    expect(el('job-status')?.textContent?.trim()).toBe('Preparando…');
+    expect(el('job-status')?.textContent?.trim()).toBe('Video · Mejor disponible · Preparando…');
     expect(el('job-progress')).toBeNull();
     expect(el('cancel-job')).not.toBeNull();
   });
@@ -390,7 +390,7 @@ describe('batches', () => {
     expect(all('batch-summary')[0].textContent).toContain('2 en curso');
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'Video · Mejor disponible · Procesando',
-      'Preparando…',
+      'Video · Mejor disponible · Preparando…',
       'En cola',
     ]);
     const cards = all('job-card');

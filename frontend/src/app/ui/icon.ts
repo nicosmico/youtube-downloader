@@ -11,6 +11,7 @@ import {
   FileSearch,
   Film,
   FolderOpen,
+  FolderSearch,
   Link,
   Monitor,
   Moon,
@@ -24,7 +25,6 @@ import {
   Trash2,
   TriangleAlert,
   X,
-  ExternalLink,
   Copy,
   type IconNode,
 } from 'lucide';
@@ -42,6 +42,7 @@ const ICONS = {
   detail: FileSearch,
   film: Film,
   folder: FolderOpen,
+  'folder-search': FolderSearch,
   link: Link,
   monitor: Monitor,
   moon: Moon,
@@ -55,7 +56,6 @@ const ICONS = {
   trash: Trash2,
   warning: TriangleAlert,
   close: X,
-  external: ExternalLink,
 } satisfies Record<string, IconNode>;
 
 export type IconName = keyof typeof ICONS;

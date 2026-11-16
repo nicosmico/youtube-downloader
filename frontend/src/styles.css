@@ -13,6 +13,7 @@
   --accent: #e62117;
   --accent-solid: #e62117;
   --on-accent: #ffffff;
+  --focus: #065fd4;
   color-scheme: light;
 }
 
@@ -24,6 +25,7 @@
   --fg: #f1f1f1;
   --muted: #aaaaaa;
   --accent: #ff4e45;
+  --focus: #3ea6ff;
   /* Filled buttons keep the light red: white text on #ff4e45 would not reach AA. */
   --accent-solid: #e62117;
   color-scheme: dark;
@@ -56,7 +58,7 @@
   }
   /* Visible keyboard focus everywhere, in both themes. */
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
   button {

@@ -186,7 +186,7 @@ export class Downloads {
         break;
       case 'downloading':
         if (this.isPreparing(job)) {
-          parts.push(texts.preparing);
+          parts.push(this.options(job), texts.preparing);
           break;
         }
         parts.push(this.options(job), `${this.percent(job)} %`);
