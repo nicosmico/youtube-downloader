@@ -1,6 +1,6 @@
 # Spec: v0.2.2 — una sola lista de descargas y limpieza del historial
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Problem Statement
 

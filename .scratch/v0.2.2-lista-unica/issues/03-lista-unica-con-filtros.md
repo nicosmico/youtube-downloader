@@ -14,7 +14,7 @@ Ver la spec, secciones "Una sola lista de descargas" y "Quitar una playlist y va
 
 **Blocked by:** None (can start immediately; the API contract is fixed in the spec).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Una sola lista; un job que termina no cambia de posición.
 - [x] Los filtros muestran los estados de la tabla de la spec, "En curso" con contador, y nunca quedan vacíos por paginación.
@@ -45,3 +45,5 @@ Ver la spec, secciones "Una sola lista de descargas" y "Quitar una playlist y va
 - Se eliminaron los textos `queueHeading`, `historyHeading`, `emptyActive`, `emptyHistory`.
 
 **Verificado**: `npm run test:ci` (319 tests, 10 archivos) y `npm run build` pasan. Prueba manual en el navegador contra un servidor falso (no contra el backend real, que hace el ticket 02): lista agrupada por día, diálogo del Batch y del historial, Esc, foco de vuelta, filtro de 320 px sin desbordar la página (los chips hacen scroll) y modo oscuro. El contraste usa los tokens existentes (sin colores nuevos) y el foco visible el `:focus-visible` global.
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.2` (Native/Release `43963527519`; en main, CI `43963250355` y Native `43963250353`). Revisión del orquestador contra el backend real: playlist de prueba, filtros, quitar playlist, vaciar historial (archivos intactos), arranque sin aviso rojo, claro, oscuro y 320 px. Corrección añadida en la integración: la confirmación de cancelar desaparece si la descarga termina mientras tanto.
