@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] El runner guarda las últimas líneas de salida de `yt-dlp` de cada `Attempt`, con un límite fijo.
 - [x] Un endpoint devuelve ese detalle para un job; los jobs sin detalle responden de forma clara.
@@ -21,3 +21,5 @@
 - `GET /api/jobs/{id}/output` → `{attempt, lines}`; `404 job_not_found` o `404 output_unavailable` ("No hay detalle guardado de esta descarga."). `requeue` borra la salida; quitar del historial la borra por cascada.
 - Frontend: "Ver detalle" / "Ocultar detalle" en jobs `failed`, ligado al `Attempt` (un fallo posterior no muestra la salida vieja).
 - Verificado con `FakeEngine` (nuevos `stdout_lines` y `stderr_lines`) y en la app real con un video borrado: `ERROR: [youtube] aaaaaaaaaaa: This video is unavailable`.
+
+**2026-11-15 — Resuelto.** Publicado en `v0.1.1` (Native/Release `43782090965`, CI `43782088015`).

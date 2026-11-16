@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Un job `downloading` sin `downloadedBytes` se muestra como "Preparando…".
 - [x] Con la primera actualización de progreso pasa a "Descargando" con sus datos.
@@ -17,3 +17,5 @@
 
 - `Downloads.isPreparing(job)`: `downloading` con `downloadedBytes === null` muestra "Preparando…" y oculta barra y cifras (la cancelación sigue disponible). El primer progreso lo pasa a "Descargando". El reintento ya limpia `downloaded_bytes` en el backend, así que vuelve a "Preparando…" sin cambios allí.
 - Verificado: tests de componente (estado, transición y reintento) y una descarga real en Docker, observada con un `MutationObserver`: `Preparando…` → `Descargando` (con barra) → `Completada`.
+
+**2026-11-15 — Resuelto.** Publicado en `v0.1.1` (Native/Release `43782090965`, CI `43782088015`).

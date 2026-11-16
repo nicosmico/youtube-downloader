@@ -21,3 +21,5 @@
 CI (run Native 43780483071, verde en macos-arm64 y windows-x64; CI 43780483079 verde): `packaging/smoke.py --reopen` arranca el `.app` con `open --env`, espera `runtime.json` y `/api/health`, comprueba que queda un único proceso (el servidor), vuelve a hacer `open`, espera "Reusing instance" en `app.log`, comprueba que `runtime.json` no cambia y que sigue un solo proceso, apaga por API y verifica que el proceso desaparece. El smoke del ejecutable interno sigue, ahora con `YTDL_SERVER_CHILD=1` para no desacoplarse.
 
 Sin marcar (a mano en un Mac real desde el zip del Release): doble clic con la app abierta sin aviso de Finder; el servidor sigue vivo tras cerrar la pestaña y respeta `Idle Shutdown` y "Cerrar aplicación" (la parte de `Idle Shutdown` no cambia respecto a v0.1.0, pero no se probó con el `.app` desacoplado).
+
+**2026-11-15 — Publicado en `v0.1.1`** (Native/Release `43782090965`). Pendiente la verificación a mano en un Mac real desde el zip del Release.

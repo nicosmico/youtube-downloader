@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Un endpoint de solo lectura devuelve las últimas N líneas del log (máximo 500), con o sin peticiones, sin bloquear al runner.
 - [x] La sección está plegada por defecto y solo pide datos al abrirse o al pulsar "Actualizar".
@@ -21,3 +21,5 @@
 - Frontend: `ErrorLogService` (buffer de 100 entradas en memoria), `AppErrorHandler` (errores JS no capturados; `provideBrowserGlobalErrorListeners` ya le reenvía `error` y `unhandledrejection`) e interceptor de peticiones HTTP fallidas (método, URL y estado, sin cuerpos). Componente `Logs` al final de la página, plegado; pide datos solo al abrir, con "Actualizar" y al cambiar "Mostrar peticiones". "Copiar" y "Descargar .txt" usan el mismo informe con cabecera (app, plataforma, Engine).
 - Sin consola (Windows): test que configura el logging con `sys.stderr = None` y comprueba que el endpoint lee lo escrito.
 - Verificado con tests y en la app real: el log omite `uvicorn.access`, un error JS provocado aparece en la sección y el texto copiado trae cabecera, servidor y frontend.
+
+**2026-11-15 — Resuelto.** Publicado en `v0.1.1` (Native/Release `43782090965`, CI `43782088015`).
