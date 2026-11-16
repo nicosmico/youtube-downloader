@@ -568,6 +568,17 @@ describe('Downloads cancel and retry', () => {
     expect(el('job-status')?.textContent).toContain('Cancelada');
   });
 
+  it('drops the cancel confirmation when the job finishes meanwhile', async () => {
+    await show({ status: 'downloading' });
+    await click('cancel-job');
+    expect(el('cancel-confirm-text')).not.toBeNull();
+
+    await show({ status: 'completed' }); // the same job0, finished by the Queue
+
+    expect(el('cancel-confirm-text')).toBeNull();
+    expect(el('job-status')?.textContent).toContain('Completada');
+  });
+
   it('keeps downloading when the confirmation is declined', async () => {
     await show({ status: 'processing' });
 

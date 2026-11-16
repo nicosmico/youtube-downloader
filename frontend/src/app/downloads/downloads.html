@@ -323,7 +323,7 @@
         <p class="m-0 line-clamp-2 text-xs text-accent" data-testid="job-error">{{ job.error }}</p>
       }
 
-      @if (confirming() === job.id) {
+      @if (confirming() === job.id && !canRemove(job)) {
         <div
           class="flex items-center gap-2 text-sm"
           role="group"
