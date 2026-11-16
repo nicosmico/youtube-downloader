@@ -155,6 +155,33 @@ class JobRepository:
             )
         return job
 
+    def delete_terminal_of_batch(self, batch_id: str) -> list[str]:
+        """Remove every finished job of a Batch from the History (files untouched), in one
+        atomic statement; the ids removed, in no particular order. The Batch goes when it has
+        no jobs left. Jobs still in progress, or requeued by a retry, stay."""
+        return self._delete_terminal("batch_id = ?", (batch_id,))
+
+    def delete_all_terminal(self) -> list[str]:
+        """Remove every finished job (files untouched), in one atomic statement. The Batches
+        left empty go too."""
+        return self._delete_terminal("1 = 1", ())
+
+    def _delete_terminal(self, where: str, params: tuple[Any, ...]) -> list[str]:
+        marks = ",".join("?" * len(TERMINAL_STATUSES))
+        rows = self._db.query(
+            f"DELETE FROM jobs WHERE {where} AND status IN ({marks}) RETURNING id, batch_id",
+            (*params, *(s.value for s in TERMINAL_STATUSES)),
+        )
+        # Only Batches that just lost a job are candidates: one still being created (its jobs
+        # not inserted yet) is never mistaken for an empty one.
+        for batch_id in {r["batch_id"] for r in rows if r["batch_id"]}:
+            self._db.execute(
+                "DELETE FROM batches WHERE id = ? "
+                "AND NOT EXISTS (SELECT 1 FROM jobs WHERE batch_id = ?)",
+                (batch_id, batch_id),
+            )
+        return [r["id"] for r in rows]
+
     def save_output(self, job_id: str, attempt: int, lines: list[str]) -> None:
         """Keep the yt-dlp output of the last failed Attempt (replaces the previous one)."""
         self._db.execute(

@@ -36,6 +36,10 @@ class NotRemovable(Exception):
     """Only terminal jobs (`completed`, `failed`, `canceled`, `interrupted`) leave the History."""
 
 
+class UnknownBatch(Exception):
+    """There is no Batch with that id."""
+
+
 def start_thread(fn: Callable[[], None]) -> None:
     threading.Thread(target=fn, name="download", daemon=True).start()
 
@@ -195,6 +199,28 @@ class JobQueue:
         if self._repo.delete_terminal(job_id) is None:
             raise NotRemovable(job_id)
         self._events.job_removed(job_id)
+
+    def remove_batch(self, batch_id: str) -> list[str]:
+        """Take every finished job of a Batch out of the History; returns the ids removed (maybe
+        none). Jobs in progress stay, and so does the Batch while it has any. Files stay."""
+        if self._repo.get_batch(batch_id) is None:
+            raise UnknownBatch(batch_id)
+        with self._lock:  # ordered against a retry's requeue
+            removed = self._repo.delete_terminal_of_batch(batch_id)
+        self._announce_removed(removed)
+        return removed
+
+    def clear_history(self) -> list[str]:
+        """Take every finished job out of the History; returns the ids removed (maybe none)."""
+        with self._lock:
+            removed = self._repo.delete_all_terminal()
+        self._announce_removed(removed)
+        return removed
+
+    def _announce_removed(self, ids: list[str]) -> None:
+        # No `queue.updated`: it counts only active and queued jobs, which removal never touches.
+        if ids:
+            self._events.jobs_removed(ids)
 
     def kick(self) -> None:
         """Start as many queued jobs as there are free slots (none while held or closed)."""

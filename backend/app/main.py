@@ -29,6 +29,7 @@ from app.jobs import (
     staging_root,
 )
 from app.jobs.api import build_jobs_router
+from app.jobs.history_api import build_history_router
 from app.jobs.queue import start_thread
 from app.opener import FileRevealer, FolderOpener, open_folder, reveal_file
 from app.paths import static_dir as default_static_dir
@@ -183,6 +184,7 @@ def create_app(
         )
     )
     app.include_router(build_jobs_router(queue=queue, repo=repo, reveal=reveal_in_host))
+    app.include_router(build_history_router(queue=queue))
     app.include_router(
         build_events_router(
             broadcaster,
