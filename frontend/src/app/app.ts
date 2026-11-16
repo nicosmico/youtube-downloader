@@ -2,7 +2,6 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { EngineService } from './core/engine.service';
 import { EventStreamService, eventData } from './core/event-stream.service';
 import { JobsService } from './core/jobs.service';
-import { PresetsService } from './core/presets.service';
 import { Health, SystemService } from './core/system.service';
 import { TEXTS } from './core/texts';
 import { Downloads } from './downloads/downloads';
@@ -22,7 +21,6 @@ export class App implements OnInit {
   protected readonly engineService = inject(EngineService);
   private readonly jobsService = inject(JobsService);
   private readonly stream = inject(EventStreamService);
-  private readonly presetsService = inject(PresetsService);
 
   protected readonly texts = TEXTS;
   protected readonly health = signal<Health | null>(null);
@@ -33,7 +31,6 @@ export class App implements OnInit {
     this.engineService.connect();
     this.jobsService.connect();
     this.stream.on('shutdown', (event) => this.serverClosed(eventData<{ reason: string }>(event)));
-    this.presetsService.load();
     this.system.health().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.unreachable.set(true),

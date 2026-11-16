@@ -8,7 +8,7 @@ Descargar videos o audio de YouTube con `yt-dlp` exige usar una terminal, conoce
 
 ## Solution
 
-Un ejecutable que levanta un servidor local, abre el navegador por defecto en una SPA y descarga mediante un `Engine` externo que la propia app instala y actualiza. Solo acepta URLs de YouTube. La UI, en español, expone solo las opciones de nivel 1: URL, `DownloadMode`, `Quality` o `AudioFormat`, y `Preset`. Todo se guarda en `~/Downloads`.
+Un ejecutable que levanta un servidor local, abre el navegador por defecto en una SPA y descarga mediante un `Engine` externo que la propia app instala y actualiza. Solo acepta URLs de YouTube. La UI, en español, expone solo las opciones de nivel 1: URL, `DownloadMode`, `Quality` o `AudioFormat`, y `Preset` (dos atajos fijos desde la v0.1.1). Todo se guarda en `~/Downloads`.
 
 ## User Stories
 
@@ -22,9 +22,9 @@ Un ejecutable que levanta un servidor local, abre el navegador por defecto en un
 8. Como usuario, quiero que el preview no descargue nada, para inspeccionar sin gastar datos ni disco.
 9. Como usuario, quiero elegir modo video con calidad `best`, `2160p`, `1080p`, `720p` o `480p`, para controlar el tamaño y la resolución.
 10. Como usuario, quiero elegir modo audio en `mp3`, `m4a` u `opus`, para obtener solo la pista de sonido.
-11. Como usuario, quiero guardar la combinación actual de modo y calidad como `Preset`, para reutilizarla después.
-12. Como usuario, quiero aplicar un `Preset` con un clic, para no repetir la configuración en cada descarga.
-13. Como usuario, quiero renombrar y eliminar `Preset`, para mantener mi lista ordenada.
+11. ~~Como usuario, quiero guardar la combinación actual de modo y calidad como `Preset`, para reutilizarla después.~~ *Descartada en la v0.1.1: los `Preset` pasan a dos atajos fijos del frontend, sin guardar ni gestionar.*
+12. ~~Como usuario, quiero aplicar un `Preset` con un clic, para no repetir la configuración en cada descarga.~~ *Descartada en la v0.1.1: los `Preset` pasan a dos atajos fijos del frontend, sin guardar ni gestionar.*
+13. ~~Como usuario, quiero renombrar y eliminar `Preset`, para mantener mi lista ordenada.~~ *Descartada en la v0.1.1: los `Preset` pasan a dos atajos fijos del frontend, sin guardar ni gestionar.*
 14. Como usuario, quiero que la app impida combinaciones inválidas, para no encolar un job que va a fallar.
 15. Como usuario, quiero que un video suelto genere un solo `DownloadJob`, para verlo y controlarlo individualmente.
 16. Como usuario, quiero que una playlist genere un `Batch` con un `DownloadJob` por `Entry`, para cancelar o reintentar uno sin afectar al resto.
@@ -159,18 +159,9 @@ CREATE TABLE jobs (
   started_at TEXT,
   finished_at TEXT
 );
-
-CREATE TABLE presets (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  mode TEXT NOT NULL,
-  quality TEXT,
-  audio_format TEXT,
-  created_at TEXT NOT NULL
-);
 ```
 
-- Se siembran los presets `Mejor video` y `MP3` en cada arranque si la tabla está vacía: si el usuario los borra todos, vuelven en el siguiente arranque.
+- La tabla `presets` y su siembra existieron hasta la v0.1.0; la migración 4 de la v0.1.1 la elimina. `Mejor video` y `MP3` son constantes del frontend.
 
 ### API REST
 
@@ -186,12 +177,6 @@ CREATE TABLE presets (
 | `POST` | `/api/jobs/{id}/reveal` | Muestra el archivo de un job `completed` en Finder/Explorer. `404 file_missing` si el archivo ya no está, `409 job_not_completed`, `501 open_unavailable` (Docker), `500 open_failed`. |
 | `DELETE` | `/api/jobs/{id}` | Quita un job terminal del `History`; no toca el archivo. `409 job_not_removable` si no es terminal. Al quitar el último job de un `Batch` se borra también el `Batch`. |
 | `GET` | `/api/events` | Stream SSE. |
-| `GET` | `/api/presets` | Lista de `Preset` ordenada por nombre. |
-| `POST` | `/api/presets` | Crea `Preset`. |
-| `PATCH` | `/api/presets/{id}` | Edita `Preset`. |
-| `DELETE` | `/api/presets/{id}` | Elimina `Preset`. |
-
-Presets: nombre de 1 a 40 caracteres, único sin distinguir mayúsculas (`409 preset_name_taken`); `422 invalid_name` o `invalid_options`; `404 preset_not_found`. `POST` responde `201` y `DELETE` `204`. Un `PATCH` con opciones reemplaza y valida el grupo completo (`mode`, `quality`, `audioFormat`).
 | `GET` | `/api/system/engine` | Estado, mensaje y versiones del Engine. |
 | `POST` | `/api/system/engine/install` | Reintenta una instalación fallida; solo descarga los binarios que faltan. `202`, o `409` si ya hay una operación en curso. |
 | `POST` | `/api/system/engine/update` | Fuerza actualización de `yt-dlp`. `202`, también con descargas activas: el Engine queda con `updatePending` y se aplica al terminar. `409` si ya hay una pendiente o en curso (`engine_busy`), si no está listo (`engine_not_ready`) o con `ENGINE_BIN_DIR` (`engine_external`). |
@@ -292,7 +277,7 @@ Un buen test verifica **comportamiento externo**, no detalles de implementación
 Seams acordados:
 
 1. **Backend — API HTTP.** FastAPI con `TestClient`, directorio de datos temporal, SQLite temporal y un `FakeEngine` que reemplaza a `yt-dlp` en el borde de subprocess. Cubre preview, alta de jobs, cola, concurrencia, persistencia, cancelación, reintento, reconciliación de interrumpidos, staging y movimiento final, SSE, `Idle Shutdown` y validaciones de seguridad.
-2. **Frontend — servicios y componentes Angular.** HTTP y SSE mockeados. Cubre renderizado de preview, selección de playlist, opciones, progreso, presets, `History` y rehidratación al reconectar.
+2. **Frontend — servicios y componentes Angular.** HTTP y SSE mockeados. Cubre renderizado de preview, selección de playlist, opciones, progreso, atajos de `Preset`, `History` y rehidratación al reconectar.
 
 El `FakeEngine` debe poder: devolver JSON de preview de video, playlist, directo y entradas no disponibles; emitir líneas `PROGRESS` predecibles por stdout, incluidas dos descargas seguidas (video y audio); simular post-procesado con líneas `POSTPROC` por stderr; escribir el archivo final en staging e imprimir su ruta; fallar con un mensaje; y quedarse colgado para probar cancelación.
 

@@ -72,12 +72,20 @@
                 </p>
               }
             }
-            <app-presets
-              [mode]="mode()"
-              [quality]="quality()"
-              [audioFormat]="audioFormat()"
-              (applied)="applyPreset(media, $event)"
-            />
+            <div class="presets" role="group" aria-labelledby="presets-heading">
+              <span id="presets-heading" class="label">{{ texts.preview.presets }}</span>
+              @for (preset of presets; track preset.id) {
+                <button
+                  type="button"
+                  class="chip"
+                  data-testid="preset-apply"
+                  [attr.data-preset-id]="preset.id"
+                  (click)="applyPreset(media, preset)"
+                >
+                  {{ preset.name }}
+                </button>
+              }
+            </div>
             <fieldset class="field modes" data-testid="mode-switch">
               <legend class="label">{{ texts.preview.mode }}</legend>
               <label>

@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para descargar videos y audio de YouTube público, con interfaz web local y motor `yt-dlp` autogestionado.
 
-> **Estado:** MVP en construcción. Funcionan el Engine autogestionado, el preview, las descargas de video y audio, la cola persistente, los presets y las playlists; faltan cancelar y reintentar, el historial y los paquetes finales de macOS y Windows.
+> **Estado:** MVP en construcción. Funcionan el Engine autogestionado, el preview, las descargas de video y audio, la cola persistente, los atajos de calidad y las playlists; faltan cancelar y reintentar, el historial y los paquetes finales de macOS y Windows.
 
 ## Qué hace (MVP)
 
@@ -11,7 +11,7 @@ Aplicación de escritorio para descargar videos y audio de YouTube público, con
 - Extrae solo audio en `mp3`, `m4a` u `opus`.
 - Playlists y canales (hasta 500 entradas) con entradas seleccionables; una subcarpeta numerada por playlist.
 - Cola persistente con máximo dos descargas simultáneas y progreso en vivo.
-- Presets, historial, cancelar y reintentar.
+- Dos atajos de un clic ("Mejor video" y "MP3"), historial, cancelar y reintentar.
 - `yt-dlp`, `ffmpeg`, `ffprobe` y Deno se descargan, verifican y actualizan solos: no requiere Python, Node ni `ffmpeg` instalados.
 - macOS (Apple Silicon, 13+) y Windows 10/11 x64.
 

@@ -2,7 +2,6 @@
 // own suite under Vitest ("No test suite found").
 import { EngineInfo } from '../app/core/engine.service';
 import { Job } from '../app/core/jobs.service';
-import { Preset } from '../app/core/presets.service';
 import { PlaylistPreview, VideoPreview } from '../app/core/preview.service';
 
 export const ENGINE_READY: EngineInfo = {
@@ -51,33 +50,6 @@ export const JOB: Job = {
   createdAt: '2026-11-15T12:00:00.000000+00:00',
   startedAt: null,
   finishedAt: null,
-};
-
-export const PRESET_BEST: Preset = {
-  id: 'p1',
-  name: 'Mejor video',
-  mode: 'video',
-  quality: 'best',
-  audioFormat: null,
-  createdAt: '2026-11-15T12:00:00.000000+00:00',
-};
-
-export const PRESET_MP3: Preset = {
-  id: 'p2',
-  name: 'MP3',
-  mode: 'audio',
-  quality: null,
-  audioFormat: 'mp3',
-  createdAt: '2026-11-15T12:00:01.000000+00:00',
-};
-
-export const PRESET_480: Preset = {
-  id: 'p3',
-  name: 'Ligero',
-  mode: 'video',
-  quality: '480p',
-  audioFormat: null,
-  createdAt: '2026-11-15T12:00:02.000000+00:00',
 };
 
 export const PLAYLIST: PlaylistPreview = {

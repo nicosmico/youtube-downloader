@@ -65,8 +65,8 @@ Contenedor objetivo de un `DownloadJob` en modo audio: `mp3`, `m4a`, `opus`.
 _Evitar_: códec, extensión
 
 **Preset**:
-Combinación nombrada y reutilizable de `DownloadMode` y `Quality` o `AudioFormat`.
-_Evitar_: perfil, configuración guardada
+Atajo fijo de un clic que rellena `DownloadMode` y `Quality` o `AudioFormat`. Hay solo dos, "Mejor video" (video, `best`) y "MP3" (audio, `mp3`); no los define ni los guarda el usuario.
+_Evitar_: perfil, configuración guardada, preset personalizado
 
 ## Motor y aplicación
 

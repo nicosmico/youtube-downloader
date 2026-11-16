@@ -1,4 +1,4 @@
-"""Download options shared by jobs and presets: which mode takes which field."""
+"""Download options of a download job: which mode takes which field."""
 
 from __future__ import annotations
 

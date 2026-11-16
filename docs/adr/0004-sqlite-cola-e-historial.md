@@ -2,9 +2,9 @@
 status: accepted
 ---
 
-# SQLite es la fuente de verdad de la cola, el historial y los presets
+# SQLite es la fuente de verdad de la cola y el historial
 
-Un estado en memoria perdía los jobs al cerrar la app y no daba historial. Decidimos persistir batches, jobs y presets en SQLite dentro del directorio de datos (`~/.youtube-downloader/db.sqlite3`), en modo WAL.
+Un estado en memoria perdía los jobs al cerrar la app y no daba historial. Decidimos persistir batches y jobs en SQLite dentro del directorio de datos (`~/.youtube-downloader/db.sqlite3`), en modo WAL.
 
 ## Consequences
 

@@ -21,9 +21,8 @@ import {
   PreviewService,
   Quality,
 } from '../core/preview.service';
-import { Preset } from '../core/presets.service';
 import { TEXTS } from '../core/texts';
-import { Presets } from '../presets/presets';
+import { PRESETS, Preset } from './presets';
 
 export const DEBOUNCE_MS = 500;
 export const QUALITIES: readonly Quality[] = ['best', '2160p', '1080p', '720p', '480p'];
@@ -70,7 +69,6 @@ export function formatDuration(seconds: number): string {
 /** URL field with automatic preview: debounced typing, immediate on paste, stale requests cancelled. */
 @Component({
   selector: 'app-url-preview',
-  imports: [Presets],
   templateUrl: './url-preview.html',
   styleUrl: './url-preview.css',
 })
@@ -220,6 +218,8 @@ export class UrlPreview {
   }
 
   /** One click: mode plus its quality or format. A quality this video lacks falls back to best. */
+  protected readonly presets = PRESETS;
+
   protected applyPreset(media: MediaPreview, preset: Preset): void {
     this.mode.set(preset.mode);
     if (preset.mode === 'audio') {

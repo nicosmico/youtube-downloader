@@ -7,17 +7,9 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeEventSource } from '../../testing/fake-event-source';
 import { appHeaderInterceptor } from '../core/api.interceptor';
-import {
-  ENGINE_READY,
-  MEDIA,
-  PLAYLIST,
-  PRESET_480,
-  PRESET_BEST,
-  PRESET_MP3,
-} from '../../testing/fixtures';
+import { ENGINE_READY, MEDIA, PLAYLIST } from '../../testing/fixtures';
 import { EVENT_SOURCE_FACTORY, EngineInfo, EngineService } from '../core/engine.service';
 import { JobsService } from '../core/jobs.service';
-import { PresetsService } from '../core/presets.service';
 import { DEBOUNCE_MS, UrlPreview, formatDuration, looksLikeUrl } from './url-preview';
 
 const URL_A = 'https://www.youtube.com/watch?v=Jt5fgKBqZSY';
@@ -566,31 +558,33 @@ describe('UrlPreview', () => {
     };
 
     beforeEach(async () => {
-      TestBed.inject(PresetsService).presets.set([PRESET_480, PRESET_BEST, PRESET_MP3]);
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), MEDIA);
     });
 
-    it('applies a video preset in one click: mode and quality', async () => {
-      await apply('p3');
+    it('offers only the two fixed shortcuts', () => {
+      const chips = Array.from(root().querySelectorAll('[data-testid=preset-apply]'));
 
-      expect(fixture.componentInstance.mode()).toBe('video');
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+      expect(chips.map((c) => c.textContent?.trim())).toEqual(['Mejor video', 'MP3']);
+      expect(root().textContent).not.toContain('Guardar como preset');
+      expect(root().textContent).not.toContain('Gestionar');
     });
 
-    it('applies an audio preset in one click: mode and format', async () => {
-      await apply('p2');
+    it('applies "MP3" in one click: mode and format', async () => {
+      await apply('mp3');
 
       expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
       expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('mp3');
     });
 
-    it('switches back from audio to video with a video preset', async () => {
-      await apply('p2');
-      await apply('p3');
+    it('applies "Mejor video" in one click, also coming back from audio', async () => {
+      el<HTMLSelectElement>('quality-select')!.value = '720p';
+      el<HTMLSelectElement>('quality-select')!.dispatchEvent(new Event('change'));
+      await apply('mp3');
+      await apply('best-video');
 
       expect(el<HTMLInputElement>('mode-video')!.checked).toBe(true);
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('best');
     });
 
     it('falls back to "best" when the video cannot offer the preset quality', async () => {
@@ -598,22 +592,21 @@ describe('UrlPreview', () => {
       await answer(http.expectOne('/api/preview'), {
         ...MEDIA,
         url: URL_B,
-        availableQualities: ['best'],
-        maxQuality: 'best',
+        availableQualities: ['720p'],
+        maxQuality: '720p',
       });
 
-      await apply('p3');
+      await apply('best-video');
 
       expect(fixture.componentInstance.quality()).toBe('best');
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('best');
     });
 
     it('downloads with what the preset set', async () => {
-      await apply('p3');
+      await apply('mp3');
       el<HTMLButtonElement>('download-button')!.click();
 
       const req = http.expectOne('/api/jobs');
-      expect(req.request.body).toMatchObject({ mode: 'video', quality: '480p' });
+      expect(req.request.body).toMatchObject({ mode: 'audio', audioFormat: 'mp3' });
       req.flush({ batchId: null, jobs: [] });
     });
   });
@@ -754,15 +747,13 @@ describe('UrlPreview', () => {
 
     it('applies presets', async () => {
       await show();
-      TestBed.inject(PresetsService).presets.set([PRESET_BEST, PRESET_MP3, PRESET_480]);
-      await settle();
 
-      Array.from(root().querySelectorAll<HTMLButtonElement>('[data-testid=preset-apply]'))
-        .find((b) => b.textContent?.includes('Ligero'))!
+      root()
+        .querySelector<HTMLButtonElement>('[data-testid=preset-apply][data-preset-id=mp3]')!
         .click();
       await settle();
 
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
     });
 
     it('enqueues only the selected entries with the playlist title and the chosen options', async () => {

@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] La UI muestra solo los dos atajos y aplicarlos sigue respetando el fallback a `best` del ticket 07 del MVP.
-- [ ] No quedan "Guardar como preset" ni "Gestionar".
-- [ ] `/api/presets` responde 404; una base de datos de la v0.1.0 migra y queda sin la tabla `presets`.
-- [ ] Se eliminan el código y los tests de presets que ya no aplican.
-- [ ] Glosario (`Preset` como atajo fijo), spec del MVP (historias 11 a 13 descartadas, API y esquema) y README actualizados.
+- [x] La UI muestra solo los dos atajos y aplicarlos sigue respetando el fallback a `best` del ticket 07 del MVP.
+- [x] No quedan "Guardar como preset" ni "Gestionar".
+- [x] `/api/presets` responde 404; una base de datos de la v0.1.0 migra y queda sin la tabla `presets`.
+- [x] Se eliminan el código y los tests de presets que ya no aplican.
+- [x] Glosario (`Preset` como atajo fijo), spec del MVP (historias 11 a 13 descartadas, API y esquema) y README actualizados.

@@ -5,9 +5,7 @@ import { App } from './app';
 import { FakeEventSource } from '../testing/fake-event-source';
 import { appHeaderInterceptor } from './core/api.interceptor';
 import { EVENT_SOURCE_FACTORY, EngineInfo } from './core/engine.service';
-import { PresetsService } from './core/presets.service';
 import { SystemService } from './core/system.service';
-import { PRESET_BEST, PRESET_MP3 } from '../testing/fixtures';
 import { flushRehydration } from '../testing/rehydration';
 
 const HEALTH = {
@@ -55,21 +53,9 @@ describe('App', () => {
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    // Presets load on startup.
-    http.expectOne('/api/presets').flush([PRESET_BEST, PRESET_MP3]);
   });
 
   afterEach(() => http.verify());
-
-  it('loads the presets on startup', () => {
-    http.expectOne('/api/health').flush(HEALTH);
-
-    expect(
-      TestBed.inject(PresetsService)
-        .presets()
-        .map((p) => p.name),
-    ).toEqual(['Mejor video', 'MP3']);
-  });
 
   it('shows the title, the port and "No instalado" before the Engine reports anything', async () => {
     http.expectOne('/api/health').flush(HEALTH);

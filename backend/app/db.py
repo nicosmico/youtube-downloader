@@ -71,6 +71,12 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         UPDATE jobs SET queued_at = created_at;
         """,
     ),
+    (
+        4,
+        """
+        DROP TABLE presets;
+        """,
+    ),
 )
 
 

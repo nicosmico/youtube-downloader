@@ -29,6 +29,11 @@ def test_unknown_api_route_uses_the_error_shape(client: TestClient) -> None:
     assert "message" in response.json()
 
 
+def test_the_presets_api_is_gone(client: TestClient) -> None:
+    assert client.get("/api/presets").status_code == 404
+    assert client.get("/api/presets/abc").status_code == 404
+
+
 def test_wrong_method_uses_the_error_shape(client: TestClient) -> None:
     response = client.put("/api/health", headers=APP_HEADERS)
 
