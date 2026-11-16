@@ -238,6 +238,64 @@ describe('App', () => {
     expect(popover()?.textContent).toContain('No se pudo contactar con el servidor local.');
   });
 
+  const UPDATE = {
+    version: '0.2.2',
+    url: 'https://github.com/nicosmico/youtube-downloader/releases/tag/v0.2.2',
+  };
+  const updateChip = () => el('[data-testid=update-chip]') as HTMLAnchorElement | null;
+
+  it('shows no update chip when /api/health reports no update', async () => {
+    http.expectOne('/api/health').flush({ ...HEALTH, update: null });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(updateChip()).toBeNull();
+  });
+
+  it('shows a link chip with the new version next to the Engine chip', async () => {
+    http.expectOne('/api/health').flush({ ...HEALTH, update: UPDATE });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const chip = updateChip()!;
+    expect(chip.textContent).toContain('v0.2.2');
+    expect(chip.getAttribute('href')).toBe(UPDATE.url);
+    expect(chip.getAttribute('target')).toBe('_blank');
+    expect(chip.getAttribute('rel')).toBe('noopener');
+    expect(chip.getAttribute('aria-label')).toBe('Hay una versión nueva: 0.2.2');
+    expect(chip.getAttribute('title')).toBe('Hay una versión nueva: 0.2.2');
+    expect(chip.querySelector('svg')).not.toBeNull();
+    expect(chip.querySelector('span')?.className).toContain('max-sm:sr-only');
+    expect(chip.previousElementSibling).toBe(el('app-engine-chip'));
+  });
+
+  it('shows the chip when the app.update event arrives, without reloading', async () => {
+    http.expectOne('/api/health').flush({ ...HEALTH, update: null });
+    await fixture.whenStable();
+    expect(updateChip()).toBeNull();
+
+    stream().emit('app.update', UPDATE);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(updateChip()?.getAttribute('href')).toBe(UPDATE.url);
+    expect(updateChip()?.textContent).toContain('v0.2.2');
+  });
+
+  it('shows the installed version as a quiet line after Cerrar aplicación, not as a menu item', async () => {
+    http.expectOne('/api/health').flush({ ...HEALTH, version: '0.2.1' });
+    await fixture.whenStable();
+    await openGear();
+
+    const menu = el('[role=menu]')!;
+    const line = el('[data-testid=app-version-line]')!;
+    expect(line.textContent?.trim()).toBe('Versión 0.2.1');
+    expect(line.getAttribute('role')).toBeNull();
+    expect(menu.lastElementChild).toBe(line);
+    expect(menu.querySelectorAll('[role^=menuitem]')).not.toContain(line);
+    expect(line.previousElementSibling).toBe(el('[data-testid=shutdown]'));
+  });
+
   it('opens the gear menu with theme, Registros and Cerrar aplicación; Esc closes it', async () => {
     http.expectOne('/api/health').flush(HEALTH);
     await fixture.whenStable();

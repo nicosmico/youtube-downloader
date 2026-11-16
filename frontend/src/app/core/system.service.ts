@@ -10,6 +10,13 @@ export interface Health {
   port: number;
   /** `process.platform`-like: `darwin`, `win32` or `linux`. */
   platform?: string;
+  /** A newer published version, if the startup check found one. */
+  update?: AppUpdate | null;
+}
+
+export interface AppUpdate {
+  version: string;
+  url: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -20,12 +27,15 @@ export class SystemService {
   readonly platform = signal<string | null>(null);
   /** App version (from `/api/health`); null until known. */
   readonly version = signal<string | null>(null);
+  /** Newer published version (from `/api/health` and the `app.update` event); null if none. */
+  readonly update = signal<AppUpdate | null>(null);
 
   health(): Observable<Health> {
     return this.http.get<Health>('/api/health').pipe(
       tap((health) => {
         this.platform.set(health.platform ?? null);
         this.version.set(health.version);
+        this.update.set(health.update ?? null);
       }),
     );
   }

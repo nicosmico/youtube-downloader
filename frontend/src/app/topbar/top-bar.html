@@ -15,6 +15,21 @@
     <div class="flex items-center gap-1.5">
       <app-engine-chip [health]="health()" [unreachable]="unreachable()" />
 
+      @if (update(); as u) {
+        <a
+          data-testid="update-chip"
+          class="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 text-sm font-medium hover:bg-surface-2 max-sm:px-2.5"
+          target="_blank"
+          rel="noopener"
+          [href]="u.url"
+          [attr.aria-label]="newVersion + ' ' + u.version"
+          [title]="newVersion + ' ' + u.version"
+        >
+          <app-icon name="arrow-up" class="size-4" />
+          <span class="max-sm:sr-only">v{{ u.version }}</span>
+        </a>
+      }
+
       <button
         type="button"
         data-testid="theme-toggle"
@@ -88,6 +103,11 @@
               <app-icon name="power" class="size-4" />
               {{ closing() ? texts.shutdown.closing : texts.shutdown.button }}
             </button>
+            @if (health(); as h) {
+              <p class="m-0 px-4 pt-2 text-xs text-muted" data-testid="app-version-line">
+                {{ texts.menu.version }} {{ h.version }}
+              </p>
+            }
           </div>
         }
       </div>

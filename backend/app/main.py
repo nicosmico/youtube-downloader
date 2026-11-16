@@ -15,7 +15,7 @@ from app import __version__
 from app.api import build_router
 from app.db import Database
 from app.engine import EngineInfo, EngineManager, EngineStatus, run_periodic
-from app.engine.io import Runner, Streamer, run_process, stream_process
+from app.engine.io import Fetcher, Runner, Streamer, run_process, stream_process
 from app.errors import install_error_handlers
 from app.events import Event, EventBroadcaster, build_events_router
 from app.idle import IdleMonitor
@@ -36,6 +36,8 @@ from app.preview import PreviewService
 from app.runtime import remove_runtime
 from app.security import LocalSecurityMiddleware
 from app.spa import mount_spa
+from app.updates import UpdateNotice
+from app.updates import start_thread as start_update_check
 
 
 def create_app(
@@ -58,8 +60,15 @@ def create_app(
     heartbeat_seconds: float = 15.0,
     idle_shutdown_seconds: float = 0.0,
     idle_clock: Callable[[], float] = time.monotonic,
+    update_check: bool = False,
+    update_fetcher: Fetcher | None = None,
+    app_version: str = __version__,
+    spawn_update_check: Callable[[Callable[[], None]], None] = start_update_check,
 ) -> FastAPI:
-    """`idle_shutdown_seconds` > 0 turns Idle Shutdown on (the Launcher passes the setting)."""
+    """`idle_shutdown_seconds` > 0 turns Idle Shutdown on (the Launcher passes the setting).
+
+    `update_check` runs the one-shot check for a newer app version at startup (off by default so
+    tests never touch the network; the Launcher passes the `UPDATE_CHECK` setting)."""
     engine = engine or EngineManager(data_dir=data_dir, bin_dir_override=engine_bin_dir)
     broadcaster = broadcaster or EventBroadcaster()
     download_dir = download_dir or Path.home() / "Downloads"
@@ -119,12 +128,20 @@ def create_app(
         )
         broadcaster.add_activity_listener(idle.touch)
 
+    notice = UpdateNotice(
+        fetcher=update_fetcher,
+        publish=broadcaster.publish,
+        current_version=app_version,
+    )
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         broadcaster.bind_loop(asyncio.get_running_loop())
         engine.start()  # installs in the background if binaries are missing
         clean_orphans(staging)  # nothing runs yet: every staging folder is a leftover
         queue.start()  # active jobs of the last run become `interrupted`; queued ones resume
+        if update_check:
+            spawn_update_check(notice.check)  # background and once: never delays the startup
         scheduler = asyncio.create_task(run_periodic(engine))
         watcher = asyncio.create_task(idle.run()) if idle else None
         try:
@@ -159,6 +176,7 @@ def create_app(
             port=port,
             request_shutdown=shutdown_by_user,
             engine=engine,
+            update=lambda: notice.update,
             previews=PreviewService(engine, ytdlp_runner),
             download_dir=download_dir,
             open_folder=open_folder_in_host,

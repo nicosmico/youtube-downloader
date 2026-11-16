@@ -1,5 +1,5 @@
 import { Component, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
-import { Health } from '../core/system.service';
+import { AppUpdate, Health } from '../core/system.service';
 import { TEXTS } from '../core/texts';
 import { ThemePreference, ThemeService } from '../core/theme.service';
 import { Dismissable } from '../ui/dismissable';
@@ -16,12 +16,14 @@ import { EngineChip } from './engine-chip';
 export class TopBar {
   protected readonly theme = inject(ThemeService);
   readonly health = input<Health | null>(null);
+  readonly update = input<AppUpdate | null>(null);
   readonly unreachable = input(false);
   readonly closing = input(false);
   readonly logsRequested = output<void>();
   readonly shutdownRequested = output<void>();
 
   protected readonly texts = TEXTS;
+  protected readonly newVersion = TEXTS.menu.newVersion;
   protected readonly menuOpen = signal(false);
   private readonly gear = viewChild<ElementRef<HTMLButtonElement>>('gear');
   protected readonly themes: { value: ThemePreference; label: string }[] = [
