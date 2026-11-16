@@ -125,7 +125,15 @@ export class Downloads {
     return parts.join(' · ');
   }
 
+  /** yt-dlp is still resolving the video: no byte received yet, so there is no real progress. */
+  protected isPreparing(job: Job): boolean {
+    return job.status === 'downloading' && job.downloadedBytes === null;
+  }
+
   protected statusLabel(job: Job): string {
+    if (this.isPreparing(job)) {
+      return TEXTS.downloads.preparing;
+    }
     return TEXTS.downloads.status[job.status] ?? TEXTS.downloads.unknownStatus;
   }
 
@@ -146,8 +154,14 @@ export class Downloads {
     return quality ? `${texts.modeVideo} · ${quality}` : texts.modeVideo;
   }
 
+  /** Running jobs (they can be cancelled). */
   protected showsProgress(job: Job): boolean {
     return job.status === 'downloading' || job.status === 'processing';
+  }
+
+  /** The bar and numbers appear once there is real progress. */
+  protected showsBar(job: Job): boolean {
+    return this.showsProgress(job) && !this.isPreparing(job);
   }
 
   protected percent(job: Job): number {

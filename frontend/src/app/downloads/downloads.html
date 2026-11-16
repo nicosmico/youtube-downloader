@@ -74,7 +74,7 @@
       }
       <p class="meta" data-testid="job-options">{{ options(job) }}</p>
 
-      @if (showsProgress(job)) {
+      @if (showsBar(job)) {
         <progress
           max="100"
           data-testid="job-progress"

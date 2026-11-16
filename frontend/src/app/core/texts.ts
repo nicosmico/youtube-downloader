@@ -125,6 +125,7 @@ export const TEXTS = {
       canceled: 'Cancelada',
       interrupted: 'Interrumpida',
     } as Record<string, string>,
+    preparing: 'Preparando…',
     unknownStatus: 'Desconocido',
     modeVideo: 'Video',
     modeAudio: 'Audio',

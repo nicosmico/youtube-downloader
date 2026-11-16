@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] Un job `downloading` sin `downloadedBytes` se muestra como "Preparando…".
-- [ ] Con la primera actualización de progreso pasa a "Descargando" con sus datos.
-- [ ] Un reintento vuelve a mostrar "Preparando…" hasta su primer progreso.
-- [ ] Tests de componente para ambos estados y la transición.
+- [x] Un job `downloading` sin `downloadedBytes` se muestra como "Preparando…".
+- [x] Con la primera actualización de progreso pasa a "Descargando" con sus datos.
+- [x] Un reintento vuelve a mostrar "Preparando…" hasta su primer progreso.
+- [x] Tests de componente para ambos estados y la transición.

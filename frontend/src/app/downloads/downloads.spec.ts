@@ -96,6 +96,41 @@ describe('Downloads', () => {
     expect(el('job-eta')?.textContent).toContain('Quedan 1:15');
   });
 
+  it('shows "Preparando…" without a bar while no byte has arrived', async () => {
+    await show({ status: 'downloading', progressPercent: 0, downloadedBytes: null });
+
+    expect(el('job-status')?.textContent).toContain('Preparando…');
+    expect(el('job-status')?.textContent).not.toContain('Descargando');
+    expect(el('job-progress')).toBeNull();
+    expect(el('job-percent')).toBeNull();
+    expect(el('cancel-job')).not.toBeNull();
+  });
+
+  it('switches to "Descargando" with the first progress update, and back on retry', async () => {
+    jobs.connect();
+    const stream = FakeEventSource.instances[0];
+    stream.emit('job.updated', { ...JOB, status: 'downloading' });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('Preparando…');
+
+    stream.emit('job.updated', {
+      ...JOB,
+      status: 'downloading',
+      progressPercent: 3,
+      downloadedBytes: 4096,
+    });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('Descargando');
+    expect((el('job-progress') as HTMLProgressElement).value).toBe(3);
+
+    // retry: the backend clears the progress of the previous Attempt
+    stream.emit('job.updated', { ...JOB, status: 'queued', attempt: 2 });
+    stream.emit('job.updated', { ...JOB, status: 'downloading', attempt: 2 });
+    await settle();
+    expect(el('job-status')?.textContent).toContain('Preparando…');
+    expect(el('job-progress')).toBeNull();
+  });
+
   it('copes with unknown totals, speed and ETA', async () => {
     await show({ status: 'downloading', downloadedBytes: 2048, totalBytes: null });
 
@@ -201,12 +236,14 @@ describe('Downloads', () => {
       id: 'a',
       createdAt: '2026-11-15T12:00:01.000000+00:00',
       status: 'downloading',
+      downloadedBytes: 1024,
     });
     stream.emit('job.updated', {
       ...JOB,
       id: 'b',
       createdAt: '2026-11-15T12:00:02.000000+00:00',
       status: 'downloading',
+      downloadedBytes: 1024,
     });
     stream.emit('queue.updated', { active: 2, queued: 1 });
     await settle();
@@ -235,7 +272,12 @@ describe('Downloads', () => {
     await settle();
     expect(all('job-title').map((t) => t.textContent?.trim())).toEqual(['Otro', 'Me at the zoo']);
 
-    stream.emit('job.updated', { ...JOB, status: 'downloading', progressPercent: 10 });
+    stream.emit('job.updated', {
+      ...JOB,
+      status: 'downloading',
+      progressPercent: 10,
+      downloadedBytes: 1024,
+    });
     await settle();
 
     expect(all('job-card')).toHaveLength(2);
