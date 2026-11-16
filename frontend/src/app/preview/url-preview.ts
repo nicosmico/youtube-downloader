@@ -1,4 +1,13 @@
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   Observable,
@@ -22,6 +31,9 @@ import {
   Quality,
 } from '../core/preview.service';
 import { TEXTS } from '../core/texts';
+import { Dismissable } from '../ui/dismissable';
+import { Icon } from '../ui/icon';
+import { MenuKeys } from '../ui/menu-keys';
 import { PRESETS, Preset } from './presets';
 
 export const DEBOUNCE_MS = 500;
@@ -69,13 +81,16 @@ export function formatDuration(seconds: number): string {
 /** URL field with automatic preview: debounced typing, immediate on paste, stale requests cancelled. */
 @Component({
   selector: 'app-url-preview',
+  imports: [Icon, Dismissable, MenuKeys],
   templateUrl: './url-preview.html',
-  styleUrl: './url-preview.css',
 })
 export class UrlPreview {
   private readonly previews = inject(PreviewService);
   private readonly jobs = inject(JobsService);
-  protected readonly engineReady = inject(EngineService).engineReady;
+  protected readonly engineService = inject(EngineService);
+  protected readonly engineReady = this.engineService.engineReady;
+  protected readonly engine = this.engineService.engine;
+  private readonly field = viewChild<ElementRef<HTMLInputElement>>('field');
   private readonly requests = new Subject<Request>();
 
   protected readonly texts = TEXTS;
@@ -99,6 +114,24 @@ export class UrlPreview {
   protected readonly enqueuing = signal(false);
   protected readonly enqueued = signal(false);
   protected readonly enqueueError = signal<string | null>(null);
+  protected readonly formatMenuOpen = signal(false);
+  /** "Mejor video" and "MP3" are chips of their own; anything else lives under "Otro formato". */
+  protected readonly bestActive = computed(
+    () => this.mode() === 'video' && this.quality() === 'best',
+  );
+  protected readonly mp3Active = computed(
+    () => this.mode() === 'audio' && this.audioFormat() === 'mp3',
+  );
+  protected readonly otherActive = computed(() => !this.bestActive() && !this.mp3Active());
+  /** "Otro formato", or what was picked from it (`1080p`, `M4A`). */
+  protected readonly otherLabel = computed(() => {
+    if (!this.otherActive()) {
+      return TEXTS.preview.format.other;
+    }
+    return this.mode() === 'audio'
+      ? TEXTS.preview.format.audioFormats[this.audioFormat()]
+      : this.quality();
+  });
 
   constructor() {
     this.requests
@@ -142,27 +175,65 @@ export class UrlPreview {
   }
 
   protected showFullPlaylist(playlistUrl: string): void {
-    this.url.set(playlistUrl);
-    this.schedule(playlistUrl, true);
+    this.setUrl(playlistUrl);
   }
 
   protected audioFormatLabel(format: AudioFormat): string {
-    return TEXTS.preview.audioFormats[format];
-  }
-
-  protected selectMode(mode: Mode): void {
-    this.mode.set(mode);
-  }
-
-  protected selectAudioFormat(value: string): void {
-    this.audioFormat.set(value as AudioFormat);
+    return TEXTS.preview.format.audioFormats[format];
   }
 
   protected qualityLabel(quality: Quality): string {
     if (quality === 'best') {
-      return TEXTS.preview.qualityBest;
+      return TEXTS.preview.format.best;
     }
-    return quality === '2160p' ? `${quality} (${TEXTS.preview.quality2160Hint})` : quality;
+    return quality === '2160p' ? `${quality} (${TEXTS.preview.format.vlcHint})` : quality;
+  }
+
+  /** A choice from the "Otro formato" menu. */
+  protected pickVideo(quality: Quality, trigger: HTMLElement): void {
+    this.mode.set('video');
+    this.quality.set(quality);
+    this.closeFormatMenu('pick', trigger);
+  }
+
+  protected pickAudio(format: AudioFormat, trigger: HTMLElement): void {
+    this.mode.set('audio');
+    this.audioFormat.set(format);
+    this.closeFormatMenu('pick', trigger);
+  }
+
+  protected closeFormatMenu(reason: 'escape' | 'outside' | 'pick', trigger: HTMLElement): void {
+    if (!this.formatMenuOpen()) {
+      return;
+    }
+    this.formatMenuOpen.set(false);
+    if (reason !== 'outside') {
+      trigger.focus();
+    }
+  }
+
+  /** Reads the clipboard; when the browser does not allow it, leaves the field focused to paste. */
+  protected async paste(): Promise<void> {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) {
+        this.setUrl(text);
+        return;
+      }
+    } catch {
+      // permission denied or no Clipboard API
+    }
+    this.field()?.nativeElement.focus();
+  }
+
+  protected clear(): void {
+    this.setUrl('');
+    this.field()?.nativeElement.focus();
+  }
+
+  private setUrl(value: string): void {
+    this.url.set(value);
+    this.schedule(value, true);
   }
 
   /** A playlist has no formats to look at (`--flat-playlist`): every quality is offered. */
@@ -221,6 +292,7 @@ export class UrlPreview {
   protected readonly presets = PRESETS;
 
   protected applyPreset(media: MediaPreview, preset: Preset): void {
+    this.formatMenuOpen.set(false);
     this.mode.set(preset.mode);
     if (preset.mode === 'audio') {
       this.audioFormat.set(preset.audioFormat ?? DEFAULT_AUDIO_FORMAT);
@@ -228,10 +300,6 @@ export class UrlPreview {
     }
     const quality = preset.quality ?? 'best';
     this.quality.set(this.isAvailable(media, quality) ? quality : 'best');
-  }
-
-  protected selectQuality(value: string): void {
-    this.quality.set(value as Quality);
   }
 
   protected download(media: MediaPreview): void {

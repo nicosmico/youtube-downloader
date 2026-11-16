@@ -38,6 +38,23 @@ describe('UrlPreview', () => {
     await settle();
   };
   const previews = () => http.match('/api/preview');
+  const openOther = async () => {
+    el('format-other')!.click();
+    await settle();
+  };
+  const pickFormat = async (testId: string) => {
+    await openOther();
+    el(testId)!.click();
+    await settle();
+  };
+  const menuItems = () =>
+    Array.from(
+      root().querySelectorAll<HTMLButtonElement>('[data-testid=format-menu] [role=menuitemradio]'),
+    );
+  const pressKey = async (key: string) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key }));
+    await settle();
+  };
   const answer = async (req: TestRequest, body: object | string, status = 200) => {
     req.flush(body, { status, statusText: 'x' });
     await settle();
@@ -68,17 +85,34 @@ describe('UrlPreview', () => {
   });
 
   describe('Engine not ready', () => {
-    it('disables the field and says why', async () => {
+    it('disables the field and the paste button, with a prominent notice', async () => {
       engine.engine.set({ ...ENGINE_READY, status: 'installing' } as EngineInfo);
       await settle();
 
       expect(input().disabled).toBe(true);
-      expect(el('url-hint')?.textContent).toContain('motor de descarga');
+      expect(el<HTMLButtonElement>('paste-button')!.disabled).toBe(true);
+      expect(el('engine-notice')?.getAttribute('role')).toBe('alert');
+      expect(el('engine-notice')?.textContent).toContain('motor de descarga');
+      expect(el('engine-notice-retry')).toBeNull();
+      expect(el('empty-state')).toBeNull();
+    });
+
+    it('offers "Reintentar" with the message when the Engine failed', async () => {
+      engine.engine.set({
+        ...ENGINE_READY,
+        status: 'error',
+        message: 'sin conexión',
+      } as EngineInfo);
+      await settle();
+
+      expect(el('engine-notice-message')?.textContent).toContain('sin conexión');
+      el('engine-notice-retry')!.click();
+      http.expectOne('/api/system/engine/install').flush({ ...ENGINE_READY, status: 'installing' });
     });
 
     it('enables it once the Engine is ready', async () => {
       expect(input().disabled).toBe(false);
-      expect(el('url-hint')).toBeNull();
+      expect(el('engine-notice')).toBeNull();
     });
 
     it('clears what is on screen if the Engine stops being ready', async () => {
@@ -90,6 +124,75 @@ describe('UrlPreview', () => {
       await settle();
 
       expect(el('preview-card')).toBeNull();
+    });
+  });
+
+  describe('empty field', () => {
+    it('shows a one-line empty state naming what is accepted, and no help text', () => {
+      expect(el('empty-state')?.textContent).toContain('Videos, Shorts, playlists y canales');
+      expect(input().placeholder).toBe('Pega un enlace de YouTube');
+      expect(input().getAttribute('aria-label')).toBe('Enlace de YouTube');
+      expect(root().textContent).not.toMatch(/Paso|\b1\.|Nota/);
+    });
+
+    it('hides the empty state while there is a preview', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+
+      expect(el('empty-state')).toBeNull();
+    });
+
+    it('"Pegar" reads the clipboard and previews at once', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { readText: async () => `  ${URL_A}\n` },
+      });
+
+      el('paste-button')!.click();
+      await settle();
+
+      expect(input().value).toBe(URL_A);
+      const req = http.expectOne('/api/preview');
+      expect(req.request.body).toEqual({ url: URL_A });
+      await answer(req, MEDIA);
+    });
+
+    it.each([
+      ['is denied', () => Promise.reject(new Error('denied'))],
+      ['is empty', () => Promise.resolve('   ')],
+    ])('"Pegar" focuses the field when the clipboard %s', async (_, readText) => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText } });
+      document.body.appendChild(root());
+
+      el('paste-button')!.click();
+      await settle();
+
+      expect(document.activeElement).toBe(input());
+      http.expectNone('/api/preview');
+      root().remove();
+    });
+
+    it('"Pegar" focuses the field when there is no Clipboard API', async () => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+      document.body.appendChild(root());
+
+      el('paste-button')!.click();
+      await settle();
+
+      expect(document.activeElement).toBe(input());
+      root().remove();
+    });
+
+    it('clears the field with the X button', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+
+      el('url-clear')!.click();
+      await settle();
+
+      expect(input().value).toBe('');
+      expect(el('preview-card')).toBeNull();
+      expect(el('empty-state')).not.toBeNull();
     });
   });
 
@@ -156,34 +259,39 @@ describe('UrlPreview', () => {
       expect(el('preview-card')).not.toBeNull();
     });
 
-    it('shows title, author, duration, thumbnail and the maximum resolution', async () => {
+    it('shows a compact card: thumbnail with duration, title, author and maximum resolution', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), { ...MEDIA, duration: 3725 });
 
       expect(el('preview-title')?.textContent).toContain('Un Short vertical');
       expect(el('preview-author')?.textContent).toContain('YouTube');
       expect(el('preview-duration')?.textContent).toContain('1:02:05');
-      expect(el('preview-max')?.textContent).toContain('1080p');
+      expect(el('preview-max')?.textContent).toContain('Hasta 1080p');
       expect(el<HTMLImageElement>('preview-thumbnail')?.src).toBe(MEDIA.thumbnail);
     });
 
-    it('lists every Quality and disables those above the maximum', async () => {
+    it('groups every format under "Otro formato" and disables the video qualities above the maximum', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), MEDIA);
+      expect(el('format-menu')).toBeNull();
 
-      const options = Array.from(
-        root().querySelectorAll<HTMLOptionElement>('[data-testid=quality-select] option'),
-      );
-      expect(options.map((o) => [o.value, o.disabled])).toEqual([
-        ['best', false],
-        ['2160p', true],
-        ['1080p', false],
-        ['720p', false],
-        ['480p', false],
+      await openOther();
+
+      expect(el('format-menu')?.getAttribute('role')).toBe('menu');
+      expect(menuItems().map((o) => [o.dataset['testid'], o.disabled])).toEqual([
+        ['format-video-best', false],
+        ['format-video-2160p', true],
+        ['format-video-1080p', false],
+        ['format-video-720p', false],
+        ['format-video-480p', false],
+        ['format-audio-m4a', false],
+        ['format-audio-mp3', false],
+        ['format-audio-opus', false],
       ]);
-      expect(options[0].textContent).toContain('Mejor disponible');
-      expect(options[1].textContent).toContain('VLC');
-      expect(options[0].selected).toBe(true);
+      expect(menuItems()[0].textContent).toContain('Mejor disponible');
+      expect(menuItems()[1].textContent).toContain('VLC');
+      expect(el('format-menu')?.textContent).toContain('Video');
+      expect(el('format-menu')?.textContent).toContain('Audio');
     });
 
     it('offers only "best" for a low resolution video', async () => {
@@ -195,10 +303,11 @@ describe('UrlPreview', () => {
         maxResolution: 240,
       });
 
-      const enabled = Array.from(
-        root().querySelectorAll<HTMLOptionElement>('[data-testid=quality-select] option'),
-      ).filter((o) => !o.disabled);
-      expect(enabled.map((o) => o.value)).toEqual(['best']);
+      await openOther();
+      const enabled = menuItems().filter(
+        (o) => !o.disabled && o.dataset['testid']!.includes('video'),
+      );
+      expect(enabled.map((o) => o.dataset['testid'])).toEqual(['format-video-best']);
       expect(el('preview-max')?.textContent).toContain('240p');
     });
 
@@ -218,19 +327,18 @@ describe('UrlPreview', () => {
       expect(el('preview-title')).not.toBeNull();
     });
 
-    it('keeps the Quality the user picks', async () => {
+    it('keeps the Quality the user picks and shows it on the third chip', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), MEDIA);
 
-      const select = el<HTMLSelectElement>('quality-select')!;
-      select.value = '720p';
-      select.dispatchEvent(new Event('change'));
-      await settle();
+      await pickFormat('format-video-720p');
 
       expect(fixture.componentInstance.quality()).toBe('720p');
+      expect(el('format-other')?.textContent).toContain('720p');
+      expect(el('format-menu')).toBeNull();
     });
 
-    it('shows the hint next to 2160p and a notice while it is selected', async () => {
+    it('shows the VLC hint on the 2160p option only', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), {
         ...MEDIA,
@@ -238,17 +346,10 @@ describe('UrlPreview', () => {
         maxQuality: '2160p',
       });
 
-      expect(el('quality-2160-hint')).toBeNull();
-      const select = el<HTMLSelectElement>('quality-select')!;
-      select.value = '2160p';
-      select.dispatchEvent(new Event('change'));
-      await settle();
-
-      expect(el('quality-2160-hint')?.textContent).toContain('VLC');
-      select.value = '720p';
-      select.dispatchEvent(new Event('change'));
-      await settle();
-      expect(el('quality-2160-hint')).toBeNull();
+      await openOther();
+      expect(el('format-video-2160p')?.textContent).toContain('puede requerir VLC');
+      expect(el<HTMLButtonElement>('format-video-2160p')!.disabled).toBe(false);
+      expect(el('format-video-1080p')?.textContent).not.toContain('VLC');
     });
 
     it('clears the card when the field is emptied', async () => {
@@ -391,10 +492,7 @@ describe('UrlPreview', () => {
     });
 
     it('enqueues the previewed video with the selected quality and its title', async () => {
-      const select = el<HTMLSelectElement>('quality-select')!;
-      select.value = '720p';
-      select.dispatchEvent(new Event('change'));
-      await settle();
+      await pickFormat('format-video-720p');
 
       expect(button().textContent).toContain('Descargar');
       button().click();
@@ -421,39 +519,26 @@ describe('UrlPreview', () => {
       ).toEqual(['job1']);
     });
 
-    const pickMode = async (mode: 'video' | 'audio') => {
-      el<HTMLInputElement>(`mode-${mode}`)!.click();
-      await settle();
-    };
-    const pick = async (testId: string, value: string) => {
-      const select = el<HTMLSelectElement>(testId)!;
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
-      await settle();
-    };
+    const chip = (id: string) =>
+      root().querySelector(`[data-testid=preset-apply][data-preset-id=${id}]`) as HTMLElement;
 
-    it('starts in video mode with the quality selector and no audio selector', () => {
-      expect(el<HTMLInputElement>('mode-video')!.checked).toBe(true);
-      expect(el('quality-select')).not.toBeNull();
-      expect(el('audio-format-select')).toBeNull();
+    it('starts on "Mejor video"', () => {
+      expect(chip('best-video').getAttribute('aria-pressed')).toBe('true');
+      expect(chip('mp3').getAttribute('aria-pressed')).toBe('false');
+      expect(el('format-other')?.textContent).toContain('Otro formato');
     });
 
-    it('switches to audio: the AudioFormat selector replaces the Quality one', async () => {
-      await pickMode('audio');
+    it('selects audio from the menu: the chip shows the format and no preset is pressed', async () => {
+      await pickFormat('format-audio-m4a');
 
-      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
-      expect(el('quality-select')).toBeNull();
-      const options = Array.from(
-        root().querySelectorAll<HTMLOptionElement>('[data-testid=audio-format-select] option'),
-      );
-      expect(options.map((o) => o.value).sort()).toEqual(['m4a', 'mp3', 'opus']);
-      expect(options.every((o) => !o.disabled)).toBe(true);
-      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('m4a');
+      expect(fixture.componentInstance.mode()).toBe('audio');
+      expect(el('format-other')?.textContent).toContain('M4A');
+      expect(chip('best-video').getAttribute('aria-pressed')).toBe('false');
+      expect(chip('mp3').getAttribute('aria-pressed')).toBe('false');
     });
 
     it.each(['mp3', 'm4a', 'opus'])('enqueues audio as %s without a quality', async (format) => {
-      await pickMode('audio');
-      await pick('audio-format-select', format);
+      await pickFormat(`format-audio-${format}`);
 
       button().click();
       await settle();
@@ -472,10 +557,8 @@ describe('UrlPreview', () => {
     });
 
     it('never sends the audio format of an earlier pick in video mode', async () => {
-      await pickMode('audio');
-      await pick('audio-format-select', 'opus');
-      await pickMode('video');
-      await pick('quality-select', '480p');
+      await pickFormat('format-audio-opus');
+      await pickFormat('format-video-480p');
 
       button().click();
       await settle();
@@ -489,21 +572,23 @@ describe('UrlPreview', () => {
     });
 
     it('keeps mode, quality and format when the next URL is previewed', async () => {
-      await pick('quality-select', '480p');
-      await pickMode('audio');
-      await pick('audio-format-select', 'mp3');
+      await pickFormat('format-video-480p');
+      await pickFormat('format-audio-opus');
 
       await type(URL_B, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), { ...MEDIA, url: URL_B, id: 'jNQXAC9IVRw' });
 
-      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
-      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('mp3');
-      await pickMode('video');
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('480p');
+      expect(fixture.componentInstance.mode()).toBe('audio');
+      expect(el('format-other')?.textContent).toContain('Opus');
+      await openOther();
+      expect(el('format-audio-opus')?.getAttribute('aria-checked')).toBe('true');
+      el('format-video-480p')!.click();
+      await settle();
+      expect(el('format-other')?.textContent).toContain('480p');
     });
 
     it('falls back to "best" when the next video cannot offer the kept quality', async () => {
-      await pick('quality-select', '1080p');
+      await pickFormat('format-video-1080p');
 
       await type(URL_B, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), {
@@ -562,7 +647,7 @@ describe('UrlPreview', () => {
       await answer(http.expectOne('/api/preview'), MEDIA);
     });
 
-    it('offers only the two fixed shortcuts', () => {
+    it('offers "Mejor video" and "MP3" as chips, and no saved formats', () => {
       const chips = Array.from(root().querySelectorAll('[data-testid=preset-apply]'));
 
       expect(chips.map((c) => c.textContent?.trim())).toEqual(['Mejor video', 'MP3']);
@@ -573,18 +658,20 @@ describe('UrlPreview', () => {
     it('applies "MP3" in one click: mode and format', async () => {
       await apply('mp3');
 
-      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
-      expect(el<HTMLSelectElement>('audio-format-select')!.value).toBe('mp3');
+      expect(fixture.componentInstance.mode()).toBe('audio');
+      expect(fixture.componentInstance.audioFormat()).toBe('mp3');
+      expect(chip('mp3').getAttribute('aria-pressed')).toBe('true');
+      expect(el('format-other')?.textContent).toContain('Otro formato');
     });
 
     it('applies "Mejor video" in one click, also coming back from audio', async () => {
-      el<HTMLSelectElement>('quality-select')!.value = '720p';
-      el<HTMLSelectElement>('quality-select')!.dispatchEvent(new Event('change'));
+      await pickFormat('format-video-720p');
       await apply('mp3');
       await apply('best-video');
 
-      expect(el<HTMLInputElement>('mode-video')!.checked).toBe(true);
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('best');
+      expect(fixture.componentInstance.mode()).toBe('video');
+      expect(fixture.componentInstance.quality()).toBe('best');
+      expect(chip('best-video').getAttribute('aria-pressed')).toBe('true');
     });
 
     it('falls back to "best" when the video cannot offer the preset quality', async () => {
@@ -635,6 +722,44 @@ describe('UrlPreview', () => {
       await answer(req, PLAYLIST);
 
       expect(el('entries')).not.toBeNull();
+    });
+  });
+
+  describe('"Otro formato" menu', () => {
+    beforeEach(async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+    });
+
+    it('opens focused on the checked option and moves with the arrow keys', async () => {
+      await openOther();
+      expect(el('format-other')?.getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(el('format-video-best'));
+
+      root()
+        .querySelector('[role=menu]')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      expect(document.activeElement).toBe(el('format-video-1080p')); // 2160p is disabled
+    });
+
+    it('closes with Esc and gives the focus back to the chip', async () => {
+      document.body.appendChild(root());
+      await openOther();
+
+      await pressKey('Escape');
+
+      expect(el('format-menu')).toBeNull();
+      expect(document.activeElement).toBe(el('format-other'));
+      root().remove();
+    });
+
+    it('closes with a click outside', async () => {
+      await openOther();
+
+      document.body.click();
+      await settle();
+
+      expect(el('format-menu')).toBeNull();
     });
   });
 
@@ -723,9 +848,8 @@ describe('UrlPreview', () => {
     it('offers every quality, none disabled', async () => {
       await show();
 
-      const options = Array.from(
-        root().querySelectorAll<HTMLOptionElement>('[data-testid=quality-select] option'),
-      );
+      await openOther();
+      const options = menuItems().filter((o) => o.dataset['testid']!.startsWith('format-video'));
       expect(options).toHaveLength(5);
       expect(options.every((o) => !o.disabled)).toBe(true);
       expect(el('preview-max')).toBeNull();
@@ -734,15 +858,13 @@ describe('UrlPreview', () => {
     it('keeps a picked quality that a video would not offer', async () => {
       await type(URL_A, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), MEDIA);
-      const select = el<HTMLSelectElement>('quality-select')!;
-      select.value = '720p';
-      select.dispatchEvent(new Event('change'));
-      await settle();
+      await pickFormat('format-video-720p');
 
       await type(LIST_URL, 'insertFromPaste');
       await answer(http.expectOne('/api/preview'), PLAYLIST);
 
-      expect(el<HTMLSelectElement>('quality-select')!.value).toBe('720p');
+      expect(fixture.componentInstance.quality()).toBe('720p');
+      expect(el('format-other')?.textContent).toContain('720p');
     });
 
     it('applies presets', async () => {
@@ -753,15 +875,14 @@ describe('UrlPreview', () => {
         .click();
       await settle();
 
-      expect(el<HTMLInputElement>('mode-audio')!.checked).toBe(true);
+      expect(fixture.componentInstance.mode()).toBe('audio');
     });
 
     it('enqueues only the selected entries with the playlist title and the chosen options', async () => {
       await show();
       checkboxes()[1].click(); // drop "Parisian Love"
       await settle();
-      el<HTMLInputElement>('mode-audio')!.click();
-      await settle();
+      await pickFormat('format-audio-m4a');
 
       button().click();
       await settle();

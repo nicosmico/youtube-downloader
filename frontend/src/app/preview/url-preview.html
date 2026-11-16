@@ -1,223 +1,343 @@
-<section class="card" aria-labelledby="preview-heading">
-  <h2 id="preview-heading">{{ texts.preview.heading }}</h2>
-
-  <label class="field">
-    <span class="label">{{ texts.preview.urlLabel }}</span>
+<section class="flex min-w-0 flex-col gap-4" [attr.aria-label]="texts.preview.download">
+  <div class="relative">
+    <app-icon
+      name="link"
+      class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted"
+    />
     <input
+      #field
       type="text"
       inputmode="url"
       autocomplete="off"
       spellcheck="false"
       data-testid="url-input"
+      class="h-12 w-full rounded-full border border-line bg-bg pl-12 pr-36 text-base placeholder:text-muted disabled:opacity-60"
+      [attr.aria-label]="texts.preview.urlLabel"
       [placeholder]="texts.preview.urlPlaceholder"
       [value]="url()"
       [disabled]="!engineReady()"
-      [attr.aria-describedby]="engineReady() ? null : 'url-hint'"
       (input)="onInput($event)"
     />
-  </label>
+    <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+      @if (url()) {
+        <button
+          type="button"
+          data-testid="url-clear"
+          class="grid size-9 place-items-center rounded-full text-muted hover:bg-surface"
+          [attr.aria-label]="texts.preview.clear"
+          [title]="texts.preview.clear"
+          (click)="clear()"
+        >
+          <app-icon name="close" class="size-4" />
+        </button>
+      }
+      <button
+        type="button"
+        data-testid="paste-button"
+        class="flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium hover:bg-surface-2 disabled:opacity-60"
+        [disabled]="!engineReady()"
+        (click)="paste()"
+      >
+        <app-icon name="paste" class="size-4" />
+        {{ texts.preview.paste }}
+      </button>
+    </div>
+  </div>
+
   @if (!engineReady()) {
-    <p id="url-hint" class="meta" data-testid="url-hint">{{ texts.preview.engineNotReady }}</p>
+    <div
+      class="flex items-center gap-3 rounded-xl border border-accent px-4 py-3"
+      role="alert"
+      data-testid="engine-notice"
+    >
+      <app-icon name="warning" class="size-5 text-accent" />
+      <div class="min-w-0 flex-1 text-sm">
+        <p class="m-0 font-medium">{{ texts.preview.engineNotReady }}</p>
+        @if (engine()?.status === 'error' && engine()?.message) {
+          <p class="m-0 text-muted" data-testid="engine-notice-message">{{ engine()?.message }}</p>
+        }
+      </div>
+      @if (engine()?.status === 'error') {
+        <button
+          type="button"
+          data-testid="engine-notice-retry"
+          class="h-9 rounded-full bg-surface px-4 text-sm font-medium hover:bg-surface-2"
+          (click)="engineService.install()"
+        >
+          {{ texts.preview.engineRetry }}
+        </button>
+      }
+    </div>
   }
 
   @switch (status()) {
+    @case ('idle') {
+      @if (engineReady()) {
+        <p class="m-0 text-sm text-muted" data-testid="empty-state">{{ texts.preview.empty }}</p>
+      }
+    }
     @case ('loading') {
-      <p class="meta" role="status" data-testid="preview-loading">{{ texts.preview.loading }}</p>
+      <p
+        class="m-0 animate-pulse rounded-xl bg-surface px-4 py-6 text-sm text-muted"
+        role="status"
+        data-testid="preview-loading"
+      >
+        {{ texts.preview.loading }}
+      </p>
     }
     @case ('error') {
-      <p class="error" role="alert" data-testid="preview-error" [attr.data-code]="errorCode()">
+      <p
+        class="m-0 rounded-xl border border-accent px-4 py-3 text-sm text-accent"
+        role="alert"
+        data-testid="preview-error"
+        [attr.data-code]="errorCode()"
+      >
         {{ errorMessage() }}
       </p>
     }
     @case ('ready') {
       @if (preview(); as media) {
-        <article class="media" data-testid="preview-card">
-          @if (media.thumbnail) {
-            <img
-              class="thumb"
-              alt=""
-              referrerpolicy="no-referrer"
-              data-testid="preview-thumbnail"
-              [src]="media.thumbnail"
-            />
+        <article class="flex min-w-0 flex-col gap-4" data-testid="preview-card">
+          <div class="flex min-w-0 gap-4">
+            <div
+              class="relative aspect-video w-44 shrink-0 overflow-hidden rounded-xl bg-surface sm:w-56"
+            >
+              @if (media.thumbnail) {
+                <img
+                  class="size-full object-cover"
+                  alt=""
+                  referrerpolicy="no-referrer"
+                  data-testid="preview-thumbnail"
+                  [src]="media.thumbnail"
+                />
+              }
+              @if (media.kind === 'video' && media.duration !== null) {
+                <span
+                  class="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white"
+                  data-testid="preview-duration"
+                >
+                  {{ duration(media.duration) }}
+                </span>
+              }
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col justify-center gap-1">
+              <h2
+                class="m-0 line-clamp-2 text-base font-medium leading-snug"
+                data-testid="preview-title"
+              >
+                {{ media.title }}
+              </h2>
+              @if (media.author) {
+                <p class="m-0 truncate text-sm text-muted" data-testid="preview-author">
+                  {{ media.author }}
+                </p>
+              }
+              @if (media.kind === 'video') {
+                @if (media.maxResolution) {
+                  <p class="m-0 text-sm text-muted" data-testid="preview-max">
+                    {{ texts.preview.upTo }} {{ media.maxResolution }}p
+                  </p>
+                }
+              } @else {
+                <p class="m-0 text-sm text-muted" data-testid="playlist-count">
+                  {{ media.entryCount }}
+                  {{
+                    media.entryCount === 1
+                      ? texts.preview.playlist.countOne
+                      : texts.preview.playlist.count
+                  }}
+                </p>
+                @if (media.truncated) {
+                  <p class="m-0 text-sm text-muted" role="status" data-testid="playlist-truncated">
+                    {{ texts.preview.playlist.truncated }}
+                  </p>
+                }
+              }
+            </div>
+          </div>
+
+          @if (media.kind === 'video' && media.playlistUrl; as playlistUrl) {
+            <button
+              type="button"
+              data-testid="full-playlist"
+              class="self-start rounded-full px-1 text-sm font-medium text-accent hover:underline"
+              (click)="showFullPlaylist(playlistUrl)"
+            >
+              {{ texts.preview.fullPlaylist }}
+            </button>
           }
-          <div class="info">
-            <h3 data-testid="preview-title">{{ media.title }}</h3>
-            @if (media.author) {
-              <p class="meta" data-testid="preview-author">{{ media.author }}</p>
-            }
-            @if (media.kind === 'video') {
-              @if (media.duration !== null) {
-                <p class="meta" data-testid="preview-duration">
-                  {{ texts.preview.duration }}: {{ duration(media.duration) }}
-                </p>
-              }
-              @if (media.maxResolution) {
-                <p class="meta" data-testid="preview-max">
-                  {{ texts.preview.maxResolution }} {{ media.maxResolution }}p
-                </p>
-              }
-            } @else {
-              <p class="meta" data-testid="playlist-count">
-                {{ media.entryCount }}
-                {{
-                  media.entryCount === 1
-                    ? texts.preview.playlist.countOne
-                    : texts.preview.playlist.count
-                }}
-              </p>
-              @if (media.truncated) {
-                <p class="meta" role="status" data-testid="playlist-truncated">
-                  {{ texts.preview.playlist.truncated }}
-                </p>
-              }
-            }
-            <div class="presets" role="group" aria-labelledby="presets-heading">
-              <span id="presets-heading" class="label">{{ texts.preview.presets }}</span>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <div
+              class="flex flex-wrap items-center gap-2"
+              role="group"
+              [attr.aria-label]="texts.preview.format.label"
+            >
               @for (preset of presets; track preset.id) {
                 <button
                   type="button"
-                  class="chip"
                   data-testid="preset-apply"
+                  class="h-9 rounded-full px-4 text-sm font-medium"
+                  [class]="
+                    (preset.id === 'mp3' ? mp3Active() : bestActive())
+                      ? 'bg-fg text-bg'
+                      : 'bg-surface hover:bg-surface-2'
+                  "
                   [attr.data-preset-id]="preset.id"
+                  [attr.aria-pressed]="preset.id === 'mp3' ? mp3Active() : bestActive()"
                   (click)="applyPreset(media, preset)"
                 >
                   {{ preset.name }}
                 </button>
               }
+              <div class="relative" appDismissable (dismissed)="closeFormatMenu($event, other)">
+                <button
+                  #other
+                  type="button"
+                  data-testid="format-other"
+                  aria-haspopup="menu"
+                  class="flex h-9 items-center gap-1 rounded-full pl-4 pr-3 text-sm font-medium"
+                  [class]="otherActive() ? 'bg-fg text-bg' : 'bg-surface hover:bg-surface-2'"
+                  [attr.aria-expanded]="formatMenuOpen()"
+                  (click)="formatMenuOpen.set(!formatMenuOpen())"
+                >
+                  {{ otherLabel() }}
+                  <app-icon name="chevron-down" class="size-4" />
+                </button>
+                @if (formatMenuOpen()) {
+                  <div
+                    role="menu"
+                    appMenuKeys
+                    data-testid="format-menu"
+                    [attr.aria-label]="texts.preview.format.other"
+                    class="absolute left-0 z-30 mt-2 w-64 rounded-xl border border-line bg-bg py-2 shadow-lg"
+                  >
+                    <p class="m-0 px-4 pb-1 text-xs font-medium text-muted">
+                      {{ texts.preview.format.video }}
+                    </p>
+                    @for (q of qualities; track q) {
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface disabled:text-muted disabled:opacity-60 disabled:hover:bg-transparent"
+                        [attr.data-testid]="'format-video-' + q"
+                        [attr.aria-checked]="mode() === 'video' && quality() === q"
+                        [disabled]="!isAvailable(media, q)"
+                        (click)="pickVideo(q, other)"
+                      >
+                        <span class="grid size-4 place-items-center">
+                          @if (mode() === 'video' && quality() === q) {
+                            <app-icon name="check" class="size-4" />
+                          }
+                        </span>
+                        {{ qualityLabel(q) }}
+                      </button>
+                    }
+                    <hr class="my-2 border-line" />
+                    <p class="m-0 px-4 pb-1 text-xs font-medium text-muted">
+                      {{ texts.preview.format.audio }}
+                    </p>
+                    @for (f of audioFormats; track f) {
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                        [attr.data-testid]="'format-audio-' + f"
+                        [attr.aria-checked]="mode() === 'audio' && audioFormat() === f"
+                        (click)="pickAudio(f, other)"
+                      >
+                        <span class="grid size-4 place-items-center">
+                          @if (mode() === 'audio' && audioFormat() === f) {
+                            <app-icon name="check" class="size-4" />
+                          }
+                        </span>
+                        {{ audioFormatLabel(f) }}
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
             </div>
-            <fieldset class="field modes" data-testid="mode-switch">
-              <legend class="label">{{ texts.preview.mode }}</legend>
-              <label>
-                <input
-                  type="radio"
-                  name="mode"
-                  value="video"
-                  data-testid="mode-video"
-                  [checked]="mode() === 'video'"
-                  (change)="selectMode('video')"
-                />
-                {{ texts.preview.modeVideo }}
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="mode"
-                  value="audio"
-                  data-testid="mode-audio"
-                  [checked]="mode() === 'audio'"
-                  (change)="selectMode('audio')"
-                />
-                {{ texts.preview.modeAudio }}
-              </label>
-            </fieldset>
-            @if (mode() === 'video') {
-              <label class="field">
-                <span class="label">{{ texts.preview.quality }}</span>
-                <select
-                  data-testid="quality-select"
-                  (change)="selectQuality($any($event.target).value)"
-                >
-                  @for (q of qualities; track q) {
-                    <option
-                      [value]="q"
-                      [selected]="q === quality()"
-                      [disabled]="!isAvailable(media, q)"
-                    >
-                      {{ qualityLabel(q) }}
-                    </option>
-                  }
-                </select>
-              </label>
-              @if (quality() === '2160p') {
-                <p class="meta" data-testid="quality-2160-hint">
-                  {{ texts.preview.quality2160Notice }}
-                </p>
-              }
-            } @else {
-              <label class="field">
-                <span class="label">{{ texts.preview.audioFormat }}</span>
-                <select
-                  data-testid="audio-format-select"
-                  (change)="selectAudioFormat($any($event.target).value)"
-                >
-                  @for (f of audioFormats; track f) {
-                    <option [value]="f" [selected]="f === audioFormat()">
-                      {{ audioFormatLabel(f) }}
-                    </option>
-                  }
-                </select>
-              </label>
-            }
+
             <button
               type="button"
-              class="primary"
               data-testid="download-button"
+              class="ml-auto h-11 rounded-full bg-accent-solid px-6 text-sm font-medium text-on-accent hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100"
               [disabled]="!canDownload(media)"
               (click)="download(media)"
             >
               {{ downloadLabel(media) }}
             </button>
-            @if (enqueued()) {
-              <p class="meta" role="status" data-testid="enqueued">{{ texts.preview.enqueued }}</p>
-            }
-            @if (enqueueError(); as message) {
-              <p class="error" role="alert" data-testid="enqueue-error">{{ message }}</p>
-            }
-            @if (media.kind === 'video' && media.playlistUrl; as playlistUrl) {
-              <button
-                type="button"
-                class="action"
-                data-testid="full-playlist"
-                (click)="showFullPlaylist(playlistUrl)"
-              >
-                {{ texts.preview.fullPlaylist }}
-              </button>
-            }
           </div>
+
+          @if (enqueued()) {
+            <p class="sr-only" role="status" data-testid="enqueued">{{ texts.preview.enqueued }}</p>
+          }
+          @if (enqueueError(); as message) {
+            <p class="m-0 text-sm text-accent" role="alert" data-testid="enqueue-error">
+              {{ message }}
+            </p>
+          }
+
           @if (media.kind === 'playlist') {
-            <section class="entries" aria-labelledby="entries-heading" data-testid="entries">
-              <h4 id="entries-heading">{{ texts.preview.playlist.entries }}</h4>
-              <div class="entries-bar">
+            <section
+              class="min-w-0"
+              [attr.aria-label]="texts.preview.playlist.entries"
+              data-testid="entries"
+            >
+              <div class="mb-2 flex items-center gap-2 text-sm">
                 <button
                   type="button"
-                  class="action"
                   data-testid="select-all"
+                  class="rounded-full px-2 py-1 font-medium hover:bg-surface"
                   (click)="selectAllEntries(media)"
                 >
                   {{ texts.preview.playlist.selectAll }}
                 </button>
                 <button
                   type="button"
-                  class="action"
                   data-testid="select-none"
+                  class="rounded-full px-2 py-1 font-medium hover:bg-surface"
                   (click)="selectNoEntries()"
                 >
                   {{ texts.preview.playlist.selectNone }}
                 </button>
-                <span class="meta" role="status" data-testid="selected-count">
+                <span class="ml-auto text-muted" role="status" data-testid="selected-count">
                   {{ selectedCount() }} / {{ media.entryCount }}
                   {{ texts.preview.playlist.selected }}
                 </span>
               </div>
-              <ul class="entry-list">
+              <ul class="m-0 max-h-96 list-none overflow-y-auto rounded-xl border border-line p-0">
                 @for (entry of media.entries; track entry.index) {
-                  <li data-testid="entry" [attr.data-available]="entry.available">
-                    <label [class.unavailable]="!entry.available">
+                  <li
+                    class="border-b border-line last:border-b-0"
+                    data-testid="entry"
+                    [attr.data-available]="entry.available"
+                  >
+                    <label
+                      class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-surface"
+                      [class.cursor-default]="!entry.available"
+                      [class.text-muted]="!entry.available"
+                    >
                       <input
                         type="checkbox"
+                        class="size-4 shrink-0 accent-[var(--accent-solid)]"
                         data-testid="entry-checkbox"
                         [checked]="selected().has(entry.index)"
                         [disabled]="!entry.available"
                         (change)="toggleEntry(entry)"
                       />
-                      <span class="entry-index">{{ entry.index }}</span>
-                      <span class="entry-title" data-testid="entry-title">{{ entry.title }}</span>
+                      <span class="w-6 shrink-0 text-right text-muted">{{ entry.index }}</span>
+                      <span class="min-w-0 flex-1 truncate" data-testid="entry-title">{{
+                        entry.title
+                      }}</span>
                       @if (entry.duration !== null) {
-                        <span class="meta">{{ duration(entry.duration) }}</span>
+                        <span class="shrink-0 text-muted">{{ duration(entry.duration) }}</span>
                       }
                       @if (entry.unavailableReason; as reason) {
-                        <span class="meta reason" data-testid="entry-reason">{{ reason }}</span>
+                        <span class="shrink-0 text-muted" data-testid="entry-reason">{{
+                          reason
+                        }}</span>
                       }
                     </label>
                   </li>

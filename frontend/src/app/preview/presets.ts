@@ -1,7 +1,7 @@
 import { AudioFormat } from '../core/jobs.service';
 import { Quality } from '../core/preview.service';
 
-/** A one-click shortcut for the mode, quality and format selectors. They are fixed: not saved. */
+/** A one-click chip of the format control ("Mejor video", "MP3"). They are fixed: not saved. */
 export interface Preset {
   id: string;
   name: string;
