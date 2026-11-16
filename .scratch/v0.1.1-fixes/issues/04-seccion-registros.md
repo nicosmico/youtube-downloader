@@ -12,3 +12,12 @@
 - [x] "Copiar" y "Descargar .txt" incluyen la cabecera y ambas fuentes.
 - [x] Funciona en el ejecutable sin consola de Windows, donde el log solo va a archivo.
 - [x] Tests de API y de componente.
+
+## Comments
+
+**2026-11-15**: implementado en la rama `ticket/v011-app` (sin push).
+
+- `GET /api/logs?lines=500&requests=false` (`app/logs.py`): lee `app.log` hacia atrás por bloques de 64 KB y sigue en `app.log.1` si hace falta; filtra `uvicorn.access` antes de contar. `def` sin `async`: corre en el pool de hilos, fuera del event loop. `lines` de 1 a 500 (422 fuera de rango).
+- Frontend: `ErrorLogService` (buffer de 100 entradas en memoria), `AppErrorHandler` (errores JS no capturados; `provideBrowserGlobalErrorListeners` ya le reenvía `error` y `unhandledrejection`) e interceptor de peticiones HTTP fallidas (método, URL y estado, sin cuerpos). Componente `Logs` al final de la página, plegado; pide datos solo al abrir, con "Actualizar" y al cambiar "Mostrar peticiones". "Copiar" y "Descargar .txt" usan el mismo informe con cabecera (app, plataforma, Engine).
+- Sin consola (Windows): test que configura el logging con `sys.stderr = None` y comprueba que el endpoint lee lo escrito.
+- Verificado con tests y en la app real: el log omite `uvicorn.access`, un error JS provocado aparece en la sección y el texto copiado trae cabecera, servidor y frontend.
