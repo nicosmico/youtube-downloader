@@ -2,22 +2,27 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  InjectionToken,
   computed,
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   Observable,
   Subject,
   catchError,
   debounce,
+  defer,
+  filter,
   map,
   of,
   startWith,
   switchMap,
+  take,
   timer,
 } from 'rxjs';
 import { EngineService } from '../core/engine.service';
@@ -50,6 +55,20 @@ type Outcome =
   | { state: 'error'; code: string }
   | { state: 'ready'; media: MediaPreview };
 type Request = { url: string; immediate: boolean };
+
+/**
+ * Whether "Pegar" is rendered: only where `readText` reads directly after the first permission
+ * (Chromium). Detected by capability, not by user agent. Safari and Firefox paste with ⌘V/Ctrl+V.
+ */
+export function detectPasteSupport(): boolean {
+  return 'userAgentData' in navigator && typeof navigator.clipboard?.readText === 'function';
+}
+
+/** Overridable in tests; the value is a function so it is evaluated per component. */
+export const PASTE_SUPPORT = new InjectionToken<() => boolean>('PASTE_SUPPORT', {
+  providedIn: 'root',
+  factory: () => detectPasteSupport,
+});
 
 /** Cheap client-side filter: only input that could be a link triggers a request. */
 export function looksLikeUrl(value: string): boolean {
@@ -92,6 +111,8 @@ export class UrlPreview {
   protected readonly engine = this.engineService.engine;
   private readonly field = viewChild<ElementRef<HTMLInputElement>>('field');
   private readonly requests = new Subject<Request>();
+  private readonly readyChanges = toObservable(this.engineReady);
+  protected readonly canPaste = inject(PASTE_SUPPORT)();
 
   protected readonly texts = TEXTS;
   protected readonly qualities = QUALITIES;
@@ -143,24 +164,16 @@ export class UrlPreview {
           if (!looksLikeUrl(url)) {
             return of({ state: 'idle' });
           }
-          return this.previews.fetch(url).pipe(
-            map((media): Outcome => ({ state: 'ready', media })),
-            startWith<Outcome>({ state: 'loading' }),
-            catchError((error: unknown) =>
-              of<Outcome>({
-                state: 'error',
-                code: error instanceof PreviewError ? error.code : 'unknown',
-              }),
-            ),
-          );
+          return this.fetchWhenReady(url).pipe(startWith<Outcome>({ state: 'loading' }));
         }),
         takeUntilDestroyed(inject(DestroyRef)),
       )
       .subscribe((result) => this.apply(result));
 
-    // Losing the Engine (e.g. while it updates) blocks the field; drop what is on screen.
+    // Losing the Engine (e.g. while it updates) drops what is on screen. A request still waiting
+    // for the Engine keeps its skeleton: it fires by itself once the Engine is ready.
     effect(() => {
-      if (!this.engineReady()) {
+      if (!this.engineReady() && untracked(this.status) !== 'loading') {
         this.reset();
       }
     });
@@ -337,6 +350,30 @@ export class UrlPreview {
           this.enqueueError.set(enqueueMessage(error));
         },
       });
+  }
+
+  /**
+   * Waits for the Engine (a not-ready Engine is transient, never an error), then asks. A 409
+   * `engine_not_ready` (race with the Engine state) waits for `ready` again and retries once.
+   */
+  private fetchWhenReady(url: string, retry = true): Observable<Outcome> {
+    return this.whenEngineReady().pipe(
+      switchMap(() => this.previews.fetch(url)),
+      map((media): Outcome => ({ state: 'ready', media })),
+      catchError((error: unknown) => {
+        const code = error instanceof PreviewError ? error.code : 'unknown';
+        if (code === 'engine_not_ready' && retry) {
+          return this.fetchWhenReady(url, false);
+        }
+        return of<Outcome>({ state: 'error', code });
+      }),
+    );
+  }
+
+  private whenEngineReady(): Observable<boolean> {
+    return defer(() =>
+      this.engineReady() ? of(true) : this.readyChanges.pipe(filter(Boolean), take(1)),
+    );
   }
 
   private schedule(url: string, immediate: boolean): void {
