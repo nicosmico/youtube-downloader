@@ -118,14 +118,14 @@ npm run build         # escribe en backend/app/static (ignorado por git)
 
 Descarga el `.zip` de tu sistema desde la última versión en [GitHub Releases](../../releases/latest). No hace falta instalar Python, Node ni `ffmpeg`. La app no está firmada ni notarizada, por eso el sistema muestra un aviso la primera vez.
 
-**macOS 13 o superior (Apple Silicon)**: `YouTube-Downloader-macos-arm64.zip`
+**macOS 13 o superior (Apple Silicon)**: `YouTube-Downloader-<versión>-macos-arm64.zip`
 
 1. Descomprime y mueve `YouTube Downloader.app` a Aplicaciones.
 2. Al abrirla, macOS la bloquea. En macOS 15 o superior ve a Ajustes del Sistema › Privacidad y seguridad y pulsa "Abrir igualmente". En versiones anteriores, clic derecho sobre la app › Abrir.
 3. La app abre el navegador con su interfaz. Sigue funcionando en segundo plano, sin icono en el Dock, hasta que pulses "Cerrar aplicación" o pasen 10 minutos sin uso.
 4. Para volver a la interfaz después de cerrar la pestaña, haz doble clic en la app otra vez: abre una pestaña nueva en la instancia que sigue en marcha.
 
-**Windows 10/11 (x64)**: `YouTube-Downloader-windows-x64.zip`
+**Windows 10/11 (x64)**: `YouTube-Downloader-<versión>-windows-x64.zip`
 
 1. Descomprime la carpeta completa y ejecuta `YouTube Downloader.exe`.
 2. Si SmartScreen avisa, pulsa "Más información" › "Ejecutar de todos modos".

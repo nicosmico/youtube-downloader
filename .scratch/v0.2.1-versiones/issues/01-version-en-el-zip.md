@@ -1,0 +1,20 @@
+# 01: Versión en el nombre del zip
+
+**What to build:** En `.github/workflows/native.yml`, el zip pasa a llamarse `YouTube-Downloader-<versión>-<plataforma>.zip`. La versión se lee de `backend/app/__init__.py` (`__version__`) en todos los builds. En un build de tag, el job falla si el tag no es `v<__version__>`. `APP_VERSION`, la metadata de PyInstaller, sale de la misma fuente. Los pasos de zip, tamaño, upload-artifact y Release usan el nombre nuevo. El `.app` y la carpeta de Windows no cambian de nombre. Actualizar el README si menciona el nombre del zip. Ver la spec, sección "Nombre del zip".
+
+**Blocked by:** None (can start immediately).
+
+**Status:** ready-for-agent
+
+- [ ] El build de una rama produce `YouTube-Downloader-<__version__>-macos-arm64.zip` y `…-windows-x64.zip` como artefactos.
+- [x] Un tag que no coincide con `__version__` hace fallar el job antes de construir.
+- [ ] El job de Release publica los dos zips con el nombre nuevo.
+- [ ] Los smoke tests siguen pasando en macOS y Windows.
+
+## Comments
+
+### 2026-11-16 (agente)
+
+Hecho en `.github/workflows/native.yml`: un primer paso lee `__version__` de `backend/app/__init__.py` (sed), falla si es un build de tag y el tag no es `v<__version__>`, y escribe `APP_VERSION` y `ZIP` (`YouTube-Downloader-<versión>-<plataforma>.zip`) en el entorno del job. Se quitó `zip:` de la matriz; PyInstaller, ditto, Compress-Archive (`$env:ZIP`), tamaño y upload-artifact usan `ZIP`. El job de Release usa `dist/*.zip`, que recoge los nombres nuevos sin cambios. README actualizado con `<versión>` en los nombres del zip.
+
+Verificación local: el YAML parsea (ruby YAML) y el script del paso, extraído del workflow, se ejecutó en bash: rama -> `YouTube-Downloader-0.2.0-macos-arm64.zip`; tag `v0.2.0` pasa; tag `v0.2.1` falla con exit 1 antes de construir. Solo se marcó el check del tag. Los checks de artefactos, Release y smoke tests quedan pendientes de la ejecución real de CI; el orquestador hará push de la rama.
