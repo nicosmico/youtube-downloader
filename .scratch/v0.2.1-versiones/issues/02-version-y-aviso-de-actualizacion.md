@@ -17,7 +17,7 @@ Ver la spec, secciones "Versión en el engranaje" y "Aviso de versión nueva", y
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] La comprobación no bloquea el arranque ni el Engine. Con la red caída, no muestra nada y no deja errores visibles.
 - [x] La comparación de versiones es numérica (`0.10.0` > `0.9.0`) y solo avisa si la publicada es estrictamente mayor.
@@ -35,3 +35,5 @@ Ver la spec, secciones "Versión en el engranaje" y "Aviso de versión nueva", y
 - Frontend: señal `SystemService.update` (health + `app.update`), chip-enlace con `arrow-up` en la barra superior, línea `Versión X.Y.Z` al final del menú (un `<p>`, no menuitem). Nuevo icono `arrow-up` y textos en `texts.ts`.
 - Desviación: la línea de versión solo se muestra cuando `/api/health` ya respondió. Sin `UPDATE_CHECK` en `compose.yaml` (activo por defecto también en Docker, como pide la spec).
 - Verificado: `docker compose run --rm tests` (697 passed), ruff check y format OK; `npm run test:ci` (253 passed) y `npm run build` OK. No revisado visualmente (contraste/320 px): lo hace el orquestador.
+
+**2026-11-16 — Resuelto.** Publicado en `v0.2.1` (Native/Release `43955823741`; en main, CI `43955108345` y Native `43955108446`, este último tras relanzar macOS por un corte de red al descargar ffmpeg). Revisión visual del orquestador en claro, oscuro y 320 px simulando la versión 0.1.0 contra GitHub real.

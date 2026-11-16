@@ -1,6 +1,6 @@
 # Spec: v0.2.1 — versiones y aviso de actualización
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Problem Statement
 
