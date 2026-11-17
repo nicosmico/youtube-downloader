@@ -75,16 +75,40 @@ def exe_name(binary: str, target: str) -> str:
 
 # -- yt-dlp (dynamic) -------------------------------------------------------------------------
 
+# macOS and Windows use the unpackaged build (a zip with the executable and an `_internal/`
+# folder): the single-file PyInstaller executable unpacks itself into a new temp folder on every
+# run, and the OS scans that folder each time (~15 s per run on a real Mac). Linux (the
+# development Docker) keeps the single binary.
 _YTDLP_ASSETS = {
-    "macos-arm64": "yt-dlp_macos",
-    "windows-x64": "yt-dlp.exe",
+    "macos-arm64": "yt-dlp_macos.zip",
+    "windows-x64": "yt-dlp_win.zip",
     "linux-arm64": "yt-dlp_linux_aarch64",
     "linux-x64": "yt-dlp_linux",
 }
 
+# Executable inside the zip (and inside `bin/<YTDLP_DIST_DIR>/` once installed).
+_YTDLP_UNPACKAGED_EXECUTABLES = {
+    "macos-arm64": "yt-dlp_macos",
+    "windows-x64": "yt-dlp.exe",
+}
+
+# Installed folder of the unpackaged build. It cannot be `bin/yt-dlp`: that is the file of the
+# single-binary installs made by earlier versions.
+YTDLP_DIST_DIR = "yt-dlp-dist"
+
 
 def ytdlp_asset(target: str) -> str:
     return _YTDLP_ASSETS[target]
+
+
+def ytdlp_unpackaged(target: str) -> bool:
+    """Whether yt-dlp is installed as a folder (unpackaged zip) on this platform."""
+    return target in _YTDLP_UNPACKAGED_EXECUTABLES
+
+
+def ytdlp_executable(target: str) -> str:
+    """Name of the yt-dlp executable inside the unpackaged folder."""
+    return _YTDLP_UNPACKAGED_EXECUTABLES[target]
 
 
 def ytdlp_asset_url(tag: str, target: str) -> str:

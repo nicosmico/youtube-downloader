@@ -26,8 +26,8 @@ def test_detect_target(system: str, machine: str, target: str | None) -> None:
 
 
 YTDLP_ASSETS = {
-    "macos-arm64": "yt-dlp_macos",
-    "windows-x64": "yt-dlp.exe",
+    "macos-arm64": "yt-dlp_macos.zip",
+    "windows-x64": "yt-dlp_win.zip",
     "linux-arm64": "yt-dlp_linux_aarch64",
     "linux-x64": "yt-dlp_linux",
 }
@@ -39,6 +39,23 @@ def test_ytdlp_asset_per_target(target: str) -> None:
     assert sources.ytdlp_asset_url("2026.10.26", target) == (
         f"https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/{YTDLP_ASSETS[target]}"
     )
+
+
+@pytest.mark.parametrize(
+    ("target", "unpackaged", "executable"),
+    [
+        ("macos-arm64", True, "yt-dlp_macos"),
+        ("windows-x64", True, "yt-dlp.exe"),
+        ("linux-arm64", False, None),
+        ("linux-x64", False, None),
+    ],
+)
+def test_ytdlp_is_unpackaged_only_on_macos_and_windows(
+    target: str, unpackaged: bool, executable: str | None
+) -> None:
+    assert sources.ytdlp_unpackaged(target) is unpackaged
+    if executable:
+        assert sources.ytdlp_executable(target) == executable
 
 
 def test_ytdlp_sums_url() -> None:
@@ -181,8 +198,9 @@ def test_gyan_zip_layout_is_extracted_from_its_versioned_root(tmp_path: Path) ->
         "deno.exe",
         "ffmpeg.exe",
         "ffprobe.exe",
-        "yt-dlp.exe",
+        "yt-dlp-dist",
     ]
+    assert (tmp_path / "bin" / "yt-dlp-dist" / "yt-dlp.exe").is_file()
     assert fetcher.downloads_of("essentials_build.zip") == 1
 
 

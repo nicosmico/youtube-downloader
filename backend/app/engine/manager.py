@@ -4,6 +4,9 @@ State machine: `missing -> installing -> ready | error`. Any failure leaves the 
 `error` (no degraded mode); `install()` retries. A yt-dlp update keeps the Engine `ready` and
 only raises the `updating` flag; if it fails the old binary stays in place.
 
+On macOS and Windows yt-dlp is the unpackaged build, installed as a folder (`bin/yt-dlp-dist/`);
+the install and update logic treats that folder as the unit to swap, instead of a single file.
+
 All work is blocking and runs in a background thread (`start()`); `info()` is cheap and safe
 to call from any thread, and listeners are called after every change of the public state.
 """
@@ -18,6 +21,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import stat
 import tempfile
 import threading
 import zipfile
@@ -25,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from app.engine import sources
@@ -38,6 +43,9 @@ TICK_SECONDS = 3600
 MANIFEST_NAME = "engine.json"
 LEFTOVER_SUFFIXES = (".old", ".new", ".tmp")
 EXECUTABLE_MODE = 0o755
+# The first run after an install or update is slow (~17 s on a real Mac: the OS scans the
+# unpackaged yt-dlp once), so the version check gets far more than the default process timeout.
+VERSION_CHECK_TIMEOUT_SECONDS = 90
 
 _VERSION_FLAGS = {
     "yt-dlp": "--version",
@@ -163,7 +171,23 @@ class EngineManager:
 
     def binary_path(self, binary: str) -> Path:
         """Absolute path of an Engine binary (for the runner, ticket 04+)."""
-        return self.bin_dir / sources.exe_name(binary, self.target or "linux-x64")
+        target = self.target or "linux-x64"
+        if binary == "yt-dlp" and self._ytdlp_is_folder:
+            return self._ytdlp_dist / sources.ytdlp_executable(target)
+        return self.bin_dir / sources.exe_name(binary, target)
+
+    @property
+    def _ytdlp_is_folder(self) -> bool:
+        """yt-dlp is installed as the unpackaged folder (macOS, Windows), managed by the app."""
+        return not self.external and sources.ytdlp_unpackaged(self.target or "linux-x64")
+
+    @property
+    def _ytdlp_dist(self) -> Path:
+        return self.bin_dir / sources.YTDLP_DIST_DIR
+
+    def _ytdlp_unit(self) -> Path:
+        """What an install or update swaps: the folder, or the single binary."""
+        return self._ytdlp_dist if self._ytdlp_is_folder else self.binary_path("yt-dlp")
 
     def start(self) -> None:
         """Install in the background if needed, then run a due yt-dlp update check."""
@@ -345,11 +369,12 @@ class EngineManager:
     # -- install ------------------------------------------------------------------------------
 
     def cleanup_leftovers(self) -> None:
-        """Delete `.old`, `.new` and temp files left by an interrupted install or update."""
+        """Delete `.old`, `.new` and temp files and folders left by an interrupted install or
+        update."""
         for path in self.bin_dir.glob("*") if self.bin_dir.is_dir() else ():
             if path.suffix in LEFTOVER_SUFFIXES:
                 with contextlib.suppress(OSError):
-                    path.unlink()
+                    _remove(path)
         with contextlib.suppress(OSError):
             (self._manifest_path.with_name(MANIFEST_NAME + ".tmp")).unlink()
 
@@ -364,6 +389,7 @@ class EngineManager:
             tag, sha = self._latest_ytdlp()
             self._install_ytdlp(tag, sha)
             self._touch_last_check()
+        self._remove_legacy_ytdlp()
         for archive in self._pinned(self.target):
             if not all(self._installed(e.binary, archive.sha256) for e in archive.extracts):
                 self._install_archive(archive)
@@ -373,6 +399,8 @@ class EngineManager:
         entry = self._manifest.get("binaries", {}).get(binary)
         if not isinstance(entry, dict) or not self.binary_path(binary).is_file():
             return False
+        if binary == "yt-dlp" and self._ytdlp_is_folder and not entry.get("archiveSha256"):
+            return False  # installed by an earlier version as a single binary: reinstall
         return archive_sha256 is None or entry.get("archiveSha256") == archive_sha256
 
     def _install_archive(self, archive: sources.Archive) -> None:
@@ -464,24 +492,77 @@ class EngineManager:
         return tag, sums[asset]
 
     def _stage_ytdlp(self, tag: str, sha256: str) -> Path:
+        """Download and verify the release; return the staged unit (`.new` file or folder)."""
         assert self.target is not None
         tmp = self._download(sources.ytdlp_asset_url(tag, self.target), "yt-dlp")
         try:
             _check_sha256(tmp, sha256, "yt-dlp")
-            final = self.binary_path("yt-dlp")
-            new = final.with_name(final.name + ".new")
-            os.replace(tmp, new)
+            unit = self._ytdlp_unit()
+            new = unit.with_name(unit.name + ".new")
+            if self._ytdlp_is_folder:
+                self._extract_ytdlp(tmp, new)
+            else:
+                os.replace(tmp, new)
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
+        tmp.unlink(missing_ok=True)
         return new
+
+    def _extract_ytdlp(self, archive: Path, dest: Path) -> None:
+        """Unpack the (verified) zip into `dest`; on any failure nothing is left behind."""
+        assert self.target is not None
+        shutil.rmtree(dest, ignore_errors=True)
+        try:
+            with zipfile.ZipFile(archive) as zf:
+                _extract_zip(zf, dest)
+            executable = dest / sources.ytdlp_executable(self.target)
+            if not executable.is_file():
+                raise EngineError(
+                    f"No se encontró {executable.name} dentro de la descarga de yt-dlp."
+                )
+            if os.name == "posix":
+                executable.chmod(EXECUTABLE_MODE)
+        except (zipfile.BadZipFile, OSError) as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise EngineError(f"El archivo de yt-dlp no es válido: {exc}") from exc
+        except BaseException:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise
 
     def _install_ytdlp(self, tag: str, sha256: str) -> None:
         new = self._stage_ytdlp(tag, sha256)
         try:
-            self._activate("yt-dlp", new)
+            if self._ytdlp_is_folder:
+                self._activate_ytdlp_folder(new, sha256)
+            else:
+                self._activate("yt-dlp", new)
         finally:
-            new.unlink(missing_ok=True)
+            _remove(new)
+
+    def _activate_ytdlp_folder(self, new: Path, archive_sha256: str) -> None:
+        final = self._ytdlp_dist
+        try:
+            shutil.rmtree(final, ignore_errors=True)  # a folder left by an interrupted install
+            os.replace(new, final)
+        except OSError as exc:
+            raise EngineError(f"No se pudo instalar yt-dlp: {exc}") from exc
+        self._record("yt-dlp", self.binary_path("yt-dlp"), archive_sha256=archive_sha256)
+        self._remove_legacy_ytdlp()
+
+    def _remove_legacy_ytdlp(self) -> None:
+        """Delete the single binary of earlier versions once the folder is installed.
+
+        On Windows it can be locked by a running process: the error is ignored, and it is
+        deleted at the next start.
+        """
+        if not self._ytdlp_is_folder or not self._installed("yt-dlp"):
+            return
+        legacy = self.bin_dir / sources.exe_name("yt-dlp", self.target or "linux-x64")
+        try:
+            legacy.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("Could not delete %s: %s", legacy, exc)
 
     def _update_ytdlp(self) -> UpdateOutcome:
         current = self.info().versions.get("yt-dlp", "")
@@ -491,13 +572,13 @@ class EngineManager:
             return UpdateOutcome.UP_TO_DATE
 
         new = self._stage_ytdlp(tag, sha256)
-        final = self.binary_path("yt-dlp")
+        final = self._ytdlp_unit()  # the folder (macOS, Windows) or the single binary
         old = final.with_name(final.name + ".old")
         try:
-            if os.name == "posix":
+            if not self._ytdlp_is_folder and os.name == "posix":
                 new.chmod(EXECUTABLE_MODE)
             try:
-                old.unlink(missing_ok=True)  # may still be locked by a process on Windows
+                _remove(old)  # may still be locked by a process on Windows
                 os.replace(final, old)  # current -> .old
             except OSError as exc:
                 raise EngineError(f"No se pudo reemplazar yt-dlp: {exc}") from exc
@@ -505,18 +586,20 @@ class EngineManager:
                 os.replace(new, final)  # new -> current
                 version = self._check_version("yt-dlp")
             except (OSError, EngineError) as exc:
-                os.replace(old, final)  # roll back to the working binary
+                _remove(final, ignore_errors=True)  # whatever of the new one is in place
+                os.replace(old, final)  # roll back to the working one
                 if isinstance(exc, EngineError):
                     raise
                 raise EngineError(f"No se pudo reemplazar yt-dlp: {exc}") from exc
         finally:
-            new.unlink(missing_ok=True)
+            _remove(new, ignore_errors=True)
         try:
-            old.unlink(missing_ok=True)
+            _remove(old)
         except OSError as exc:  # still locked: cleaned up at the next start
             log.warning("Could not delete %s: %s", old, exc)
 
-        self._record("yt-dlp", final)
+        archive_sha256 = sha256 if self._ytdlp_is_folder else None
+        self._record("yt-dlp", self.binary_path("yt-dlp"), archive_sha256=archive_sha256)
         self._manifest["binaries"]["yt-dlp"]["version"] = version
         self._save_manifest()
         self._set(versions={**self.info().versions, "yt-dlp": version})
@@ -527,7 +610,9 @@ class EngineManager:
     def _check_version(self, binary: str) -> str:
         path = self.binary_path(binary)
         try:
-            output = self._run([str(path), _VERSION_FLAGS[binary]])
+            output = self._run(
+                [str(path), _VERSION_FLAGS[binary]], timeout=VERSION_CHECK_TIMEOUT_SECONDS
+            )
         except ProcessError as exc:
             raise EngineError(f"{binary} no se pudo ejecutar: {exc}") from exc
         match = _VERSION_PATTERNS[binary].match(
@@ -597,6 +682,46 @@ def _check_sha256(path: Path, expected: str, label: str) -> None:
         raise EngineError(
             f"La descarga de {label} no coincide con su SHA-256 esperado y no se activó."
         )
+
+
+def _remove(path: Path, *, ignore_errors: bool = False) -> None:
+    """Delete a file or a whole folder; a missing path is fine."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, ignore_errors=ignore_errors)
+    elif ignore_errors:
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract every entry into `dest`, refusing paths that would land outside it (zip slip).
+
+    `zipfile` drops the Unix permissions of the entries: those with an execute bit are restored.
+    """
+    root = dest.resolve()
+    dest.mkdir(parents=True)
+    for info in zf.infolist():
+        name = info.filename
+        if (
+            name.startswith(("/", "\\"))
+            or PureWindowsPath(name).drive
+            or ".." in PurePosixPath(name.replace("\\", "/")).parts
+        ):
+            raise EngineError(f"La descarga de yt-dlp trae una ruta no permitida ({name!r}).")
+        target = (root / name).resolve()
+        if not target.is_relative_to(root):
+            raise EngineError(f"La descarga de yt-dlp trae una ruta no permitida ({name!r}).")
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as src, target.open("wb") as out:
+            _copy(src, out)
+        mode = stat.S_IMODE(info.external_attr >> 16) if info.create_system == 3 else 0
+        if os.name == "posix" and mode & 0o111:
+            target.chmod(mode | 0o600)
 
 
 def _copy(src, dst) -> None:

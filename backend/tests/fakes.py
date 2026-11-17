@@ -20,12 +20,28 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def make_zip(files: dict[str, bytes]) -> bytes:
+def make_zip(files: dict[str, bytes], modes: dict[str, int] | None = None) -> bytes:
+    """A zip of `files`; `modes` sets the Unix permissions of some entries (like a zip made on
+    macOS, which `zipfile` does not restore when extracting)."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for name, data in files.items():
-            zf.writestr(name, data)
+            info = zipfile.ZipInfo(name)
+            info.create_system = 3
+            info.external_attr = ((modes or {}).get(name, 0o644) | 0o100000) << 16
+            zf.writestr(info, data)
     return buf.getvalue()
+
+
+def ytdlp_zip(content: bytes, target: str, extra: dict[str, bytes] | None = None) -> bytes:
+    """The unpackaged yt-dlp release asset: the executable plus an `_internal/` folder."""
+    executable = sources.ytdlp_executable(target)
+    files = {
+        executable: content,
+        "_internal/base_library.zip": b"lib",
+        "_internal/libpython.dylib": b"dylib",
+    } | (extra or {})
+    return make_zip(files, {executable: 0o755, "_internal/libpython.dylib": 0o755})
 
 
 class FakeFetcher:
@@ -62,15 +78,26 @@ class FakeFetcher:
     # -- yt-dlp releases ----------------------------------------------------------------------
 
     def publish_ytdlp(
-        self, tag: str, content: bytes, *, sums_sha256: str | None = None, target: str = TARGET
+        self,
+        tag: str,
+        content: bytes,
+        *,
+        sums_sha256: str | None = None,
+        target: str = TARGET,
+        archive: bytes | None = None,
     ) -> None:
+        """`content` is what the yt-dlp executable prints for `--version`. Where yt-dlp is the
+        unpackaged zip it is served inside one (or `archive`, to serve a specific zip)."""
         asset = sources.ytdlp_asset(target)
+        served = content
+        if sources.ytdlp_unpackaged(target):
+            served = archive if archive is not None else ytdlp_zip(content, target)
         self.add(sources.YTDLP_LATEST_PAGE, f"{sources.YTDLP_RELEASES_TAG}/{tag}".encode())
-        digest = sums_sha256 or sha256(content)
+        digest = sums_sha256 or sha256(served)
         self.add(
             sources.ytdlp_sums_url(tag), f"{'0' * 64}  other-asset\n{digest}  {asset}\n".encode()
         )
-        self.add(sources.ytdlp_asset_url(tag, target), content)
+        self.add(sources.ytdlp_asset_url(tag, target), served)
 
 
 class FakeRunner:
@@ -78,9 +105,11 @@ class FakeRunner:
 
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
+        self.timeouts: list[float] = []
 
     def __call__(self, args: Sequence[str], timeout: float = 30) -> str:
         self.calls.append(list(args))
+        self.timeouts.append(timeout)
         content = Path(args[0]).read_text()
         if content.startswith("FAIL"):
             raise ProcessError(content)

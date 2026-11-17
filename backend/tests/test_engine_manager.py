@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,7 +27,9 @@ from tests.fakes import (
     FakeFetcher,
     FakeRunner,
     fake_archives,
+    make_zip,
     sha256,
+    ytdlp_zip,
 )
 
 MakeEngine = Callable[..., EngineManager]
@@ -253,6 +256,280 @@ class TestLeftovers:
             "keep.txt",
             "yt-dlp",
         ]
+
+    def test_old_and_new_folders_are_deleted_but_not_the_installed_one(
+        self, make_engine: MakeEngine, data_dir: Path
+    ) -> None:
+        directory = bin_dir(data_dir)
+        for name in ("yt-dlp-dist.old", "yt-dlp-dist.new"):
+            (directory / name / "_internal").mkdir(parents=True)
+            (directory / name / "_internal" / "lib.so").write_bytes(b"leftover")
+        (directory / "yt-dlp-dist" / "_internal").mkdir(parents=True)
+
+        make_engine(target="macos-arm64").cleanup_leftovers()
+
+        assert sorted(p.name for p in directory.iterdir()) == ["yt-dlp-dist"]
+
+
+class TestUnpackagedYtdlp:
+    """macOS and Windows: yt-dlp is the unpackaged zip, installed as the folder `yt-dlp-dist/`."""
+
+    @pytest.fixture(params=["macos-arm64", "windows-x64"])
+    def target(self, request: pytest.FixtureRequest, fetcher: FakeFetcher) -> str:
+        fetcher.publish_ytdlp("2026.10.26", YTDLP_OLD, target=request.param)
+        return request.param
+
+    @pytest.fixture
+    def dist(self, data_dir: Path) -> Path:
+        return bin_dir(data_dir) / "yt-dlp-dist"
+
+    def exe(self, target: str) -> str:
+        return sources.ytdlp_executable(target)
+
+    def legacy(self, target: str, data_dir: Path) -> Path:
+        """The single binary an earlier version installed."""
+        return bin_dir(data_dir) / ("yt-dlp.exe" if target == "windows-x64" else "yt-dlp")
+
+    def test_installs_the_folder_verified_by_the_zip_hash(
+        self,
+        make_engine: MakeEngine,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+        runner: FakeRunner,
+    ) -> None:
+        engine = make_engine(target=target)
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.READY, engine.info().message
+        assert engine.info().versions["yt-dlp"] == "2026.10.26"
+        assert engine.binary_path("yt-dlp") == dist / self.exe(target)
+        assert (dist / self.exe(target)).read_bytes() == YTDLP_OLD
+        assert (dist / "_internal" / "base_library.zip").read_bytes() == b"lib"
+        assert sorted(p.name for p in bin_dir(data_dir).iterdir() if p.name.startswith("yt")) == [
+            "yt-dlp-dist"
+        ]
+        entry = manifest(data_dir)["binaries"]["yt-dlp"]
+        assert entry["archiveSha256"] == sha256(ytdlp_zip(YTDLP_OLD, target))
+        assert entry["sha256"] == sha256(YTDLP_OLD)
+        assert entry["version"] == "2026.10.26"
+        assert str(dist / self.exe(target)) in [call[0] for call in runner.calls]
+
+    def test_restores_the_execute_bits_of_the_zip_on_macos(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher, dist: Path
+    ) -> None:
+        fetcher.publish_ytdlp("2026.10.26", YTDLP_OLD, target="macos-arm64")
+        engine = make_engine(target="macos-arm64")
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.READY, engine.info().message
+        assert os.access(dist / "yt-dlp_macos", os.X_OK)
+        assert os.access(dist / "_internal" / "libpython.dylib", os.X_OK)
+        assert not os.access(dist / "_internal" / "base_library.zip", os.X_OK)
+
+    def test_the_version_check_gets_time_for_the_slow_first_run(
+        self, make_engine: MakeEngine, target: str, runner: FakeRunner
+    ) -> None:
+        make_engine(target=target).install()
+
+        assert runner.timeouts
+        assert min(runner.timeouts) >= 60
+
+    @pytest.mark.parametrize(
+        "name", ["../evil.txt", "_internal/../../evil.txt", "/tmp/evil.txt", "..\\evil.txt"]
+    )
+    def test_an_entry_outside_the_folder_fails_the_install_and_leaves_nothing(
+        self,
+        make_engine: MakeEngine,
+        fetcher: FakeFetcher,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+        name: str,
+    ) -> None:
+        bad = make_zip({self.exe(target): YTDLP_OLD, name: b"pwned"})
+        fetcher.publish_ytdlp("2026.10.26", YTDLP_OLD, target=target, archive=bad)
+        engine = make_engine(target=target)
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.ERROR
+        assert "ruta no permitida" in (engine.info().message or "")
+        assert not dist.exists()
+        assert not (data_dir / "evil.txt").exists()
+        assert not (bin_dir(data_dir) / "evil.txt").exists()
+        assert [p.name for p in bin_dir(data_dir).iterdir() if p.name.startswith("yt")] == []
+        assert [p.name for p in bin_dir(data_dir).iterdir() if p.suffix in (".tmp", ".new")] == []
+
+    def test_a_zip_hash_not_in_sha2_256sums_installs_nothing(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher, target: str, dist: Path
+    ) -> None:
+        fetcher.publish_ytdlp("2026.10.26", YTDLP_OLD, target=target, sums_sha256="f" * 64)
+        engine = make_engine(target=target)
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.ERROR
+        assert not dist.exists()
+
+    def test_a_zip_without_the_executable_is_an_error(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher, target: str, dist: Path
+    ) -> None:
+        empty = make_zip({"_internal/base_library.zip": b"lib"})
+        fetcher.publish_ytdlp("2026.10.26", YTDLP_OLD, target=target, archive=empty)
+        engine = make_engine(target=target)
+
+        engine.install()
+
+        assert engine.info().status == EngineStatus.ERROR
+        assert self.exe(target) in (engine.info().message or "")
+        assert not dist.exists()
+
+    def test_restart_with_an_installed_folder_only_verifies_it(
+        self, make_engine: MakeEngine, fetcher: FakeFetcher, target: str
+    ) -> None:
+        make_engine(target=target).install()
+        fetcher.requests.clear()
+
+        restarted = make_engine(target=target)
+        restarted.install()
+
+        assert restarted.info().status == EngineStatus.READY
+        assert fetcher.requests == []
+
+    def test_an_install_with_the_single_binary_is_migrated_and_the_old_file_deleted(
+        self,
+        make_engine: MakeEngine,
+        fetcher: FakeFetcher,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+    ) -> None:
+        make_engine(target=target).install()
+        # What an earlier version left: the single binary, and no `archiveSha256` in engine.json.
+        shutil.rmtree(dist)
+        legacy = self.legacy(target, data_dir)
+        legacy.write_bytes(YTDLP_OLD)
+        saved = manifest(data_dir)
+        del saved["binaries"]["yt-dlp"]["archiveSha256"]
+        (data_dir / "engine.json").write_text(json.dumps(saved))
+        fetcher.requests.clear()
+
+        engine = make_engine(target=target)
+        engine.install()
+
+        assert engine.info().status == EngineStatus.READY, engine.info().message
+        assert not legacy.exists()
+        assert (dist / self.exe(target)).read_bytes() == YTDLP_OLD
+        assert manifest(data_dir)["binaries"]["yt-dlp"]["archiveSha256"]
+        assert fetcher.downloads_of("yt-dlp_") == 1
+        assert fetcher.downloads_of("deno.zip") == 0  # the rest of the Engine is kept
+
+    def test_a_locked_old_binary_does_not_fail_the_migration(
+        self,
+        make_engine: MakeEngine,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        legacy = self.legacy(target, data_dir)
+        legacy.parent.mkdir()
+        legacy.write_bytes(YTDLP_OLD)
+        real_unlink = Path.unlink
+
+        def locked(path: Path, *args: object, **kwargs: object) -> None:
+            if path == legacy:
+                raise PermissionError("in use by another process")
+            real_unlink(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "unlink", locked)
+
+        engine = make_engine(target=target)
+        engine.install()
+
+        assert engine.info().status == EngineStatus.READY, engine.info().message
+        assert legacy.exists()
+        assert (dist / self.exe(target)).is_file()
+
+    def test_update_swaps_the_whole_folder(
+        self,
+        make_engine: MakeEngine,
+        fetcher: FakeFetcher,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+    ) -> None:
+        engine = make_engine(target=target)
+        engine.install()
+        new_zip = ytdlp_zip(YTDLP_NEW, target, {"_internal/extra.bin": b"only in the new one"})
+        fetcher.publish_ytdlp("2026.11.30", YTDLP_NEW, target=target, archive=new_zip)
+
+        assert engine.update_ytdlp() == UpdateOutcome.UPDATED
+
+        assert engine.info().versions["yt-dlp"] == "2026.11.30"
+        assert (dist / self.exe(target)).read_bytes() == YTDLP_NEW
+        assert (dist / "_internal" / "extra.bin").exists()
+        assert sorted(p.name for p in bin_dir(data_dir).iterdir() if p.name.startswith("yt")) == [
+            "yt-dlp-dist"
+        ]
+        entry = manifest(data_dir)["binaries"]["yt-dlp"]
+        assert entry == {
+            "sha256": sha256(YTDLP_NEW),
+            "version": "2026.11.30",
+            "archiveSha256": sha256(new_zip),
+        }
+        # the update must not look like an old install at the next start
+        fetcher.requests.clear()
+        restarted = make_engine(target=target)
+        restarted.install()
+        assert restarted.info().versions["yt-dlp"] == "2026.11.30"
+        assert fetcher.requests == []
+
+    def test_a_new_version_that_does_not_run_is_rolled_back_to_the_old_folder(
+        self,
+        make_engine: MakeEngine,
+        fetcher: FakeFetcher,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+    ) -> None:
+        engine = make_engine(target=target)
+        engine.install()
+        bad = ytdlp_zip(b"FAIL: bad build", target, {"_internal/new-only.bin": b"x"})
+        fetcher.publish_ytdlp("2026.11.30", b"", target=target, archive=bad)
+
+        assert engine.update_ytdlp() == UpdateOutcome.FAILED
+
+        assert (dist / self.exe(target)).read_bytes() == YTDLP_OLD
+        assert not (dist / "_internal" / "new-only.bin").exists()
+        assert sorted(p.name for p in bin_dir(data_dir).iterdir() if p.name.startswith("yt")) == [
+            "yt-dlp-dist"
+        ]
+        assert manifest(data_dir)["binaries"]["yt-dlp"]["version"] == "2026.10.26"
+        assert engine.info().status == EngineStatus.READY
+        assert engine.info().versions["yt-dlp"] == "2026.10.26"
+
+    def test_an_update_with_an_entry_outside_the_folder_keeps_the_old_one(
+        self,
+        make_engine: MakeEngine,
+        fetcher: FakeFetcher,
+        target: str,
+        dist: Path,
+        data_dir: Path,
+    ) -> None:
+        engine = make_engine(target=target)
+        engine.install()
+        bad = make_zip({self.exe(target): YTDLP_NEW, "../evil.txt": b"pwned"})
+        fetcher.publish_ytdlp("2026.11.30", YTDLP_NEW, target=target, archive=bad)
+
+        assert engine.update_ytdlp() == UpdateOutcome.FAILED
+
+        assert (dist / self.exe(target)).read_bytes() == YTDLP_OLD
+        assert not (bin_dir(data_dir) / "evil.txt").exists()
+        assert [p.name for p in bin_dir(data_dir).iterdir() if p.suffix in (".new", ".old")] == []
 
 
 class TestExternalBinDir:
