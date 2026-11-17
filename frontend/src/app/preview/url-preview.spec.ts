@@ -1218,6 +1218,64 @@ describe('UrlPreview', () => {
         expect(one().disabled).toBe(false);
       });
 
+      it('disables "Ver playlist completa" while it waits, so the pending download is not dropped', async () => {
+        await show();
+        const background = http.expectOne('/api/preview');
+        all()!.click();
+        await settle();
+
+        const full = el<HTMLButtonElement>('full-playlist')!;
+        expect(full.disabled).toBe(true);
+        full.click();
+        await settle();
+
+        expect(all()!.textContent).toContain('Encolando…');
+        await answer(background, THREE);
+
+        const req = http.expectOne('/api/jobs');
+        expect(req.request.body).toMatchObject({ entries: entriesBody(THREE.entries) });
+        await answer(req, { batchId: 'b1', jobs: [] });
+        http.expectNone('/api/jobs');
+      });
+
+      it('enqueues once when "Descargar playlist" is pressed twice while it loads', async () => {
+        await show();
+        const background = http.expectOne('/api/preview');
+
+        all()!.click();
+        await settle();
+        all()!.click();
+        await settle();
+        expect(all()!.disabled).toBe(true);
+
+        await answer(background, THREE);
+
+        const req = http.expectOne('/api/jobs');
+        await answer(req, { batchId: 'b1', jobs: [] });
+        http.expectNone('/api/jobs');
+      });
+
+      it('queues nothing and does not stay in "Encolando…" when the Engine stops being ready', async () => {
+        await show();
+        http.expectOne('/api/preview');
+        all()!.click();
+        await settle();
+
+        engine.engine.set({ ...ENGINE_READY, status: 'installing', message: null } as EngineInfo);
+        await settle();
+        engine.engine.set(ENGINE_READY);
+        await settle();
+
+        http.expectNone('/api/jobs');
+        expect(root().textContent).not.toContain('Encolando…');
+
+        await type(URL_B, 'insertFromPaste');
+        await answer(http.expectOne('/api/preview'), { ...MEDIA, url: URL_B });
+        http.expectNone('/api/jobs');
+        expect(one().textContent?.trim()).toBe('Descargar');
+        expect(one().disabled).toBe(false);
+      });
+
       it('keeps the error and the preview when the server refuses on arrival', async () => {
         await show();
         const background = http.expectOne('/api/preview');
