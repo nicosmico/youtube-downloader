@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 
 from app import APP_ID, __version__
+from app.download_dir import DownloadDir, DownloadDirUnavailable
 from app.engine import EngineManager, UpdateOutcome
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
@@ -43,7 +44,7 @@ def build_router(
     engine: EngineManager,
     update: Callable[[], dict[str, str] | None],
     previews: PreviewService,
-    download_dir: Path,
+    download_dir: DownloadDir,
     open_folder: FolderOpener,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
@@ -99,9 +100,18 @@ def build_router(
     @router.post("/system/open-downloads")
     def open_downloads() -> dict[str, str]:
         """Host action: the dev container (Linux) cannot open Finder, so it answers 501."""
+        folder = download_dir.path
+        if download_dir.is_default:
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                raise ApiError(
+                    500, "open_failed", "No se pudo abrir la carpeta de descargas."
+                ) from None
+        elif not folder.is_dir():  # a chosen folder is never created (an unplugged disk)
+            raise DownloadDirUnavailable(download_dir.display())
         try:
-            download_dir.mkdir(parents=True, exist_ok=True)
-            open_folder(download_dir)
+            open_folder(folder)
         except OpenUnavailable:
             raise ApiError(
                 501,

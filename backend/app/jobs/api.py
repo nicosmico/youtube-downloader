@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.download_dir import DownloadDir
 from app.engine.guard import require_engine_ready
 from app.errors import ApiError
 from app.jobs.folders import FALLBACK_FOLDER, sanitize_folder_name
@@ -56,7 +57,9 @@ def _clean_thumbnail(value: str | None) -> str | None:
     return value if value.startswith("https://") else None
 
 
-def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevealer) -> APIRouter:
+def build_jobs_router(
+    *, queue: JobQueue, repo: JobRepository, reveal: FileRevealer, download_dir: DownloadDir
+) -> APIRouter:
     router = APIRouter(prefix="/api/jobs")
 
     @router.post("", dependencies=[Depends(require_engine_ready)])
@@ -72,7 +75,9 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevea
             return _create_batch(body, classified.url, title)
         if body.entries is not None:
             raise ApiError(422, "invalid_entries", "Un video suelto no lleva lista de videos.")
+        folder = download_dir.effective()  # 409 if a chosen folder is not there
         job = queue.enqueue(
+            download_dir=str(folder),
             url=classified.url,
             mode=body.mode,
             quality=body.quality,
@@ -106,7 +111,9 @@ def build_jobs_router(*, queue: JobQueue, repo: JobRepository, reveal: FileRevea
                 }
             )
         entries.sort(key=lambda e: e["index"])
+        folder = download_dir.effective()  # 409 if a chosen folder is not there
         batch, jobs = queue.enqueue_batch(
+            download_dir=str(folder),
             source_url=source_url,
             title=title or FALLBACK_FOLDER,
             folder_name=sanitize_folder_name(title or ""),

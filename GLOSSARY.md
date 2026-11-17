@@ -47,7 +47,7 @@ Estado del ciclo de vida de un `DownloadJob`: `queued`, `downloading`, `processi
 _Evitar_: estado de la descarga, progreso
 
 **Destination**:
-Carpeta de descargas del usuario donde quedan los archivos terminados; cada `Batch` va en una subcarpeta con el título de su `Playlist`.
+Carpeta de descargas donde quedan los archivos terminados: `~/Downloads` por defecto, o la que el usuario elija (ADR-0012). Cada `DownloadJob` guarda la que había al ponerse en cola, y sus reintentos la conservan. Cada `Batch` va en una subcarpeta con el título de su `Playlist`.
 _Evitar_: ruta de salida, carpeta destino
 
 ## Opciones

@@ -97,3 +97,20 @@ def test_a_v0_1_1_database_migrates_and_its_jobs_have_no_thumbnail(tmp_path: Pat
     assert db.migrate() == len(MIGRATIONS)
     assert "thumbnail" in {r["name"] for r in db.query("PRAGMA table_info(jobs)")}
     assert db.query("SELECT thumbnail FROM jobs WHERE id = 'a'")[0]["thumbnail"] is None
+
+
+def test_a_v0_2_4_database_migrates_to_settings_and_job_download_dir(tmp_path: Path) -> None:
+    path = tmp_path / "db.sqlite3"
+    v0_2_4 = Database(path, MIGRATIONS[:6])
+    assert v0_2_4.migrate() == 6
+    v0_2_4.execute(
+        "INSERT INTO jobs (id, url, mode, status, created_at) "
+        "VALUES ('a', 'u', 'video', 'completed', 't')"
+    )
+    v0_2_4.close()
+
+    db = Database(path)
+
+    assert db.migrate() == len(MIGRATIONS)
+    assert "settings" in tables(db)
+    assert db.query("SELECT download_dir FROM jobs WHERE id = 'a'")[0]["download_dir"] is None

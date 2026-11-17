@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from app.jobs.files import FileMover, clean_orphans, find_staged_file, prepare_staging
+from app.jobs.files import (
+    DownloadDirMissing,
+    FileMover,
+    clean_orphans,
+    find_staged_file,
+    prepare_staging,
+)
 
 
 def staged(root: Path, name: str, content: bytes = b"x") -> Path:
@@ -67,6 +73,45 @@ class TestMove:
 
         with pytest.raises(PermissionError):
             mover.move(staged(tmp_path / "s", "V.mp4"))
+
+
+class TestMoveIntoAnotherBase:
+    def test_a_chosen_base_that_exists_is_used_instead_of_the_default(self, tmp_path: Path) -> None:
+        base = tmp_path / "Música"
+        base.mkdir()
+        mover = FileMover(tmp_path / "downloads")
+
+        final = mover.move(staged(tmp_path / "s", "V.mp4"), base=base)
+
+        assert final == base / "V.mp4"
+        assert not (tmp_path / "downloads").exists()
+
+    def test_a_chosen_base_that_is_missing_is_not_created(self, tmp_path: Path) -> None:
+        base = tmp_path / "Disco externo"
+        mover = FileMover(tmp_path / "downloads")
+        src = staged(tmp_path / "s", "V.mp4")
+
+        with pytest.raises(DownloadDirMissing):
+            mover.move(src, "Lista", base=base)
+
+        assert not base.exists()
+        assert src.exists()
+
+    def test_the_default_base_is_created_even_when_passed_explicitly(self, tmp_path: Path) -> None:
+        mover = FileMover(tmp_path / "downloads")
+
+        final = mover.move(staged(tmp_path / "s", "V.mp4"), base=tmp_path / "downloads")
+
+        assert final == tmp_path / "downloads" / "V.mp4"
+
+    def test_playlist_subfolders_are_created_inside_the_chosen_base(self, tmp_path: Path) -> None:
+        base = tmp_path / "Música"
+        base.mkdir()
+        mover = FileMover(tmp_path / "downloads")
+
+        final = mover.move(staged(tmp_path / "s", "V.mp4"), "Lista", "01 - V.mp4", base)
+
+        assert final == base / "Lista" / "01 - V.mp4"
 
 
 class TestStaging:
