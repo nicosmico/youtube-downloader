@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Diseño
 
@@ -20,9 +20,11 @@
 
 ## Acceptance criteria
 
-- [ ] Sección en el menú con ruta, "Cambiar…" y "Restablecer" según el estado, con tests (Vitest + jsdom, fakes HTTP): carga inicial, elegir, cancelar, error 501, restablecer, actualización por SSE, no disponible.
-- [ ] El error 409 al encolar se ve en el preview. Test.
-- [ ] `npm run test:ci` y `npm run build` en `frontend/`.
-- [ ] Sin textos que expliquen la UI.
+- [x] Sección en el menú con ruta, "Cambiar…" y "Restablecer" según el estado, con tests (Vitest + jsdom, fakes HTTP): carga inicial, elegir, cancelar, error 501, restablecer, actualización por SSE, no disponible.
+- [x] El error 409 al encolar se ve en el preview. Test.
+- [x] `npm run test:ci` y `npm run build` en `frontend/`.
+- [x] Sin textos que expliquen la UI.
 
 ## Comments
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.5` (release run `43994925014`; en main, CI `43994424935` y Native `43994424993`). Probado en Docker contra el backend real: descarga en la carpeta elegida, aviso al encolar y "No disponible" en el menú con la carpeta quitada, "Restablecer" y el 501 de "Cambiar…". Falta probar el diálogo nativo en un Mac y un Windows reales.

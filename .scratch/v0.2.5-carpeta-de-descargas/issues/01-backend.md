@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Diseño
 
@@ -28,12 +28,14 @@
 
 ## Acceptance criteria
 
-- [ ] Migración con `settings` y `jobs.download_dir`; los jobs existentes siguen funcionando.
-- [ ] Los cuatro endpoints y el evento SSE según el contrato de la spec, con tests (selector falso: elegida, cancelada, no disponible, ocupado; validación del `PUT`).
-- [ ] Encolar guarda la carpeta; cambiarla no afecta a lo encolado; un reintento conserva la suya. Tests.
-- [ ] 409 al encolar con una carpeta elegida que no existe; fallo claro si desaparece antes de mover. Tests.
-- [ ] `open-downloads` abre la carpeta configurada.
-- [ ] Tests del comando de cada sistema sin lanzar procesos (como `test_opener.py`): argumentos, escape de la ruta, cancelación.
-- [ ] `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
+- [x] Migración con `settings` y `jobs.download_dir`; los jobs existentes siguen funcionando.
+- [x] Los cuatro endpoints y el evento SSE según el contrato de la spec, con tests (selector falso: elegida, cancelada, no disponible, ocupado; validación del `PUT`).
+- [x] Encolar guarda la carpeta; cambiarla no afecta a lo encolado; un reintento conserva la suya. Tests.
+- [x] 409 al encolar con una carpeta elegida que no existe; fallo claro si desaparece antes de mover. Tests.
+- [x] `open-downloads` abre la carpeta configurada.
+- [x] Tests del comando de cada sistema sin lanzar procesos (como `test_opener.py`): argumentos, escape de la ruta, cancelación.
+- [x] `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
 
 ## Comments
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.5` (release run `43994925014`; en main, CI `43994424935` y Native `43994424993`). Probado en Docker contra el backend real: descarga en la carpeta elegida, aviso al encolar y "No disponible" en el menú con la carpeta quitada, "Restablecer" y el 501 de "Cambiar…". Falta probar el diálogo nativo en un Mac y un Windows reales.

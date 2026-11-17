@@ -1,6 +1,6 @@
 # Spec: v0.2.5 — carpeta de descargas configurable
 
-**Status:** in-progress
+**Status:** resolved
 
 ## Problem Statement
 
