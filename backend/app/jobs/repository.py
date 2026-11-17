@@ -60,14 +60,15 @@ class JobRepository:
         thumbnail: str | None = None,
         batch_id: str | None = None,
         playlist_index: int | None = None,
+        download_dir: str | None = None,
     ) -> Job:
         """A single video (`batch_id` NULL) or one Entry of a Batch."""
         job_id = uuid.uuid4().hex
         stamp = self._stamp()
         self._db.execute(
             "INSERT INTO jobs (id, batch_id, playlist_index, url, title, mode, quality, "
-            "audio_format, status, created_at, queued_at, thumbnail) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "audio_format, status, created_at, queued_at, thumbnail, download_dir) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 job_id,
                 batch_id,
@@ -81,6 +82,7 @@ class JobRepository:
                 stamp,
                 stamp,
                 thumbnail,
+                download_dir,
             ),
         )
         return self.get(job_id)  # type: ignore[return-value]

@@ -19,6 +19,7 @@ from app.engine.io import ProcessError, ProcessHandle, Streamer, stream_process
 from app.jobs import failures
 from app.jobs.arguments import UnsupportedJob, download_args
 from app.jobs.files import (
+    DownloadDirMissing,
     FileMover,
     find_staged_file,
     prepare_staging,
@@ -127,7 +128,13 @@ class JobRunner:
             return self._fail(job.id, failures.FILE_MISSING, output=(job.attempt, attempt.output()))
         try:
             subdir, name = self._destination(job, staged)
-            final = self._mover.move(staged, subdir, name)
+            base = Path(job.download_dir) if job.download_dir else None
+            final = self._mover.move(staged, subdir, name, base)
+        except DownloadDirMissing:
+            log.warning("job %s: the download folder %s is not available", job.id, job.download_dir)
+            return self._fail(
+                job.id, failures.DOWNLOAD_DIR_UNAVAILABLE, output=(job.attempt, attempt.output())
+            )
         except OSError:
             log.exception("job %s: could not move %s", job.id, staged)
             return self._fail(job.id, failures.MOVE_FAILED, output=(job.attempt, attempt.output()))

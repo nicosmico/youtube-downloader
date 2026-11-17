@@ -93,6 +93,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         ALTER TABLE jobs ADD COLUMN thumbnail TEXT;
         """,
     ),
+    (
+        7,
+        """
+        CREATE TABLE settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        ALTER TABLE jobs ADD COLUMN download_dir TEXT;
+        """,
+    ),
 )
 
 

@@ -13,6 +13,7 @@ from app.preview.failures import MESSAGES, classify_failure
 GENERIC = "La descarga falló. Inténtalo de nuevo."
 FILE_MISSING = "La descarga terminó pero no se encontró el archivo. Inténtalo de nuevo."
 MOVE_FAILED = "No se pudo guardar el archivo en la carpeta de descargas."
+DOWNLOAD_DIR_UNAVAILABLE = "La carpeta de descargas no está disponible."
 INTERRUPTED = "La aplicación se cerró durante la descarga."
 UNSUPPORTED = "Esta combinación de opciones todavía no se puede descargar."
 

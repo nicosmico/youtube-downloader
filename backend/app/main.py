@@ -14,10 +14,12 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import build_router
 from app.db import Database
+from app.download_dir import DownloadDir
 from app.engine import EngineInfo, EngineManager, EngineStatus, run_periodic
 from app.engine.io import Fetcher, Runner, Streamer, run_process, stream_process
 from app.errors import install_error_handlers
 from app.events import Event, EventBroadcaster, build_events_router
+from app.folder_picker import FolderPicker, choose_folder
 from app.idle import IdleMonitor
 from app.jobs import (
     FileMover,
@@ -36,6 +38,7 @@ from app.paths import static_dir as default_static_dir
 from app.preview import PreviewService
 from app.runtime import remove_runtime
 from app.security import LocalSecurityMiddleware
+from app.settings_api import build_settings_router
 from app.spa import mount_spa
 from app.updates import UpdateNotice
 from app.updates import start_thread as start_update_check
@@ -54,6 +57,7 @@ def create_app(
     streamer: Streamer = stream_process,
     open_folder_in_host: FolderOpener = open_folder,
     reveal_in_host: FileRevealer = reveal_file,
+    pick_folder: FolderPicker = choose_folder,
     clock: Callable[[], float] = time.monotonic,
     spawn_job: Callable[[Callable[[], None]], None] = start_thread,
     rename: Callable[[Path, Path], None] = os.rename,
@@ -77,6 +81,11 @@ def create_app(
     database = Database(data_dir / "db.sqlite3")
     database.migrate()
     repo = JobRepository(database)
+    download_setting = DownloadDir(
+        database,
+        download_dir,
+        on_change=lambda data: broadcaster.publish("settings.updated", data),
+    )
     staging = staging_root(data_dir)
     queue = JobQueue(
         repo=repo,
@@ -179,11 +188,18 @@ def create_app(
             engine=engine,
             update=lambda: notice.update,
             previews=PreviewService(engine, ytdlp_runner),
-            download_dir=download_dir,
+            download_dir=download_setting,
             open_folder=open_folder_in_host,
         )
     )
-    app.include_router(build_jobs_router(queue=queue, repo=repo, reveal=reveal_in_host))
+    app.include_router(
+        build_jobs_router(
+            queue=queue, repo=repo, reveal=reveal_in_host, download_dir=download_setting
+        )
+    )
+    app.include_router(
+        build_settings_router(download_dir=download_setting, choose_folder=pick_folder)
+    )
     app.include_router(build_history_router(queue=queue))
     app.include_router(
         build_events_router(

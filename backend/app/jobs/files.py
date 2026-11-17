@@ -60,6 +60,10 @@ def find_staged_file(staging: Path, reported: str | None) -> Path | None:
     return files[0] if len(files) == 1 else None
 
 
+class DownloadDirMissing(Exception):
+    """A chosen download folder is not there at the moment of moving (an unplugged disk)."""
+
+
 class FileMover:
     """Moves finished files into the Destination under one process-wide lock.
 
@@ -77,13 +81,25 @@ class FileMover:
         self._rename = rename
         self._lock = threading.Lock()
 
-    def move(self, source: Path, subdir: str | None = None, name: str | None = None) -> Path:
+    def move(
+        self,
+        source: Path,
+        subdir: str | None = None,
+        name: str | None = None,
+        base: Path | None = None,
+    ) -> Path:
         """Move `source` into the Destination (as `name` if given) and return its final path.
 
-        `subdir` is created if missing and reused if it exists (the folder of a Batch).
+        `base` is the download folder of the job (ADR-0012); the default one when None. Only the
+        default one is created when missing: any other must already exist, else
+        `DownloadDirMissing`. `subdir` is created if missing and reused if it exists (the folder
+        of a Batch).
         """
-        folder = self.download_dir / subdir if subdir else self.download_dir
+        base = base or self.download_dir
+        folder = base / subdir if subdir else base
         with self._lock:
+            if base != self.download_dir and not base.is_dir():
+                raise DownloadDirMissing(str(base))
             folder.mkdir(parents=True, exist_ok=True)
             target = _free_name(folder, name or source.name)
             try:

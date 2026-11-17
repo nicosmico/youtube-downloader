@@ -1,6 +1,7 @@
 """Server-Sent Events: a small broadcaster plus the `GET /api/events` stream.
 
-Jobs, the Queue, the Engine and the shutdown publish through the same broadcaster.
+Jobs, the Queue, the Engine, the settings (`settings.updated`) and the shutdown publish through
+the same broadcaster.
 
 Slow clients (ticket 11): publishing never blocks, whoever calls it (the runner's threads
 included). Every client has a bounded queue; one that falls behind is dropped: its queue is

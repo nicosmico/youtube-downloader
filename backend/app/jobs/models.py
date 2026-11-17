@@ -39,6 +39,8 @@ class Job:
     title: str | None = None
     # URL of the thumbnail the preview showed (loaded by the browser from YouTube).
     thumbnail: str | None = None
+    # Folder the job was enqueued for (ADR-0012); None on jobs from before: the default one.
+    download_dir: str | None = None
     batch_id: str | None = None
     playlist_index: int | None = None
     progress_percent: float = 0.0
