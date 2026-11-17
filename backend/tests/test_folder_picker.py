@@ -37,8 +37,8 @@ class TestMac:
         assert chosen == Path("/Users/ana/Música")
         assert len(run.calls) == 1
         args = run.calls[0][0]
-        assert args[:2] == ["osascript", "-e"]
-        assert args[2] == (
+        assert args[:4] == ["osascript", "-e", "activate", "-e"]
+        assert args[-1] == (
             'POSIX path of (choose folder with prompt "Elige la carpeta de descargas" '
             f'default location (POSIX file "{tmp_path}"))'
         )
@@ -53,7 +53,7 @@ class TestMac:
 
         folder_picker.choose_folder(nasty)
 
-        script = run.calls[0][0][2]
+        script = run.calls[0][0][-1]
         assert f'(POSIX file "{tmp_path}/a\\"b\\\\c")' in script
 
     def test_a_start_folder_that_does_not_exist_is_left_out(
@@ -65,7 +65,7 @@ class TestMac:
         folder_picker.choose_folder(tmp_path / "missing")
         folder_picker.choose_folder(None)
 
-        assert [call[0][2] for call in run.calls] == [
+        assert [call[0][-1] for call in run.calls] == [
             'POSIX path of (choose folder with prompt "Elige la carpeta de descargas")'
         ] * 2
 
@@ -149,3 +149,15 @@ def test_other_systems_have_no_dialog(monkeypatch: pytest.MonkeyPatch) -> None:
         folder_picker.choose_folder(None)
 
     assert run.calls == []
+
+
+def test_windows_output_with_a_bom_is_read_as_the_plain_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = FakeRun(stdout="C:\\Users\\Ana\\Música")
+    install(monkeypatch, "win32", run)
+
+    folder_picker.choose_folder(None)
+
+    # `utf-8-sig` drops a leading BOM that PowerShell may write before the path.
+    assert run.calls[0][1]["encoding"] == "utf-8-sig"

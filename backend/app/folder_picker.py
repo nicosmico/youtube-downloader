@@ -63,8 +63,12 @@ def mac_script(start: Path | None) -> str:
 def _choose_on_mac(start: Path | None) -> Path | None:
     # `default location` fails when the folder is missing: then the dialog just opens anywhere.
     start = start if start is not None and start.is_dir() else None
+    # `activate` brings the dialog in front of the browser: the app itself has no window.
     result = subprocess.run(
-        ["osascript", "-e", mac_script(start)], capture_output=True, text=True, encoding="utf-8"
+        ["osascript", "-e", "activate", "-e", mac_script(start)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         if "User canceled" in result.stderr or "(-128)" in result.stderr:
@@ -82,7 +86,7 @@ def _choose_on_windows(start: Path | None) -> Path | None:
         ["powershell", "-NoProfile", "-STA", "-Command", _WINDOWS_SCRIPT],
         capture_output=True,
         text=True,
-        encoding="utf-8",
+        encoding="utf-8-sig",  # PowerShell may start UTF-8 output with a BOM
         env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
