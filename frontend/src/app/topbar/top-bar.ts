@@ -1,5 +1,6 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
-import { AppUpdate, Health } from '../core/system.service';
+import { AppUpdate, Health, SystemService } from '../core/system.service';
 import { TEXTS } from '../core/texts';
 import { ThemePreference, ThemeService } from '../core/theme.service';
 import { Dismissable } from '../ui/dismissable';
@@ -15,6 +16,11 @@ import { EngineChip } from './engine-chip';
 })
 export class TopBar {
   protected readonly theme = inject(ThemeService);
+  private readonly system = inject(SystemService);
+  protected readonly downloadDir = this.system.downloadDir;
+  /** The native folder dialog is open (it blocks on the server until the user answers). */
+  protected readonly choosing = signal(false);
+  protected readonly dirError = signal<string | null>(null);
   readonly health = input<Health | null>(null);
   readonly update = input<AppUpdate | null>(null);
   readonly unreachable = input(false);
@@ -47,6 +53,26 @@ export class TopBar {
     this.gear()?.nativeElement.focus();
   }
 
+  protected chooseDir(): void {
+    this.dirError.set(null);
+    this.choosing.set(true);
+    this.system.chooseDownloadDir().subscribe({
+      next: () => this.choosing.set(false),
+      error: (error: unknown) => {
+        this.choosing.set(false);
+        this.dirError.set(serverMessage(error) ?? TEXTS.downloadDir.changeFailed);
+      },
+    });
+  }
+
+  protected resetDir(): void {
+    this.dirError.set(null);
+    this.system.resetDownloadDir().subscribe({
+      error: (error: unknown) =>
+        this.dirError.set(serverMessage(error) ?? TEXTS.downloadDir.resetFailed),
+    });
+  }
+
   protected openLogs(): void {
     this.menuOpen.set(false);
     this.logsRequested.emit();
@@ -56,4 +82,8 @@ export class TopBar {
     this.menuOpen.set(false);
     this.shutdownRequested.emit();
   }
+}
+
+function serverMessage(error: unknown): string | null {
+  return error instanceof HttpErrorResponse ? (error.error?.message ?? null) : null;
 }

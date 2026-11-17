@@ -35,6 +35,7 @@ export class App implements OnInit {
   ngOnInit(): void {
     this.engineService.connect();
     this.jobsService.connect();
+    this.system.connectSettings();
     this.stream.on('app.update', (event) => this.system.update.set(eventData<AppUpdate>(event)));
     this.stream.on('shutdown', (event) => this.serverClosed(eventData<{ reason: string }>(event)));
     this.system.health().subscribe({

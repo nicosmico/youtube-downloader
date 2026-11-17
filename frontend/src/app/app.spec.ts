@@ -5,7 +5,7 @@ import { App } from './app';
 import { FakeEventSource } from '../testing/fake-event-source';
 import { appHeaderInterceptor } from './core/api.interceptor';
 import { EVENT_SOURCE_FACTORY, EngineInfo } from './core/engine.service';
-import { SystemService } from './core/system.service';
+import { DownloadDir, SystemService } from './core/system.service';
 import { flushRehydration } from '../testing/rehydration';
 
 const HEALTH = {
@@ -13,6 +13,19 @@ const HEALTH = {
   version: '0.1.0',
   engine: { status: 'missing' },
   port: 4321,
+};
+
+const DIR: DownloadDir = {
+  path: '/Users/ana/Downloads',
+  display: '~/Downloads',
+  isDefault: true,
+  available: true,
+};
+const CUSTOM_DIR: DownloadDir = {
+  path: '/Volumes/Disco/Música',
+  display: '/Volumes/Disco/Música',
+  isDefault: false,
+  available: true,
 };
 
 const ENGINE: EngineInfo = {
@@ -100,6 +113,7 @@ describe('App', () => {
     await fixture.whenStable();
     stream().open();
     http.expectOne('/api/system/engine').flush({ ...ENGINE, status: 'missing' });
+    http.expectOne('/api/settings/download-dir').flush(DIR);
     flushRehydration(http);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -395,6 +409,157 @@ describe('App', () => {
 
     expect(el('[data-testid=closed-title]')?.textContent).toContain('La aplicación se cerró');
     expect(el('[data-testid=closed-title]')?.textContent).not.toContain('inactividad');
+  });
+
+  describe('download folder in the gear menu', () => {
+    const dirEl = (id: string) => el(`[data-testid=download-dir-${id}]`);
+    const change = () => dirEl('change') as HTMLButtonElement;
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const load = async (dir: DownloadDir = DIR) => {
+      http.expectOne('/api/health').flush(HEALTH);
+      stream().open();
+      http.expectOne('/api/system/engine').flush({ ...ENGINE });
+      http.expectOne('/api/settings/download-dir').flush(dir);
+      flushRehydration(http);
+      await openGear();
+    };
+    const choose = async () => {
+      change().click();
+      await settle();
+      return http.expectOne('/api/settings/download-dir/choose');
+    };
+
+    it('shows the folder loaded at start, with the full path as title and no Restablecer', async () => {
+      await load();
+
+      expect(el('[data-testid=download-dir]')?.textContent).toContain('Carpeta de descargas');
+      expect(dirEl('path')?.textContent?.trim()).toBe('~/Downloads');
+      expect(dirEl('path')?.getAttribute('title')).toBe('/Users/ana/Downloads');
+      expect(dirEl('path')?.className).toContain('truncate');
+      expect(dirEl('path')?.className).not.toContain('text-accent');
+      expect(change().textContent).toContain('Cambiar…');
+      expect(dirEl('reset')).toBeNull();
+      expect(dirEl('unavailable')).toBeNull();
+    });
+
+    it('is not shown until the server reports the folder', async () => {
+      http.expectOne('/api/health').flush(HEALTH);
+      await openGear();
+
+      expect(el('[data-testid=download-dir]')).toBeNull();
+    });
+
+    it('chooses a folder: disables Cambiar… with a spinner while the dialog is open', async () => {
+      await load();
+      const req = await choose();
+      expect(req.request.method).toBe('POST');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      expect(change().disabled).toBe(true);
+      expect(dirEl('spinner')).not.toBeNull();
+
+      req.flush(CUSTOM_DIR);
+      await settle();
+
+      expect(change().disabled).toBe(false);
+      expect(dirEl('spinner')).toBeNull();
+      expect(dirEl('path')?.textContent?.trim()).toBe('/Volumes/Disco/Música');
+      expect(dirEl('reset')?.textContent).toContain('Restablecer');
+      expect(dirEl('error')).toBeNull();
+    });
+
+    it('does nothing when the dialog is canceled', async () => {
+      await load();
+      (await choose()).flush({ canceled: true });
+      await settle();
+
+      expect(change().disabled).toBe(false);
+      expect(dirEl('path')?.textContent?.trim()).toBe('~/Downloads');
+      expect(dirEl('error')).toBeNull();
+    });
+
+    it.each([
+      [
+        501,
+        'picker_unavailable',
+        'Esta acción solo funciona en la aplicación de escritorio (macOS o Windows).',
+      ],
+      [409, 'picker_busy', 'Ya hay un diálogo abierto.'],
+      [422, 'download_dir_not_writable', 'No se puede escribir en esa carpeta. Elige otra.'],
+    ])('shows the server message when choose answers %i', async (status, code, message) => {
+      await load();
+      (await choose()).flush({ code, message }, { status, statusText: 'x' });
+      await settle();
+
+      expect(dirEl('error')?.textContent?.trim()).toBe(message);
+      expect(dirEl('error')?.getAttribute('role')).toBe('alert');
+      expect(change().disabled).toBe(false);
+      expect(dirEl('path')?.textContent?.trim()).toBe('~/Downloads');
+    });
+
+    it('shows a generic message when the server cannot be reached, and clears it on retry', async () => {
+      await load();
+      (await choose()).error(new ProgressEvent('error'));
+      await settle();
+      expect(dirEl('error')?.textContent?.trim()).toBe('No se pudo cambiar la carpeta.');
+
+      change().click();
+      await settle();
+      expect(dirEl('error')).toBeNull();
+      http.expectOne('/api/settings/download-dir/choose').flush({ canceled: true });
+    });
+
+    it('Restablecer deletes the setting and goes back to the default', async () => {
+      await load(CUSTOM_DIR);
+      dirEl('reset')!.click();
+      await settle();
+
+      const req = http.expectOne('/api/settings/download-dir');
+      expect(req.request.method).toBe('DELETE');
+      expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+      req.flush(DIR);
+      await settle();
+
+      expect(dirEl('path')?.textContent?.trim()).toBe('~/Downloads');
+      expect(dirEl('reset')).toBeNull();
+    });
+
+    it('follows settings.updated from another tab', async () => {
+      await load();
+
+      stream().emit('settings.updated', CUSTOM_DIR);
+      await settle();
+      expect(dirEl('path')?.textContent?.trim()).toBe('/Volumes/Disco/Música');
+      expect(dirEl('reset')).not.toBeNull();
+
+      stream().emit('settings.updated', DIR);
+      await settle();
+      expect(dirEl('path')?.textContent?.trim()).toBe('~/Downloads');
+      expect(dirEl('reset')).toBeNull();
+    });
+
+    it('fetches the folder again when the stream reconnects', async () => {
+      await load();
+
+      stream().open();
+      http.expectOne('/api/system/engine').flush({ ...ENGINE });
+      http.expectOne('/api/settings/download-dir').flush(CUSTOM_DIR);
+      flushRehydration(http);
+      await settle();
+
+      expect(dirEl('path')?.textContent?.trim()).toBe('/Volumes/Disco/Música');
+    });
+
+    it('marks an unavailable folder in the error colour with "No disponible"', async () => {
+      await load({ ...CUSTOM_DIR, available: false });
+
+      expect(dirEl('path')?.className).toContain('text-accent');
+      expect(dirEl('unavailable')?.textContent?.trim()).toBe('No disponible');
+      expect(dirEl('unavailable')?.className).toContain('text-accent');
+      expect(dirEl('reset')).not.toBeNull();
+    });
   });
 
   it('labels the reveal button from the platform that /api/health reports', async () => {

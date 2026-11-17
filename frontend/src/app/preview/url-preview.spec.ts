@@ -786,6 +786,19 @@ describe('UrlPreview', () => {
       expect(el('preview-card')).not.toBeNull();
     });
 
+    it('shows the server message as is when the download folder is unavailable', async () => {
+      button().click();
+      await settle();
+
+      const message =
+        'La carpeta /Volumes/Disco no está disponible. Conecta el disco o elige otra carpeta.';
+      await answer(http.expectOne('/api/jobs'), { code: 'download_dir_unavailable', message }, 409);
+
+      expect(el('enqueue-error')?.textContent?.trim()).toBe(message);
+      expect(input().value).toBe(URL_A);
+      expect(el('preview-card')).not.toBeNull();
+    });
+
     it('falls back to the server message for unknown codes', async () => {
       button().click();
       await settle();
