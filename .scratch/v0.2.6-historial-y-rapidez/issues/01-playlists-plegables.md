@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Diseño
 
@@ -20,11 +20,13 @@
 
 ## Acceptance criteria
 
-- [ ] Plegar y desplegar con clic y teclado (Enter/Espacio), con `aria-expanded`.
-- [ ] Estado por defecto según las reglas de arriba, incluido "Con error" desplegada.
-- [ ] Una playlist que termina se pliega sola salvo elección manual; la elección manual se recuerda al recargar.
-- [ ] El menú "⋮" no pliega ni despliega.
-- [ ] Tests en `downloads.spec.ts`; `npm run test:ci` y `npm run build` pasan.
-- [ ] Sin textos que expliquen la UI.
+- [x] Plegar y desplegar con clic y teclado (Enter/Espacio), con `aria-expanded`.
+- [x] Estado por defecto según las reglas de arriba, incluido "Con error" desplegada.
+- [x] Una playlist que termina se pliega sola salvo elección manual; la elección manual se recuerda al recargar.
+- [x] El menú "⋮" no pliega ni despliega.
+- [x] Tests en `downloads.spec.ts`; `npm run test:ci` y `npm run build` pasan.
+- [x] Sin textos que expliquen la UI.
 
 ## Comments
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.6` (release run `44138736518`; en main, CI `44138288876` y Native `44138288404`). Probado en Docker: las playlists terminadas aparecen plegadas y se abren con un clic. Falta probarlo en un Mac y un Windows reales.

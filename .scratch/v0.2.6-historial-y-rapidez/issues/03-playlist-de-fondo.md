@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## 1. "Ver playlist completa" reutiliza la carga
 
@@ -22,10 +22,12 @@
 
 ## Acceptance criteria
 
-- [ ] "Ver playlist completa" no hace una segunda petición si la playlist está cargada o cargando. Tests con fakes HTTP (contando peticiones).
-- [ ] "Descargar playlist" pulsable durante la carga; encola al llegar con el formato elegido al pulsar; limpia el campo. Tests.
-- [ ] Fallo tras pulsar: error visible, nada en cola. Cambiar la URL antes de llegar: nada en cola. Tests.
-- [ ] `npm run test:ci` y `npm run build` pasan.
-- [ ] Sin textos que expliquen la UI.
+- [x] "Ver playlist completa" no hace una segunda petición si la playlist está cargada o cargando. Tests con fakes HTTP (contando peticiones).
+- [x] "Descargar playlist" pulsable durante la carga; encola al llegar con el formato elegido al pulsar; limpia el campo. Tests.
+- [x] Fallo tras pulsar: error visible, nada en cola. Cambiar la URL antes de llegar: nada en cola. Tests.
+- [x] `npm run test:ci` y `npm run build` pasan.
+- [x] Sin textos que expliquen la UI.
 
 ## Comments
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.6` (release run `44138736518`; en main, CI `44138288876` y Native `44138288404`). Probado en Docker: "Descargar playlist" pulsado durante la carga encoló las 8 entradas al llegar y vació el campo. Antes de publicar se arregló un bug: "Ver playlist completa" anulaba sin aviso una descarga pendiente; ahora se desactiva mientras se encola.

@@ -1,6 +1,6 @@
 # Spec: v0.2.6 — playlists plegables y descargas más rápidas
 
-**Status:** in-progress
+**Status:** resolved
 
 ## Problem Statement
 

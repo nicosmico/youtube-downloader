@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Diseño
 
@@ -17,11 +17,13 @@
 
 ## Acceptance criteria
 
-- [ ] Caché con TTL de 1 h, límite LRU de 20, solo vídeos sueltos, segura entre hilos. Tests con reloj falso.
-- [ ] Un job de vídeo suelto con preview reciente arranca con `--load-info-json` y sin URL; sin preview o con uno caducado, con la URL como hoy. Tests.
-- [ ] Si falla con la información reutilizada, se repite con la URL de forma transparente (un único Attempt, sin estado `failed` intermedio publicado). Test con el motor falso.
-- [ ] Cancelar durante la ejecución con información reutilizada no dispara el respaldo. Test.
-- [ ] `info.json` nunca se mueve a la carpeta de descargas. Test.
-- [ ] `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
+- [x] Caché con TTL de 1 h, límite LRU de 20, solo vídeos sueltos, segura entre hilos. Tests con reloj falso.
+- [x] Un job de vídeo suelto con preview reciente arranca con `--load-info-json` y sin URL; sin preview o con uno caducado, con la URL como hoy. Tests.
+- [x] Si falla con la información reutilizada, se repite con la URL de forma transparente (un único Attempt, sin estado `failed` intermedio publicado). Test con el motor falso.
+- [x] Cancelar durante la ejecución con información reutilizada no dispara el respaldo. Test.
+- [x] `info.json` nunca se mueve a la carpeta de descargas. Test.
+- [x] `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
 
 ## Comments
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.6` (release run `44138736518`; en main, CI `44138288876` y Native `44138288404`). Medido en Docker con la API de la app: con un preview reciente, de "Descargar" al archivo listo pasa de 2,5 s a 1,1–1,2 s, sin usar el respaldo. Tests de casos borde añadidos antes de publicar (cancelar durante el respaldo, info.json que no se puede escribir, UTF-8, enlace corto y largo del mismo vídeo, reintento manual).
