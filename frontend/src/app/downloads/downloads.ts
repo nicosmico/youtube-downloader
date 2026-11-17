@@ -10,6 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { NOW } from '../core/clock';
@@ -148,6 +149,10 @@ export function groupByDay(items: readonly ListItem[], now: Date): DayGroup[] {
   return days;
 }
 
+export const BATCH_OPEN_STORAGE_KEY = 'batchOpen';
+/** Manual open/close choices kept in `localStorage`: the newest ones, so it never grows forever. */
+const BATCH_OPEN_LIMIT = 200;
+
 /** What the user is asked to confirm. */
 type Confirmation =
   | { kind: 'batch'; batchId: string; count: number }
@@ -165,6 +170,7 @@ export class Downloads {
   private readonly system = inject(SystemService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly document = inject(DOCUMENT);
 
   protected readonly texts = TEXTS;
   private readonly now = inject(NOW);
@@ -175,6 +181,18 @@ export class Downloads {
   protected readonly days = computed(() =>
     groupByDay(groupJobs(this.jobsService.visibleJobs(), this.jobsService.jobs()), this.now()),
   );
+  /** Batches with a job in the Queue: open unless the user chose otherwise. */
+  private readonly activeBatches = computed(
+    () =>
+      new Set(
+        this.jobsService
+          .jobs()
+          .filter((job) => job.batchId && isInProgress(job))
+          .map((job) => job.batchId),
+      ),
+  );
+  /** What the user chose by hand per Batch (oldest first, as kept in `localStorage`). */
+  private readonly batchChoices = signal<ReadonlyMap<string, boolean>>(this.storedChoices());
   /** Jobs running and waiting: the counter of the "En curso" chip. */
   protected readonly activeCount = computed(() => {
     const { active, queued } = this.jobsService.queue();
@@ -277,6 +295,51 @@ export class Downloads {
   protected filterLabel(filter: JobFilter): string {
     const label = TEXTS.downloads.filters[filter];
     return filter === 'active' ? `${label} · ${this.activeCount()}` : label;
+  }
+
+  /** Rows of a Batch are shown: always in "Con error" (its rows are ticked there), else by choice. */
+  protected isOpen(group: BatchGroup): boolean {
+    return (
+      this.selecting() ||
+      (this.batchChoices().get(group.batchId) ?? this.activeBatches().has(group.batchId))
+    );
+  }
+
+  protected toggleBatch(group: BatchGroup): void {
+    const choices = new Map(this.batchChoices());
+    choices.delete(group.batchId);
+    choices.set(group.batchId, !this.isOpen(group));
+    for (const id of [...choices.keys()].slice(0, Math.max(0, choices.size - BATCH_OPEN_LIMIT))) {
+      choices.delete(id);
+    }
+    this.batchChoices.set(choices);
+    try {
+      this.document.defaultView?.localStorage.setItem(
+        BATCH_OPEN_STORAGE_KEY,
+        JSON.stringify([...choices]),
+      );
+    } catch {
+      // storage blocked: the choice still holds until the page closes
+    }
+  }
+
+  private storedChoices(): ReadonlyMap<string, boolean> {
+    try {
+      const raw = this.document.defaultView?.localStorage.getItem(BATCH_OPEN_STORAGE_KEY);
+      const entries: unknown = raw ? JSON.parse(raw) : [];
+      return new Map(
+        Array.isArray(entries)
+          ? entries
+              .filter(
+                (e): e is [string, boolean] =>
+                  Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'boolean',
+              )
+              .slice(-BATCH_OPEN_LIMIT)
+          : [],
+      );
+    } catch {
+      return new Map();
+    }
   }
 
   /** "3/10 completadas", plus the failed ones when there are any. */
