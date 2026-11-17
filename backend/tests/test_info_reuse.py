@@ -16,6 +16,7 @@ from app.db import Database
 from app.engine import EngineManager
 from app.engine.io import ProcessHandle
 from app.jobs import FileMover, Job, JobRepository, JobRunner
+from app.jobs.failures import GENERIC
 from app.jobs.files import INFO_JSON_NAME, find_staged_file
 from app.main import create_app
 from app.preview import PreviewService
@@ -393,6 +394,92 @@ class TestCancelWithTheInfo:
         assert not (harness.staging / job.id).exists()
 
 
+class TestFallbackEdgeCases:
+    def test_canceling_during_the_fallback_run_ends_canceled_without_a_third_run(
+        self, harness: Harness
+    ) -> None:
+        harness.cache.put(URL, INFO)
+        harness.fake.default.fail_from_info = "ERROR: Unable to download: 403 Forbidden"
+        canceled = threading.Event()
+        processes: list[ProcessHandle] = []
+
+        def on_handle(handle: ProcessHandle) -> None:
+            processes.append(handle)
+            if len(processes) == 2:  # the process of the fallback, from the URL
+                harness.fake.default.hold = True
+                canceled.set()
+                handle.terminate()
+
+        job = harness.runner.run(harness.claim(), on_handle, canceled=canceled.is_set)
+
+        assert job.status.value == "canceled"
+        assert len(harness.fake.calls) == 2
+        assert "--load-info-json" in harness.fake.calls[0]
+        assert harness.fake.calls[1][-1] == URL
+        assert harness.statuses(job.id)[-1] == "canceled"
+        assert "failed" not in harness.statuses(job.id)
+        assert not (harness.staging / job.id).exists()
+
+    def test_a_cached_info_that_cannot_be_written_falls_back_to_the_url(
+        self, harness: Harness, engine: EngineManager
+    ) -> None:
+        job = harness.claim()
+
+        def cached_info(url: str) -> str:
+            # A directory where info.json should go makes the write fail (IsADirectoryError).
+            (harness.staging / job.id / INFO_JSON_NAME).mkdir()
+            return INFO
+
+        runner = JobRunner(
+            engine=engine,
+            repo=harness.repo,
+            mover=FileMover(harness.downloads),
+            staging_root=harness.staging,
+            publish=harness.published.append,
+            stream=harness.fake,
+            cached_info=cached_info,
+        )
+
+        done = runner.run(job)
+
+        assert done.status.value == "completed"
+        (args,) = harness.fake.calls
+        assert args[-1] == URL and "--load-info-json" not in args
+        assert sorted(p.name for p in harness.downloads.iterdir()) == ["Me at the zoo.mp4"]
+
+    def test_accents_and_emoji_in_the_info_are_written_as_utf_8(self, harness: Harness) -> None:
+        raw = json.dumps(
+            {"id": "jNQXAC9IVRw", "webpage_url": URL, "title": "Canción ñandú 🎬 café"},
+            ensure_ascii=False,
+        )
+        harness.cache.put(URL, raw)
+        seen: list[bytes] = []
+        harness.fake.on_begin = lambda url: seen.append(
+            Path(loaded_info(harness.fake.calls[-1])).read_bytes()
+        )
+
+        job = harness.run()
+
+        assert job.status.value == "completed"
+        (written,) = seen
+        assert written.decode("utf-8") == raw
+        assert b"Canci\xc3\xb3n \xc3\xb1and\xc3\xba \xf0\x9f\x8e\xac caf\xc3\xa9" in written
+
+    def test_a_process_that_cannot_start_with_the_info_fails_without_a_fallback(
+        self, harness: Harness
+    ) -> None:
+        harness.cache.put(URL, INFO)
+        harness.fake.start_error = "[Errno 2] No such file or directory: '/data/bin/yt-dlp'"
+
+        job = harness.run()
+
+        assert job.status.value == "failed"
+        assert job.error == GENERIC
+        assert len(harness.fake.calls) == 1  # no second try from the URL
+        assert harness.cache.get(URL) == INFO  # the info was not blamed
+        assert not (harness.staging / job.id).exists()
+
+
 # -- through the API ----------------------------------------------------------------------------
 
 
@@ -446,3 +533,46 @@ class TestThroughTheApi:
 
         wait_for(lambda: get_job(client, job["id"])["status"] == "completed")
         assert fake_engine.calls[0][-1] == URL
+
+    def test_a_preview_by_the_short_link_is_reused_by_the_long_url_with_a_timestamp(
+        self, client: TestClient, ytdlp: FakeYtdlp, fake_engine: FakeEngine
+    ) -> None:
+        client.post(
+            "/api/preview", json={"url": "https://youtu.be/jNQXAC9IVRw"}, headers=APP_HEADERS
+        )
+
+        (job,) = enqueue(client, URL + "&t=30").json()["jobs"]
+
+        wait_for(lambda: get_job(client, job["id"])["status"] == "completed")
+        assert len(ytdlp.calls) == 1
+        (args,) = fake_engine.calls
+        assert "--load-info-json" in args and URL not in args
+
+    def test_a_different_video_does_not_reuse_the_preview(
+        self, client: TestClient, fake_engine: FakeEngine
+    ) -> None:
+        other = "https://www.youtube.com/watch?v=Jt5fgKBqZSY"
+        client.post("/api/preview", json={"url": URL}, headers=APP_HEADERS)
+
+        (job,) = enqueue(client, other).json()["jobs"]
+
+        wait_for(lambda: get_job(client, job["id"])["status"] == "completed")
+        (args,) = fake_engine.calls
+        assert args[-1] == other and "--load-info-json" not in args
+
+    def test_a_manual_retry_after_a_fallback_runs_from_the_url(
+        self, client: TestClient, fake_engine: FakeEngine
+    ) -> None:
+        fake_engine.default.fail_with = "ERROR: Video unavailable"
+        client.post("/api/preview", json={"url": URL}, headers=APP_HEADERS)
+        (job,) = enqueue(client).json()["jobs"]
+        wait_for(lambda: get_job(client, job["id"])["status"] == "failed")
+        assert len(fake_engine.calls) == 2  # from the info, then the fallback from the URL
+        fake_engine.default.fail_with = None
+
+        client.post(f"/api/jobs/{job['id']}/retry", headers=APP_HEADERS)
+
+        wait_for(lambda: get_job(client, job["id"])["status"] == "completed")
+        assert len(fake_engine.calls) == 3
+        assert fake_engine.calls[2][-1] == URL
+        assert "--load-info-json" not in fake_engine.calls[2]
