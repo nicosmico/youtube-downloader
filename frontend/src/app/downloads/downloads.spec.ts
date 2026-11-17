@@ -541,6 +541,49 @@ describe('batches', () => {
       setItem.mockRestore();
     });
 
+    const reloadWith = async (stored: unknown) => {
+      localStorage.setItem(BATCH_OPEN_STORAGE_KEY, JSON.stringify(stored));
+      fixture.destroy();
+      fixture = TestBed.createComponent(Downloads);
+      await fixture.whenStable();
+      await show(...finished);
+    };
+
+    it.each([
+      ['an object', {}],
+      ['a string', 'x'],
+      ['a string choice', [['b1', 'yes']]],
+      ['a numeric id', [[1, true]]],
+    ])('ignores stored choices that are %s', async (_, stored) => {
+      await reloadWith(stored);
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(all('job-card')).toHaveLength(0);
+      await click(toggle());
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('applies the valid stored choices and skips the invalid ones', async () => {
+      await reloadWith([[1, true], ['b1', true], ['b2', 'yes'], 'junk', ['b3']]);
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(3);
+    });
+
+    it('keeps the last choice when a batch id is stored twice', async () => {
+      await reloadWith([
+        ['b1', false],
+        ['b1', true],
+      ]);
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+
+      await reloadWith([
+        ['b1', true],
+        ['b1', false],
+      ]);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    });
+
     it('does not fold or unfold when the "⋮" menu is used', async () => {
       await show(...finished);
 

@@ -196,7 +196,8 @@
             <button
               type="button"
               data-testid="full-playlist"
-              class="self-start rounded-full px-1 text-sm font-medium text-accent hover:underline"
+              class="self-start rounded-full px-1 text-sm font-medium text-accent hover:underline disabled:opacity-50 disabled:hover:no-underline"
+              [disabled]="enqueuing()"
               (click)="showFullPlaylist(playlistUrl)"
             >
               {{ texts.preview.fullPlaylist }}
