@@ -682,8 +682,7 @@ describe('UrlPreview', () => {
       expect(button().disabled).toBe(true);
       await answer(req, { batchId: null, jobs: [JOB] });
 
-      expect(el('enqueued')?.textContent).toContain('Añadido');
-      expect(button().disabled).toBe(false);
+      expect(el('preview-card')).toBeNull();
       expect(
         TestBed.inject(JobsService)
           .jobs()
@@ -783,7 +782,8 @@ describe('UrlPreview', () => {
       await answer(http.expectOne('/api/jobs'), { code: 'engine_not_ready', message: 'x' }, 409);
 
       expect(el('enqueue-error')?.textContent).toContain('motor de descarga');
-      expect(el('enqueued')).toBeNull();
+      expect(input().value).toBe(URL_A);
+      expect(el('preview-card')).not.toBeNull();
     });
 
     it('falls back to the server message for unknown codes', async () => {
@@ -891,11 +891,217 @@ describe('UrlPreview', () => {
       await settle();
 
       expect(input().value).toBe(FULL_LIST);
-      const req = http.expectOne('/api/preview');
+      // the background load of the same playlist is dropped; the click asks again
+      const [background, req] = previews();
+      expect(background.cancelled).toBe(true);
       expect(req.request.body).toEqual({ url: FULL_LIST });
       await answer(req, PLAYLIST);
 
       expect(el('entries')).not.toBeNull();
+    });
+  });
+
+  describe('"Ir a YouTube"', () => {
+    it('is a link that opens YouTube in a new tab, after the field', () => {
+      const link = el<HTMLAnchorElement>('open-youtube')!;
+
+      expect(link.tagName).toBe('A');
+      expect(link.textContent).toContain('Ir a YouTube');
+      expect(link.getAttribute('href')).toBe('https://www.youtube.com/');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(link.querySelector('app-icon')).not.toBeNull();
+      expect(input().compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('is there when "Pegar" is not', async () => {
+      pasteSupported = false;
+      fixture = TestBed.createComponent(UrlPreview);
+      await settle();
+
+      expect(el('paste-button')).toBeNull();
+      expect(el('open-youtube')).not.toBeNull();
+    });
+
+    it('lets the row wrap on narrow screens', () => {
+      expect(el('open-youtube')!.parentElement!.className).toContain('flex-wrap');
+    });
+  });
+
+  describe('a video from a playlist', () => {
+    const FULL_LIST = PLAYLIST.url;
+    const FROM_LIST = { ...MEDIA, playlistUrl: FULL_LIST };
+    const THREE = {
+      ...PLAYLIST,
+      entryCount: 3,
+      entries: PLAYLIST.entries.filter((e) => e.available),
+    };
+    const one = () => el<HTMLButtonElement>('download-button')!;
+    const all = () => el<HTMLButtonElement>('download-all-button');
+
+    const show = async () => {
+      await type(`${URL_A}&list=PLabc123`, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), FROM_LIST);
+    };
+    const loadList = async (body: object | string = THREE, status = 200) =>
+      answer(http.expectOne('/api/preview'), body, status);
+
+    it('loads the playlist in the background and offers "Descargar 1" and "Descargar N"', async () => {
+      await show();
+
+      expect(el('preview-card')).not.toBeNull();
+      expect(all()!.disabled).toBe(true);
+      expect(all()!.textContent).toContain('Descargar playlist');
+      expect(el('download-all-spinner')).not.toBeNull();
+      expect(one().textContent?.trim()).toBe('Descargar 1');
+      expect(one().disabled).toBe(false);
+
+      const req = http.expectOne('/api/preview');
+      expect(req.request.body).toEqual({ url: FULL_LIST });
+      await answer(req, THREE);
+
+      expect(all()!.textContent?.trim()).toBe('Descargar 3');
+      expect(all()!.disabled).toBe(false);
+      expect(el('download-all-spinner')).toBeNull();
+      expect(one().textContent?.trim()).toBe('Descargar 1');
+      expect(el('full-playlist')).not.toBeNull();
+    });
+
+    it('"Descargar 1" enqueues only this video', async () => {
+      await show();
+      await loadList();
+
+      one().click();
+      await settle();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.body).toEqual({
+        url: MEDIA.url,
+        mode: 'video',
+        quality: 'best',
+        title: MEDIA.title,
+        thumbnail: MEDIA.thumbnail,
+      });
+      await answer(req, { batchId: null, jobs: [] });
+    });
+
+    it('"Descargar N" enqueues every available entry with the chosen format', async () => {
+      await show();
+      await loadList();
+      await pickFormat('format-audio-m4a');
+
+      all()!.click();
+      await settle();
+
+      const req = http.expectOne('/api/jobs');
+      expect(req.request.body).toEqual({
+        url: PLAYLIST.url,
+        mode: 'audio',
+        audioFormat: 'm4a',
+        title: 'Test Playlist',
+        entries: THREE.entries.map(({ id, url, index, title, thumbnail }) => ({
+          id,
+          url,
+          index,
+          title,
+          thumbnail,
+        })),
+      });
+      expect(all()!.textContent).toContain('Encolando…');
+      expect(one().disabled).toBe(true);
+      await answer(req, { batchId: 'b1', jobs: [] });
+
+      expect(input().value).toBe('');
+      expect(el('preview-card')).toBeNull();
+    });
+
+    it('does not offer "Descargar N" and says "Descargar" when the playlist fails', async () => {
+      await show();
+      await loadList({ code: 'mix_playlist', message: 'x' }, 422);
+
+      expect(all()).toBeNull();
+      expect(one().textContent?.trim()).toBe('Descargar');
+      expect(el('full-playlist')).not.toBeNull();
+      expect(el('preview-error')).toBeNull();
+    });
+
+    it('does not offer "Descargar N" for a playlist with a single video', async () => {
+      await show();
+      await loadList({ ...THREE, entryCount: 1, entries: THREE.entries.slice(0, 1) });
+
+      expect(all()).toBeNull();
+      expect(one().textContent?.trim()).toBe('Descargar');
+    });
+
+    it('does not offer it for a video that is not from a playlist', async () => {
+      await type(URL_A, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), MEDIA);
+
+      expect(all()).toBeNull();
+      expect(one().textContent?.trim()).toBe('Descargar');
+      http.expectNone('/api/preview');
+    });
+
+    it('cancels the background request when the link changes', async () => {
+      await show();
+      const pending = http.expectOne('/api/preview');
+
+      await type(URL_B, 'insertFromPaste');
+
+      expect(pending.cancelled).toBe(true);
+      await answer(http.expectOne('/api/preview'), { ...MEDIA, url: URL_B });
+      expect(all()).toBeNull();
+    });
+
+    it('cancels the background request when the field is cleared', async () => {
+      await show();
+      const pending = http.expectOne('/api/preview');
+
+      el<HTMLButtonElement>('url-clear')!.click();
+      await settle();
+
+      expect(pending.cancelled).toBe(true);
+      expect(el('preview-card')).toBeNull();
+    });
+
+    it('forgets the previous playlist for the next video', async () => {
+      await show();
+      await loadList();
+
+      await type(URL_B, 'insertFromPaste');
+      await answer(http.expectOne('/api/preview'), { ...MEDIA, url: URL_B });
+
+      expect(all()).toBeNull();
+    });
+
+    it('keeps everything and shows the error when "Descargar N" is refused', async () => {
+      await show();
+      await loadList();
+
+      all()!.click();
+      await settle();
+      await answer(http.expectOne('/api/jobs'), { code: 'invalid_entries', message: 'x' }, 422);
+
+      expect(el('enqueue-error')).not.toBeNull();
+      expect(input().value).toContain(URL_A);
+      expect(el('preview-card')).not.toBeNull();
+      expect(all()!.disabled).toBe(false);
+    });
+
+    it('"Descargar 1" empties the field, closes the preview and focuses the field', async () => {
+      await show();
+      await loadList();
+      document.body.appendChild(root());
+
+      one().click();
+      await settle();
+      await answer(http.expectOne('/api/jobs'), { batchId: null, jobs: [] });
+
+      expect(input().value).toBe('');
+      expect(el('preview-card')).toBeNull();
+      expect(el('empty-state')).not.toBeNull();
+      expect(document.activeElement).toBe(input());
+      root().remove();
     });
   });
 
@@ -973,7 +1179,7 @@ describe('UrlPreview', () => {
       expect(checkboxes().map((c) => c.disabled)).toEqual([false, false, true, false]);
       expect(el('entry-reason')?.textContent).toContain('Video privado o eliminado');
       expect(el('selected-count')?.textContent).toContain('3 / 4');
-      expect(button().textContent).toContain('Descargar 3 videos');
+      expect(button().textContent).toContain('Descargar 3');
     });
 
     it('warns when the playlist was cut at 500', async () => {
@@ -989,7 +1195,7 @@ describe('UrlPreview', () => {
       await settle();
       expect(checkboxes().map((c) => c.checked)).toEqual([false, true, false, true]);
       expect(el('selected-count')?.textContent).toContain('2 / 4');
-      expect(button().textContent).toContain('Descargar 2 videos');
+      expect(button().textContent).toContain('Descargar 2');
 
       checkboxes()[0].click();
       await settle();
@@ -1009,14 +1215,14 @@ describe('UrlPreview', () => {
       expect(button().disabled).toBe(false);
     });
 
-    it('says "Descargar 1 video" in the singular', async () => {
+    it('says "Descargar 1" in the singular', async () => {
       await show();
       await click('select-none');
 
       checkboxes()[1].click();
       await settle();
 
-      expect(button().textContent?.trim()).toBe('Descargar 1 video');
+      expect(button().textContent?.trim()).toBe('Descargar 1');
     });
 
     it('offers every quality, none disabled', async () => {
@@ -1085,7 +1291,9 @@ describe('UrlPreview', () => {
         ],
       });
       await answer(req, { batchId: 'b1', jobs: [] });
-      expect(el('enqueued')).not.toBeNull();
+      expect(input().value).toBe('');
+      expect(el('preview-card')).toBeNull();
+      expect(el('entries')).toBeNull();
     });
 
     it('never sends entries for a single video', async () => {
@@ -1106,6 +1314,8 @@ describe('UrlPreview', () => {
       await answer(http.expectOne('/api/jobs'), { code: 'invalid_entry', message: 'x' }, 422);
 
       expect(el('enqueue-error')?.textContent).toContain('no es un enlace de YouTube');
+      expect(input().value).toBe(LIST_URL);
+      expect(el('entries')).not.toBeNull();
     });
 
     it('selects everything again for the next playlist', async () => {

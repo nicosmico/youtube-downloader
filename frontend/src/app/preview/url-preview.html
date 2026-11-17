@@ -1,47 +1,59 @@
 <section class="flex min-w-0 flex-col gap-4" [attr.aria-label]="texts.preview.download">
-  <div class="relative">
-    <app-icon
-      name="link"
-      class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted"
-    />
-    <input
-      #field
-      type="text"
-      inputmode="url"
-      autocomplete="off"
-      spellcheck="false"
-      data-testid="url-input"
-      class="h-12 w-full rounded-full border border-line bg-bg pl-12 pr-36 text-base placeholder:text-muted disabled:opacity-60"
-      [attr.aria-label]="texts.preview.urlLabel"
-      [placeholder]="texts.preview.urlPlaceholder"
-      [value]="url()"
-      (input)="onInput($event)"
-    />
-    <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
-      @if (url()) {
-        <button
-          type="button"
-          data-testid="url-clear"
-          class="grid size-9 place-items-center rounded-full text-muted hover:bg-surface"
-          [attr.aria-label]="texts.preview.clear"
-          [title]="texts.preview.clear"
-          (click)="clear()"
-        >
-          <app-icon name="close" class="size-4" />
-        </button>
-      }
-      @if (canPaste) {
-        <button
-          type="button"
-          data-testid="paste-button"
-          class="flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium hover:bg-surface-2"
-          (click)="paste()"
-        >
-          <app-icon name="paste" class="size-4" />
-          {{ texts.preview.paste }}
-        </button>
-      }
+  <div class="flex flex-wrap items-center gap-2">
+    <div class="relative min-w-60 flex-1">
+      <app-icon
+        name="link"
+        class="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted"
+      />
+      <input
+        #field
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        spellcheck="false"
+        data-testid="url-input"
+        class="h-12 w-full rounded-full border border-line bg-bg pl-12 pr-36 text-base placeholder:text-muted disabled:opacity-60"
+        [attr.aria-label]="texts.preview.urlLabel"
+        [placeholder]="texts.preview.urlPlaceholder"
+        [value]="url()"
+        (input)="onInput($event)"
+      />
+      <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        @if (url()) {
+          <button
+            type="button"
+            data-testid="url-clear"
+            class="grid size-9 place-items-center rounded-full text-muted hover:bg-surface"
+            [attr.aria-label]="texts.preview.clear"
+            [title]="texts.preview.clear"
+            (click)="clear()"
+          >
+            <app-icon name="close" class="size-4" />
+          </button>
+        }
+        @if (canPaste) {
+          <button
+            type="button"
+            data-testid="paste-button"
+            class="flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium hover:bg-surface-2"
+            (click)="paste()"
+          >
+            <app-icon name="paste" class="size-4" />
+            {{ texts.preview.paste }}
+          </button>
+        }
+      </div>
     </div>
+    <a
+      href="https://www.youtube.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="open-youtube"
+      class="flex h-12 items-center gap-2 rounded-full bg-surface px-5 text-sm font-medium hover:bg-surface-2"
+    >
+      <app-icon name="external-link" class="size-4" />
+      {{ texts.preview.openYoutube }}
+    </a>
   </div>
 
   @switch (engine()?.status) {
@@ -283,20 +295,37 @@
               </div>
             </div>
 
-            <button
-              type="button"
-              data-testid="download-button"
-              class="ml-auto h-11 rounded-full bg-accent-solid px-6 text-sm font-medium text-on-accent hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100"
-              [disabled]="!canDownload(media)"
-              (click)="download(media)"
-            >
-              {{ downloadLabel(media) }}
-            </button>
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+              @if (media.kind === 'video' && playlistOffer(); as offer) {
+                <button
+                  type="button"
+                  data-testid="download-all-button"
+                  class="flex h-11 items-center gap-2 rounded-full bg-surface px-6 text-sm font-medium hover:bg-surface-2 disabled:opacity-50 disabled:hover:bg-surface"
+                  [disabled]="!canDownloadAll()"
+                  (click)="downloadAll()"
+                >
+                  @if (offer === 'loading') {
+                    <span
+                      class="size-4 shrink-0 rounded-full border-2 border-muted border-t-transparent motion-safe:animate-spin"
+                      aria-hidden="true"
+                      data-testid="download-all-spinner"
+                    ></span>
+                  }
+                  {{ downloadAllLabel() }}
+                </button>
+              }
+              <button
+                type="button"
+                data-testid="download-button"
+                class="h-11 rounded-full bg-accent-solid px-6 text-sm font-medium text-on-accent hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100"
+                [disabled]="!canDownload(media)"
+                (click)="download(media)"
+              >
+                {{ downloadLabel(media) }}
+              </button>
+            </div>
           </div>
 
-          @if (enqueued()) {
-            <p class="sr-only" role="status" data-testid="enqueued">{{ texts.preview.enqueued }}</p>
-          }
           @if (enqueueError(); as message) {
             <p class="m-0 text-sm text-accent" role="alert" data-testid="enqueue-error">
               {{ message }}

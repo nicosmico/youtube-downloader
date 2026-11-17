@@ -45,6 +45,7 @@ export const TEXTS = {
     urlPlaceholder: 'Pega un enlace de YouTube',
     paste: 'Pegar',
     clear: 'Borrar enlace',
+    openYoutube: 'Ir a YouTube',
     empty: 'Videos, Shorts, playlists y canales de YouTube.',
     engineNotReady: 'El motor de descarga no está listo.',
     enginePreparing: 'Preparando el motor…',
@@ -54,7 +55,6 @@ export const TEXTS = {
     fullPlaylist: 'Ver playlist completa',
     download: 'Descargar',
     enqueuing: 'Encolando…',
-    enqueued: 'Añadido a las descargas.',
     format: {
       label: 'Formato de descarga',
       other: 'Otro formato',
@@ -72,8 +72,9 @@ export const TEXTS = {
       selectNone: 'Ninguno',
       selected: 'seleccionados',
       entries: 'Videos de la lista',
-      downloadMany: 'Descargar {n} videos',
-      downloadOne: 'Descargar 1 video',
+      downloadMany: 'Descargar {n}',
+      downloadOne: 'Descargar 1',
+      downloadLoading: 'Descargar playlist',
       nothingSelected: 'Elige al menos un video para descargar.',
     },
     enqueueErrors: {

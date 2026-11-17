@@ -55,6 +55,12 @@ type Outcome =
   | { state: 'error'; code: string }
   | { state: 'ready'; media: MediaPreview };
 type Request = { url: string; immediate: boolean };
+/** The playlist a video belongs to, loaded in the background to offer "Descargar N". */
+type PlaylistLoad =
+  | { state: 'idle' }
+  | { state: 'loading' }
+  | { state: 'failed' }
+  | { state: 'ready'; playlist: PlaylistPreview };
 
 /**
  * Whether "Pegar" is rendered: only where `readText` reads directly after the first permission
@@ -111,8 +117,25 @@ export class UrlPreview {
   protected readonly engine = this.engineService.engine;
   private readonly field = viewChild<ElementRef<HTMLInputElement>>('field');
   private readonly requests = new Subject<Request>();
+  /** A playlist URL to load in the background, or `null` to drop whatever is loading. */
+  private readonly playlistRequests = new Subject<string | null>();
   private readonly readyChanges = toObservable(this.engineReady);
   protected readonly canPaste = inject(PASTE_SUPPORT)();
+
+  protected readonly playlistLoad = signal<PlaylistLoad>({ state: 'idle' });
+  /** The entries "Descargar N" would enqueue: the available ones of the loaded playlist. */
+  private readonly playlistEntries = computed(() => {
+    const load = this.playlistLoad();
+    return load.state === 'ready' ? load.playlist.entries.filter((e) => e.available) : [];
+  });
+  /** "Descargar N" is offered while the playlist loads and once it has more than one video. */
+  protected readonly playlistOffer = computed<'loading' | 'ready' | null>(() => {
+    const load = this.playlistLoad();
+    if (load.state === 'loading') {
+      return 'loading';
+    }
+    return load.state === 'ready' && this.playlistEntries().length > 1 ? 'ready' : null;
+  });
 
   protected readonly texts = TEXTS;
   protected readonly qualities = QUALITIES;
@@ -133,7 +156,8 @@ export class UrlPreview {
   readonly selected = signal<ReadonlySet<number>>(new Set());
   protected readonly selectedCount = computed(() => this.selected().size);
   protected readonly enqueuing = signal(false);
-  protected readonly enqueued = signal(false);
+  /** Which button was clicked, to say "Encolando…" on that one only. */
+  private readonly enqueuingAll = signal(false);
   protected readonly enqueueError = signal<string | null>(null);
   protected readonly formatMenuOpen = signal(false);
   /** "Mejor video" and "MP3" are chips of their own; anything else lives under "Otro formato". */
@@ -169,6 +193,24 @@ export class UrlPreview {
         takeUntilDestroyed(inject(DestroyRef)),
       )
       .subscribe((result) => this.apply(result));
+
+    this.playlistRequests
+      .pipe(
+        switchMap((url): Observable<PlaylistLoad> => {
+          if (url === null) {
+            return of({ state: 'idle' });
+          }
+          return this.previews.fetch(url).pipe(
+            map((media): PlaylistLoad =>
+              media.kind === 'playlist' ? { state: 'ready', playlist: media } : { state: 'failed' },
+            ),
+            catchError(() => of<PlaylistLoad>({ state: 'failed' })),
+            startWith<PlaylistLoad>({ state: 'loading' }),
+          );
+        }),
+        takeUntilDestroyed(inject(DestroyRef)),
+      )
+      .subscribe((load) => this.playlistLoad.set(load));
 
     // Losing the Engine (e.g. while it updates) drops what is on screen. A request still waiting
     // for the Engine keeps its skeleton: it fires by itself once the Engine is ready.
@@ -277,16 +319,28 @@ export class UrlPreview {
 
   protected downloadLabel(media: MediaPreview): string {
     const texts = TEXTS.preview;
-    if (this.enqueuing()) {
+    if (this.enqueuing() && !this.enqueuingAll()) {
       return texts.enqueuing;
     }
     if (media.kind === 'video') {
-      return texts.download;
+      return this.playlistOffer() ? texts.playlist.downloadOne : texts.download;
     }
     const n = this.selectedCount();
     return n === 1
       ? texts.playlist.downloadOne
       : texts.playlist.downloadMany.replace('{n}', String(n));
+  }
+
+  /** "Descargar N": the playlist a video came from, with every entry available. */
+  protected downloadAllLabel(): string {
+    const texts = TEXTS.preview;
+    if (this.enqueuing() && this.enqueuingAll()) {
+      return texts.enqueuing;
+    }
+    const load = this.playlistLoad();
+    return load.state === 'ready'
+      ? texts.playlist.downloadMany.replace('{n}', String(this.playlistEntries().length))
+      : texts.playlist.downloadLoading;
   }
 
   protected canDownload(media: MediaPreview): boolean {
@@ -295,6 +349,10 @@ export class UrlPreview {
       !this.enqueuing() &&
       (media.kind === 'video' || this.selectedCount() > 0)
     );
+  }
+
+  protected canDownloadAll(): boolean {
+    return this.engineReady() && !this.enqueuing() && this.playlistOffer() === 'ready';
   }
 
   protected duration(seconds: number): string {
@@ -319,31 +377,49 @@ export class UrlPreview {
     if (!this.canDownload(media)) {
       return;
     }
+    const entries =
+      media.kind === 'playlist'
+        ? media.entries.filter((e) => e.available && this.selected().has(e.index))
+        : undefined;
+    this.enqueue(media, entries, false);
+  }
+
+  /** "Descargar N" on a video that came from a playlist: the same as selecting all of it. */
+  protected downloadAll(): void {
+    const load = this.playlistLoad();
+    if (!this.canDownloadAll() || load.state !== 'ready') {
+      return;
+    }
+    this.enqueue(load.playlist, this.playlistEntries(), true);
+  }
+
+  private enqueue(media: MediaPreview, entries: PlaylistEntry[] | undefined, all: boolean): void {
     this.enqueuing.set(true);
-    this.enqueued.set(false);
+    this.enqueuingAll.set(all);
     this.enqueueError.set(null);
     const options: DownloadOptions =
       this.mode() === 'audio'
         ? { mode: 'audio', audioFormat: this.audioFormat() }
         : { mode: 'video', quality: this.quality() };
-    const entries =
-      media.kind === 'playlist'
-        ? media.entries
-            .filter((e) => e.available && this.selected().has(e.index))
-            .map(({ id, url, index, title, thumbnail }) => ({ id, url, index, title, thumbnail }))
-        : undefined;
     this.jobs
       .enqueue(
         media.url,
         options,
         media.title,
-        entries,
+        entries?.map(({ id, url, index, title, thumbnail }) => ({
+          id,
+          url,
+          index,
+          title,
+          thumbnail,
+        })),
         media.kind === 'video' ? media.thumbnail : null,
       )
       .subscribe({
         next: () => {
           this.enqueuing.set(false);
-          this.enqueued.set(true);
+          // The download shows up in the list: leave the field ready for the next link.
+          this.clear();
         },
         error: (error: unknown) => {
           this.enqueuing.set(false);
@@ -385,18 +461,19 @@ export class UrlPreview {
   }
 
   private apply(outcome: Outcome): void {
-    this.enqueued.set(false);
     this.enqueueError.set(null);
     switch (outcome.state) {
       case 'idle':
         this.reset();
         break;
       case 'loading':
+        this.playlistRequests.next(null);
         this.preview.set(null);
         this.errorCode.set(null);
         this.status.set('loading');
         break;
       case 'error':
+        this.playlistRequests.next(null);
         this.preview.set(null);
         this.errorCode.set(outcome.code);
         this.status.set('error');
@@ -412,11 +489,15 @@ export class UrlPreview {
           this.selectAllEntries(outcome.media);
         }
         this.status.set('ready');
+        this.playlistRequests.next(
+          outcome.media.kind === 'video' ? (outcome.media.playlistUrl ?? null) : null,
+        );
         break;
     }
   }
 
   private reset(): void {
+    this.playlistRequests.next(null);
     this.status.set('idle');
     this.preview.set(null);
     this.errorCode.set(null);
