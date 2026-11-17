@@ -27,14 +27,22 @@
 
 ## Acceptance criteria
 
-- [ ] macOS y Windows instalan el zip sin empaquetar, verificado por el SHA-256 del zip, con los permisos restaurados en macOS.
-- [ ] Extracción segura: una entrada con `..` o ruta absoluta hace fallar la instalación con `EngineError` y no deja nada a medias.
-- [ ] Una instalación existente con el binario único se migra sola al arrancar y el binario viejo se borra.
-- [ ] La actualización de yt-dlp cambia la carpeta entera, con rollback si la versión nueva no arranca.
-- [ ] `cleanup_leftovers` borra carpetas `.new`/`.old` sobrantes.
-- [ ] Linux sin cambios de comportamiento.
-- [ ] Tests en `backend/tests/test_engine_manager.py` y `test_engine_sources.py` con zips falsos construidos en el test (sin red), siguiendo los fakes existentes (`fake_engine.py`, `fakes.py`).
-- [ ] `docker compose run --rm tests`, `ruff check .` y `ruff format --check .` pasan.
-- [ ] ADR-0002 actualizado.
+- [x] macOS y Windows instalan el zip sin empaquetar, verificado por el SHA-256 del zip, con los permisos restaurados en macOS.
+- [x] Extracción segura: una entrada con `..` o ruta absoluta hace fallar la instalación con `EngineError` y no deja nada a medias.
+- [x] Una instalación existente con el binario único se migra sola al arrancar y el binario viejo se borra.
+- [x] La actualización de yt-dlp cambia la carpeta entera, con rollback si la versión nueva no arranca.
+- [x] `cleanup_leftovers` borra carpetas `.new`/`.old` sobrantes.
+- [x] Linux sin cambios de comportamiento.
+- [x] Tests en `backend/tests/test_engine_manager.py` y `test_engine_sources.py` con zips falsos construidos en el test (sin red), siguiendo los fakes existentes (`fake_engine.py`, `fakes.py`).
+- [x] `docker compose run --rm tests`, `ruff check .` y `ruff format --check .` pasan.
+- [x] ADR-0002 actualizado.
 
 ## Comments
+
+### 2026-11-16 — implementación (agente)
+
+- `sources.py`: en macOS y Windows `ytdlp_asset` pasa a `yt-dlp_macos.zip` / `yt-dlp_win.zip`; nuevos `ytdlp_unpackaged`, `ytdlp_executable` y `YTDLP_DIST_DIR = "yt-dlp-dist"`. Linux igual.
+- `manager.py`: `binary_path("yt-dlp")` apunta al ejecutable dentro de `bin/yt-dlp-dist/` (no con `ENGINE_BIN_DIR`). Instalación: zip a temporal, SHA-256 del zip contra `SHA2-256SUMS`, extracción a `yt-dlp-dist.new/` (rechaza rutas absolutas, con `..`, con unidad de Windows o que salgan de la carpeta; restaura los bits de ejecución del `external_attr` en posix), `os.replace` de la carpeta, `archiveSha256` en `engine.json`. `_installed("yt-dlp")` exige `archiveSha256` en macOS/Windows: un binario viejo se migra solo y se borra (error ignorado si está bloqueado; se reintenta en el siguiente arranque). `_update_ytdlp` cambia la carpeta entera con `.new`/`.old` y rollback (borra la carpeta nueva antes de restaurar). `cleanup_leftovers` borra también carpetas `*.new`/`*.old`/`*.tmp`.
+- Timeout: `TIMEOUT_SECONDS` (30 s, `engine/io.py`) también es el timeout de red del `UrllibFetcher`, así que no se tocó; `_check_version` ahora pasa `VERSION_CHECK_TIMEOUT_SECONDS = 90` al runner. El timeout del preview (`PREVIEW_TIMEOUT_SECONDS = 30`) no se tocó: la primera ejecución lenta ya ocurre dentro de `_verify`.
+- Tests: fakes con zips (`make_zip` con modos, `ytdlp_zip`, `publish_ytdlp(archive=...)`, `FakeRunner.timeouts`); `TestUnpackagedYtdlp` (macOS y Windows) en `test_engine_manager.py` y casos nuevos en `test_engine_sources.py`. ADR-0002 actualizado.
+- Pendiente: la prueba real de punta a punta es el smoke test empaquetado de CI en macOS y Windows (no se ejecutó aquí).
