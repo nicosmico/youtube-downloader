@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Backend
 
@@ -50,3 +50,5 @@ Reutilizar `JobQueue.cancel` y `JobQueue.retry` (`backend/app/jobs/queue.py`) y 
   - Backend: `JobQueue.cancel_batch/retry_batch/retry_many` (reusan `cancel`/`retry`; los `queued` de la Batch se cancelan en un solo paso bajo el lock de la Queue y luego los activos en paralelo). Rutas en `history_api.py`. `POST /api/jobs/retry` sin `require_engine_ready` (el retry individual tampoco lo tiene). Ids repetidos o más de 500: 422. Tests en `backend/tests/test_bulk_actions.py`.
   - Frontend: menú de la playlist con "Cancelar descargas" (confirmación, botones "Sí, cancelar" / "No") y "Reintentar fallidas"; "Quitar del historial" solo aparece si hay algo terminado. Con "Con error": casilla por job (también dentro de playlists), "Seleccionar todas" (alterna) y "Reintentar (N)". Un reintento desde la selección no saca al usuario de "Con error" (el cambio automático a "Todas" cuando un job entra en la Queue se omite para esos ids); la selección se vacía al cambiar de filtro y tras reintentar con éxito (si falla se conserva).
   - Los botones del menú de una playlist con solo jobs en curso ya no se desactivan (se puede cancelar): se ajustó el test existente.
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.4`. Probado en el navegador contra el backend real (Docker): "Cancelar descargas" canceló las 5 pendientes y en curso de una playlist y dejó las completadas; "Reintentar fallidas" las volvió a poner en cola; en "Con error", seleccionar 2 y "Reintentar (2)" reintentó solo esas.

@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Datos verificados (release 2026.10.26)
 
@@ -46,3 +46,5 @@
 - Timeout: `TIMEOUT_SECONDS` (30 s, `engine/io.py`) también es el timeout de red del `UrllibFetcher`, así que no se tocó; `_check_version` ahora pasa `VERSION_CHECK_TIMEOUT_SECONDS = 90` al runner. El timeout del preview (`PREVIEW_TIMEOUT_SECONDS = 30`) no se tocó: la primera ejecución lenta ya ocurre dentro de `_verify`.
 - Tests: fakes con zips (`make_zip` con modos, `ytdlp_zip`, `publish_ytdlp(archive=...)`, `FakeRunner.timeouts`); `TestUnpackagedYtdlp` (macOS y Windows) en `test_engine_manager.py` y casos nuevos en `test_engine_sources.py`. ADR-0002 actualizado.
 - Pendiente: la prueba real de punta a punta es el smoke test empaquetado de CI en macOS y Windows (no se ejecutó aquí).
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.4`. El orquestador extrajo el `yt-dlp_macos.zip` real con `_extract_zip` (en Docker) y lo ejecutó en un Mac: 14 s la primera vez y 0,15 s las siguientes. El smoke empaquetado de CI instaló el Engine con el zip nuevo en macOS y Windows.

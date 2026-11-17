@@ -4,7 +4,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## 1. Vídeo que viene de una playlist: "Descargar 1" y "Descargar N"
 
@@ -50,3 +50,5 @@ Hoy, si el preview de un vídeo trae `playlistUrl`, se muestra "Ver playlist com
 ## Comments
 
 - 2026-11-16: implementado. Backend: `to_playlist_preview` filtra las entradas no disponibles (conservan `index`) y falla con "Esta playlist no tiene videos disponibles." si no queda ninguna. Frontend: el preview de un vídeo con `playlistUrl` carga la playlist en segundo plano (`switchMap`, se cancela al cambiar o limpiar); "Descargar 1" (primario, `download-button`) y "Descargar N" (secundario, `download-all-button`, con spinner y "Descargar playlist" mientras carga; oculto si falla o hay <=1 vídeo, y entonces el botón dice "Descargar"). "Ir a YouTube" fuera del input, en una fila con `flex-wrap`. Tras encolar bien se llama a `clear()` (vacía, cierra y enfoca); se eliminó el estado `enqueued` y el texto `preview.enqueued`. Decisiones: "Ver playlist completa" vuelve a pedir la playlist (no reutiliza la respuesta); el código de filas en gris del frontend (`available`, `unavailableReason`) se deja por compatibilidad; mientras carga la playlist el botón del vídeo ya dice "Descargar 1".
+
+**2026-11-17 — Resuelto.** Publicado en `v0.2.4`. Probado en el navegador contra el backend real (Docker): un vídeo de una playlist muestra "Descargar 8" y "Descargar 1"; "Descargar 8" en MP3 puso la playlist en cola, vació el campo y cerró el preview; la entrada no disponible (índice 4) no aparece.

@@ -1,6 +1,6 @@
 # Spec: v0.2.4 — preview rápido y playlists
 
-**Status:** in-progress
+**Status:** resolved
 
 ## Problem Statement
 
