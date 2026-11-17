@@ -2,18 +2,32 @@
 
 Aplicación de escritorio para descargar videos y audio de YouTube público, con interfaz web local y motor `yt-dlp` autogestionado.
 
-> **Estado:** MVP en construcción. Funcionan el Engine autogestionado, el preview, las descargas de video y audio, la cola persistente, los atajos de calidad y las playlists; faltan cancelar y reintentar, el historial y los paquetes finales de macOS y Windows.
+![Preview de un video con opciones de formato y calidad](docs/images/preview.png)
 
-## Qué hace (MVP)
+Descarga la última versión desde [GitHub Releases](../../releases/latest). Ver [Descargar e instalar](#descargar-e-instalar).
+
+## Qué hace
 
 - Pega una URL de YouTube y obtén un preview con título, miniatura, duración y calidades reales.
-- Descarga video en `best`, `2160p`, `1080p`, `720p` o `480p`, priorizando archivos que abra el reproductor del sistema.
-- Extrae solo audio en `mp3`, `m4a` u `opus`.
-- Playlists y canales (hasta 500 entradas) con entradas seleccionables; una subcarpeta numerada por playlist.
-- Cola persistente con máximo dos descargas simultáneas y progreso en vivo.
-- Dos atajos de un clic ("Mejor video" y "MP3"), historial, cancelar y reintentar.
+- Descarga video en `best`, `2160p`, `1080p`, `720p` o `480p` (priorizando archivos que abra el reproductor del sistema) o solo audio en `mp3`, `m4a` u `opus`. Atajos de un clic: "Mejor video" y "MP3".
+- Playlists y canales (hasta 500 entradas) con entradas seleccionables; los videos no disponibles se omiten. Cada playlist va en su propia subcarpeta.
+- Si el video pertenece a una playlist, ofrece "Descargar playlist" y "Ver playlist completa".
+- Botón "Ir a YouTube" para buscar el siguiente enlace.
+- Cola con máximo dos descargas simultáneas y progreso en vivo; cerrar la pestaña no las detiene.
+- Historial agrupado por día, con playlists plegables.
+- Cancelar y reintentar por descarga y por playlist, y reintento masivo de las que fallaron.
+- Carpeta de descargas configurable (por defecto Descargas) con el selector nativo de carpetas.
 - `yt-dlp`, `ffmpeg`, `ffprobe` y Deno se descargan, verifican y actualizan solos: no requiere Python, Node ni `ffmpeg` instalados.
+- Avisa cuando hay una versión nueva de la app.
 - macOS (Apple Silicon, 13+) y Windows 10/11 x64.
+
+## Capturas
+
+![Playlist con entradas seleccionables](docs/images/playlist.png)
+
+![Cola e historial con una playlist desplegada](docs/images/descargas.png)
+
+![Menú del engranaje con la carpeta de descargas](docs/images/ajustes.png)
 
 ## Cómo funciona
 
@@ -41,11 +55,10 @@ El ejecutable levanta un servidor local, sirve la SPA de Angular y abre el naveg
 
 - [Glosario del dominio](GLOSSARY.md)
 - [Decisiones de arquitectura (ADRs)](docs/adr/)
-- [Spec del MVP](.scratch/youtube-downloader-mvp/spec.md)
-- [Tickets de implementación](.scratch/youtube-downloader-mvp/issues/)
+- [Spec del MVP](.scratch/youtube-downloader-mvp/spec.md) y specs de cada versión en [`.scratch/`](.scratch/)
 - [Instrucciones para agentes](AGENTS.md)
 
-## Estructura planeada
+## Estructura
 
 ```
 backend/          FastAPI, runner, Engine Manager, SQLite
@@ -53,7 +66,7 @@ frontend/         workspace Angular
 packaging/        PyInstaller y scripts de build
 compose.yaml      entorno de desarrollo
 .github/workflows tests, builds nativos y releases
-docs/              ADRs y documentación de agentes
+docs/             ADRs y documentación de agentes
 .scratch/          spec y tickets locales
 ```
 
@@ -61,7 +74,7 @@ docs/              ADRs y documentación de agentes
 
 El backend y los tests corren en **Docker Compose** (OrbStack); no hace falta Python en el host. Angular usa Node 24 local. Ni `ffmpeg` ni Deno se instalan: los gestiona la app.
 
-Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta `~/Downloads` y un volumen de Docker para los datos (nunca el `~/.youtube-downloader` real, que se llenaría de binarios Linux) y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
+Dentro del contenedor el servidor escucha en `0.0.0.0` con un puerto fijo (`BIND_HOST`, `PORT`, solo desarrollo; sin ellos el `Launcher` hace bind a `127.0.0.1:0`). Compose lo publica solo en `127.0.0.1` del host, monta una carpeta del host para las descargas y un volumen de Docker para los datos (nunca el `~/.youtube-downloader` real, que se llenaría de binarios Linux) y arranca con `OPEN_BROWSER=0`. El navegador se abre desde el host.
 
 ### Arrancar la app
 
@@ -147,6 +160,6 @@ Si abres la versión nueva con la anterior todavía en marcha, la nueva la cierr
 
 Los ejecutables se construyen en **GitHub Actions**: `macos-latest` produce el `.app` arm64 (firma ad-hoc) y `windows-latest` la carpeta con el `.exe` x64; ambos se comprimen en `.zip`. Docker no participa en el build nativo porque PyInstaller no cross-compila. Un tag `v*` publica ambos `.zip` en un GitHub Release; los PR generan artefactos de prueba.
 
-## Fuera de alcance del MVP
+## Fuera de alcance
 
-Sitios distintos de YouTube, directos y mixes, cookies y contenido privado, selector de carpeta, ícono de bandeja, subtítulos, recorte por tiempo, flags extra de `yt-dlp`, SponsorBlock, firma/notarización, Macs Intel, idiomas distintos del español, acceso remoto, Docker como runtime del producto y soporte de Linux para usuarios finales.
+Sitios distintos de YouTube, directos y mixes, cookies y contenido privado, ícono de bandeja, subtítulos, recorte por tiempo, flags extra de `yt-dlp`, SponsorBlock, firma/notarización, Macs Intel, idiomas distintos del español, acceso remoto, Docker como runtime del producto y soporte de Linux para usuarios finales.
