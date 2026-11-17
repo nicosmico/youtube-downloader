@@ -122,3 +122,20 @@ def test_an_unknown_mode_or_audio_format_is_unsupported(
 ) -> None:
     with pytest.raises(UnsupportedJob):
         download_args(engine, bad, tmp_path)
+
+
+@pytest.mark.parametrize("mode", ["video", "audio"])
+def test_load_info_json_takes_the_place_of_the_url_and_changes_nothing_else(
+    engine: EngineManager, tmp_path: Path, mode: str
+) -> None:
+    j = job(None, "audio", "mp3") if mode == "audio" else job()
+    staging = tmp_path / "staging" / "j1"
+    info = staging / "info.json"
+
+    from_url = download_args(engine, j, staging)
+    from_info = download_args(engine, j, staging, info)
+
+    assert from_url[:-1] == from_info[:-2]
+    assert from_url[-1] == URL
+    assert from_info[-2:] == ["--load-info-json", str(info)]
+    assert URL not in from_info

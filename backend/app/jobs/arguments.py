@@ -45,8 +45,14 @@ def _mode_args(job: Job) -> list[str]:
     raise UnsupportedJob(job.mode)
 
 
-def download_args(engine: EngineManager, job: Job, staging: Path) -> list[str]:
-    """Arguments for one video. The URL is last (the fake engine of the tests relies on it)."""
+def download_args(
+    engine: EngineManager, job: Job, staging: Path, info_json: Path | None = None
+) -> list[str]:
+    """Arguments for one video. The URL is last (the fake engine of the tests relies on it).
+
+    With `info_json` (the output of a recent preview) yt-dlp reads the video from that file
+    instead of extracting it again from the URL: `--load-info-json <file>` takes the URL's place.
+    The format is chosen again from the file's format list with the same `-f`/`-S`."""
     return [
         *ytdlp_base_args(engine),
         "--no-playlist",
@@ -67,5 +73,5 @@ def download_args(engine: EngineManager, job: Job, staging: Path) -> list[str]:
         "-o",
         OUTPUT_TEMPLATE,
         *_mode_args(job),
-        job.url,
+        *(["--load-info-json", str(info_json)] if info_json else [job.url]),
     ]
