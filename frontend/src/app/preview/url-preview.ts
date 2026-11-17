@@ -54,12 +54,13 @@ type Outcome =
   | { state: 'loading' }
   | { state: 'error'; code: string }
   | { state: 'ready'; media: MediaPreview };
-type Request = { url: string; immediate: boolean };
+/** `outcome` skips the HTTP call: the result is already known (a playlist that was loaded). */
+type Request = { url: string; immediate: boolean; outcome?: Outcome };
 /** The playlist a video belongs to, loaded in the background to offer "Descargar N". */
 type PlaylistLoad =
   | { state: 'idle' }
   | { state: 'loading' }
-  | { state: 'failed' }
+  | { state: 'failed'; code: string }
   | { state: 'ready'; playlist: PlaylistPreview };
 
 /**
@@ -123,6 +124,10 @@ export class UrlPreview {
   protected readonly canPaste = inject(PASTE_SUPPORT)();
 
   protected readonly playlistLoad = signal<PlaylistLoad>({ state: 'idle' });
+  /** "Ver playlist completa" was clicked while the playlist still loads: show it on arrival. */
+  private readonly awaitingFullPlaylist = signal(false);
+  /** "Descargar playlist" was clicked while the playlist still loads: the format picked then. */
+  private readonly pendingDownload = signal<DownloadOptions | null>(null);
   /** The entries "Descargar N" would enqueue: the available ones of the loaded playlist. */
   private readonly playlistEntries = computed(() => {
     const load = this.playlistLoad();
@@ -182,9 +187,12 @@ export class UrlPreview {
     this.requests
       .pipe(
         debounce((request) => (request.immediate ? of(0) : timer(DEBOUNCE_MS))),
-        map((request) => request.url.trim()),
+        map((request) => ({ ...request, url: request.url.trim() })),
         // switchMap unsubscribes from the previous request, which aborts its HTTP call.
-        switchMap((url): Observable<Outcome> => {
+        switchMap(({ url, outcome }): Observable<Outcome> => {
+          if (outcome) {
+            return of(outcome);
+          }
           if (!looksLikeUrl(url)) {
             return of({ state: 'idle' });
           }
@@ -202,15 +210,25 @@ export class UrlPreview {
           }
           return this.previews.fetch(url).pipe(
             map((media): PlaylistLoad =>
-              media.kind === 'playlist' ? { state: 'ready', playlist: media } : { state: 'failed' },
+              media.kind === 'playlist'
+                ? { state: 'ready', playlist: media }
+                : { state: 'failed', code: 'unknown' },
             ),
-            catchError(() => of<PlaylistLoad>({ state: 'failed' })),
+            catchError((error: unknown) =>
+              of<PlaylistLoad>({
+                state: 'failed',
+                code: error instanceof PreviewError ? error.code : 'unknown',
+              }),
+            ),
             startWith<PlaylistLoad>({ state: 'loading' }),
           );
         }),
         takeUntilDestroyed(inject(DestroyRef)),
       )
-      .subscribe((load) => this.playlistLoad.set(load));
+      .subscribe((load) => {
+        this.playlistLoad.set(load);
+        this.playlistSettled(load);
+      });
 
     // Losing the Engine (e.g. while it updates) drops what is on screen. A request still waiting
     // for the Engine keeps its skeleton: it fires by itself once the Engine is ready.
@@ -229,7 +247,27 @@ export class UrlPreview {
     this.schedule(value, inputType === 'insertFromPaste' || inputType === 'insertFromDrop');
   }
 
+  /** Shows the playlist the video came from, reusing its background load when there is one. */
   protected showFullPlaylist(playlistUrl: string): void {
+    const load = this.playlistLoad();
+    if (load.state === 'ready') {
+      this.cancelPending();
+      this.url.set(playlistUrl);
+      this.requests.next({
+        url: playlistUrl,
+        immediate: true,
+        outcome: { state: 'ready', media: load.playlist },
+      });
+      return;
+    }
+    if (load.state === 'loading') {
+      // The same load keeps running; `playlistSettled` shows it when it arrives.
+      this.cancelPending();
+      this.url.set(playlistUrl);
+      this.awaitingFullPlaylist.set(true);
+      this.requests.next({ url: playlistUrl, immediate: true, outcome: { state: 'loading' } });
+      return;
+    }
     this.setUrl(playlistUrl);
   }
 
@@ -352,7 +390,7 @@ export class UrlPreview {
   }
 
   protected canDownloadAll(): boolean {
-    return this.engineReady() && !this.enqueuing() && this.playlistOffer() === 'ready';
+    return this.engineReady() && !this.enqueuing() && this.playlistOffer() !== null;
   }
 
   protected duration(seconds: number): string {
@@ -373,6 +411,13 @@ export class UrlPreview {
     this.quality.set(this.isAvailable(media, quality) ? quality : 'best');
   }
 
+  /** What "Descargar" asks for with the format picked right now. */
+  private currentOptions(): DownloadOptions {
+    return this.mode() === 'audio'
+      ? { mode: 'audio', audioFormat: this.audioFormat() }
+      : { mode: 'video', quality: this.quality() };
+  }
+
   protected download(media: MediaPreview): void {
     if (!this.canDownload(media)) {
       return;
@@ -381,26 +426,77 @@ export class UrlPreview {
       media.kind === 'playlist'
         ? media.entries.filter((e) => e.available && this.selected().has(e.index))
         : undefined;
-    this.enqueue(media, entries, false);
+    this.enqueue(media, entries, false, this.currentOptions());
   }
 
   /** "Descargar N" on a video that came from a playlist: the same as selecting all of it. */
   protected downloadAll(): void {
-    const load = this.playlistLoad();
-    if (!this.canDownloadAll() || load.state !== 'ready') {
+    if (!this.canDownloadAll()) {
       return;
     }
-    this.enqueue(load.playlist, this.playlistEntries(), true);
+    const load = this.playlistLoad();
+    if (load.state === 'ready') {
+      this.enqueue(load.playlist, this.playlistEntries(), true, this.currentOptions());
+      return;
+    }
+    // Still loading: wait for the playlist, keeping the format picked now.
+    this.enqueuing.set(true);
+    this.enqueuingAll.set(true);
+    this.enqueueError.set(null);
+    this.pendingDownload.set(this.currentOptions());
   }
 
-  private enqueue(media: MediaPreview, entries: PlaylistEntry[] | undefined, all: boolean): void {
+  /** The background load ended: finish what was clicked while it ran, if it is still wanted. */
+  private playlistSettled(load: PlaylistLoad): void {
+    if (load.state === 'idle' || load.state === 'loading') {
+      return;
+    }
+    if (this.awaitingFullPlaylist()) {
+      this.awaitingFullPlaylist.set(false);
+      this.requests.next({
+        url: this.url(),
+        immediate: true,
+        outcome:
+          load.state === 'ready'
+            ? { state: 'ready', media: load.playlist }
+            : { state: 'error', code: load.code },
+      });
+      return;
+    }
+    const options = this.pendingDownload();
+    if (!options) {
+      return;
+    }
+    this.pendingDownload.set(null);
+    const entries = this.playlistEntries();
+    if (load.state === 'ready' && entries.length > 0) {
+      this.enqueue(load.playlist, entries, true, options);
+      return;
+    }
+    this.enqueuing.set(false);
+    this.enqueueError.set(
+      load.state === 'ready' ? TEXTS.preview.playlist.empty : TEXTS.preview.playlist.failed,
+    );
+  }
+
+  /** Drops what was clicked while the playlist loaded: the link changed or was cleared. */
+  private cancelPending(): void {
+    this.awaitingFullPlaylist.set(false);
+    if (this.pendingDownload() !== null) {
+      this.pendingDownload.set(null);
+      this.enqueuing.set(false);
+    }
+  }
+
+  private enqueue(
+    media: MediaPreview,
+    entries: PlaylistEntry[] | undefined,
+    all: boolean,
+    options: DownloadOptions,
+  ): void {
     this.enqueuing.set(true);
     this.enqueuingAll.set(all);
     this.enqueueError.set(null);
-    const options: DownloadOptions =
-      this.mode() === 'audio'
-        ? { mode: 'audio', audioFormat: this.audioFormat() }
-        : { mode: 'video', quality: this.quality() };
     this.jobs
       .enqueue(
         media.url,
@@ -453,6 +549,7 @@ export class UrlPreview {
   }
 
   private schedule(url: string, immediate: boolean): void {
+    this.cancelPending();
     // Anything pending or in flight is stale from now on: clear the old result right away.
     if (!looksLikeUrl(url)) {
       this.reset();
@@ -467,7 +564,10 @@ export class UrlPreview {
         this.reset();
         break;
       case 'loading':
-        this.playlistRequests.next(null);
+        // Waiting for the playlist that already loads: keep that request.
+        if (!this.awaitingFullPlaylist()) {
+          this.playlistRequests.next(null);
+        }
         this.preview.set(null);
         this.errorCode.set(null);
         this.status.set('loading');
@@ -497,6 +597,7 @@ export class UrlPreview {
   }
 
   private reset(): void {
+    this.cancelPending();
     this.playlistRequests.next(null);
     this.status.set('idle');
     this.preview.set(null);
