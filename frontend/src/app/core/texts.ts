@@ -84,6 +84,8 @@ export const TEXTS = {
       downloadOne: 'Descargar 1',
       downloadLoading: 'Descargar playlist',
       nothingSelected: 'Elige al menos un video para descargar.',
+      failed: 'No se pudo leer la playlist. Inténtalo de nuevo.',
+      empty: 'La playlist no tiene videos disponibles.',
     },
     enqueueErrors: {
       engine_not_ready: 'El motor de descarga todavía no está listo.',
