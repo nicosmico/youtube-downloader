@@ -36,6 +36,7 @@ from app.jobs.queue import start_thread
 from app.opener import FileRevealer, FolderOpener, open_folder, reveal_file
 from app.paths import static_dir as default_static_dir
 from app.preview import PreviewService
+from app.preview.cache import InfoCache
 from app.runtime import remove_runtime
 from app.security import LocalSecurityMiddleware
 from app.settings_api import build_settings_router
@@ -87,6 +88,7 @@ def create_app(
         on_change=lambda data: broadcaster.publish("settings.updated", data),
     )
     staging = staging_root(data_dir)
+    info_cache = InfoCache(clock=clock)
     queue = JobQueue(
         repo=repo,
         runner=JobRunner(
@@ -97,6 +99,8 @@ def create_app(
             publish=JobEvents(broadcaster).job_updated,
             stream=streamer,
             clock=clock,
+            cached_info=info_cache.get,
+            discard_info=info_cache.discard,
         ),
         events=JobEvents(broadcaster),
         spawn=spawn_job,
@@ -187,7 +191,7 @@ def create_app(
             request_shutdown=shutdown_by_user,
             engine=engine,
             update=lambda: notice.update,
-            previews=PreviewService(engine, ytdlp_runner),
+            previews=PreviewService(engine, ytdlp_runner, cache=info_cache),
             download_dir=download_setting,
             open_folder=open_folder_in_host,
         )

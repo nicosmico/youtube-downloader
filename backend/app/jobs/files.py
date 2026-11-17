@@ -15,6 +15,8 @@ log = logging.getLogger("app.jobs")
 
 STAGING_DIR = "staging"
 PARTIAL_SUFFIXES = (".part", ".ytdl", ".temp")
+# The reused preview JSON, written inside the staging folder of a job; never a download result.
+INFO_JSON_NAME = "info.json"
 
 
 def staging_root(data_dir: Path) -> Path:
@@ -56,7 +58,11 @@ def find_staged_file(staging: Path, reported: str | None) -> Path | None:
                 return candidate
         except OSError:
             pass
-    files = [p for p in staging.rglob("*") if p.is_file() and not p.name.endswith(PARTIAL_SUFFIXES)]
+    files = [
+        p
+        for p in staging.rglob("*")
+        if p.is_file() and not p.name.endswith(PARTIAL_SUFFIXES) and p != staging / INFO_JSON_NAME
+    ]
     return files[0] if len(files) == 1 else None
 
 

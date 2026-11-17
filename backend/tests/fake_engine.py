@@ -31,6 +31,7 @@ class Scenario:
     stdout_lines: tuple[str, ...] = ()  # plain (non-progress) lines printed before the end
     stderr_lines: tuple[str, ...] = ()  # warnings printed on stderr before the end
     fail_with: str | None = None  # stderr text; the process exits with 1 after some progress
+    fail_from_info: str | None = None  # like `fail_with`, but only when given `--load-info-json`
     hold: bool = False  # block after the first progress line until `release()` or a stop
     ignore_terminate: bool = False  # a stubborn process: only `kill()` stops it
     content: bytes = b"fake-video-bytes"
@@ -116,24 +117,43 @@ class FakeEngine:
         if self.start_error:
             raise ProcessError(self.start_error)
         staging = Path(args[args.index("-P") + 1])
-        sc = self.scenarios.get(args[-1], self.default)
-        handle = FakeHandle(args[-1], sc.ignore_terminate)
+        url, from_info = self._source(args)
+        sc = self.scenarios.get(url, self.default)
+        handle = FakeHandle(url, sc.ignore_terminate)
         self.handles.append(handle)
         if on_start:
             on_start(handle)
-        self.on_begin(args[-1])
+        self.on_begin(url)
         with self._cond:
             self._running += 1
             self.peak = max(self.peak, self._running)
-            self.started.append(args[-1])
+            self.started.append(url)
             self._cond.notify_all()
         try:
-            return self._run(sc, staging, on_stdout, on_stderr, handle)
+            return self._run(sc, staging, on_stdout, on_stderr, handle, from_info)
         finally:
             with self._cond:
                 self._running -= 1
 
-    def _run(self, sc: Scenario, staging: Path, on_stdout, on_stderr, handle: FakeHandle) -> int:
+    @staticmethod
+    def _source(args: Sequence[str]) -> tuple[str, bool]:
+        """The URL being downloaded and whether yt-dlp was given a `--load-info-json` file instead
+        of it (then the URL is read from that file, like yt-dlp would, never from the network)."""
+        if "--load-info-json" not in args:
+            return args[-1], False
+        info = json.loads(Path(args[args.index("--load-info-json") + 1]).read_text("utf-8"))
+        url = info.get("webpage_url") or f"https://www.youtube.com/watch?v={info['id']}"
+        return url, True
+
+    def _run(
+        self,
+        sc: Scenario,
+        staging: Path,
+        on_stdout,
+        on_stderr,
+        handle: FakeHandle,
+        from_info: bool,
+    ) -> int:
         first = True
         if sc.announce_total:
             sizes = [t if t is not None else 300 for _, t in sc.streams]
@@ -184,8 +204,11 @@ class FakeEngine:
             on_stdout(line)
         for line in sc.stderr_lines:
             on_stderr(line)
-        if sc.fail_with is not None:
-            on_stderr(sc.fail_with)
+        failure = sc.fail_with
+        if from_info and sc.fail_from_info is not None:
+            failure = sc.fail_from_info
+        if failure is not None:
+            on_stderr(failure)
             return 1
         for pp in sc.postprocessors:
             on_stderr("POSTPROC" + json.dumps({"status": "started", "postprocessor": pp}))

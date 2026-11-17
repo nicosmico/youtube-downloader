@@ -19,6 +19,7 @@ from app.engine.io import ProcessError, ProcessHandle, Streamer, stream_process
 from app.jobs import failures
 from app.jobs.arguments import UnsupportedJob, download_args
 from app.jobs.files import (
+    INFO_JSON_NAME,
     DownloadDirMissing,
     FileMover,
     find_staged_file,
@@ -58,7 +59,10 @@ class JobRunner:
         stream: Streamer = stream_process,
         clock: Callable[[], float] = time.monotonic,
         flush_interval: float = FLUSH_INTERVAL_SECONDS,
+        cached_info: Callable[[str], str | None] = lambda url: None,
+        discard_info: Callable[[str], None] = lambda url: None,
     ) -> None:
+        """`cached_info(url)` returns the recent preview JSON of a video (see `InfoCache`)."""
         self._engine = engine
         self._repo = repo
         self._mover = mover
@@ -67,6 +71,8 @@ class JobRunner:
         self._stream = stream
         self._clock = clock
         self._flush_interval = flush_interval
+        self._cached_info = cached_info
+        self._discard_info = discard_info
 
     def run(
         self,
@@ -98,18 +104,20 @@ class JobRunner:
         staging = prepare_staging(self._staging_root, job.id)
         if canceled():  # cancelled before the process existed
             return self._cancel(job.id)
+        info = self._reused_info(job, staging)
         try:
-            args = download_args(self._engine, job, staging)
+            code, attempt = self._execute(job, staging, info, on_handle)
+            if code != 0 and info is not None and not canceled() and not interrupted():
+                # Transparent fallback: the same Attempt goes on from the URL, in a clean staging.
+                log.warning("job %s: cached info failed, retrying from the URL", job.id)
+                self._discard_info(job.url)
+                staging = prepare_staging(self._staging_root, job.id)
+                code, attempt = self._execute(job, staging, None, on_handle)
         except UnsupportedJob:
             return self._fail(job.id, failures.UNSUPPORTED)
-
-        attempt = _Attempt(self, job.id)
-        try:
-            code = self._stream(args, attempt.on_stdout, attempt.on_stderr, on_handle)
         except ProcessError as exc:
             log.warning("job %s: could not start yt-dlp: %s", job.id, exc)
             return self._fail(job.id, failures.GENERIC)
-        attempt.flush()
 
         if code != 0 and canceled():
             return self._cancel(job.id)
@@ -156,6 +164,38 @@ class JobRunner:
         )
         self._publish(done)
         return done
+
+    def _execute(
+        self,
+        job: Job,
+        staging: Path,
+        info: Path | None,
+        on_handle: Callable[[ProcessHandle], None] | None,
+    ) -> tuple[int, _Attempt]:
+        """One yt-dlp process (from `info` if given, else from the URL) and its output handlers."""
+        args = download_args(self._engine, job, staging, info)
+        attempt = _Attempt(self, job.id)
+        code = self._stream(args, attempt.on_stdout, attempt.on_stderr, on_handle)
+        attempt.flush()
+        return code, attempt
+
+    def _reused_info(self, job: Job, staging: Path) -> Path | None:
+        """The recent preview of a single video, written into staging; None if there is none.
+
+        Looked up now, when the job starts, not when it was enqueued. Playlist entries (a job of
+        a Batch) never reuse it."""
+        if job.batch_id is not None:
+            return None
+        raw = self._cached_info(job.url)
+        if raw is None:
+            return None
+        path = staging / INFO_JSON_NAME
+        try:
+            path.write_text(raw, encoding="utf-8")
+        except OSError:
+            log.warning("job %s: could not write the cached info, using the URL", job.id)
+            return None
+        return path
 
     def _destination(self, job: Job, staged: Path) -> tuple[str | None, str]:
         """A single video goes to the Destination as yt-dlp named it; an Entry of a playlist goes
