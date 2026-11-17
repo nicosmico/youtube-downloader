@@ -153,6 +153,18 @@ export const TEXTS = {
     moreActions: 'Más acciones',
     remove: 'Quitar del historial',
     clearHistory: 'Vaciar historial',
+    cancelBatch: 'Cancelar descargas',
+    retryBatch: 'Reintentar fallidas',
+    cancelBatchConfirm: {
+      title: '¿Cancelar las {n} descargas pendientes de esta playlist?',
+      titleOne: '¿Cancelar la descarga pendiente de esta playlist?',
+      text: 'Las que están en curso pierden su progreso.',
+      confirm: 'Sí, cancelar',
+      dismiss: 'No',
+    },
+    selectAll: 'Seleccionar todas',
+    selectJob: 'Seleccionar',
+    retrySelected: 'Reintentar ({n})',
     removeBatchConfirm: {
       title: '¿Quitar {n} descargas del historial?',
       titleOne: '¿Quitar 1 descarga del historial?',

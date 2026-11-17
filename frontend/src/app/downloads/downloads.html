@@ -62,6 +62,30 @@
     </div>
   </div>
 
+  @if (selecting() && days().length > 0) {
+    <div class="flex items-center justify-between gap-3 px-2" data-testid="selection-bar">
+      <label class="flex items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          class="size-4 shrink-0 accent-[var(--accent-solid)]"
+          data-testid="select-all"
+          [checked]="allSelected()"
+          (change)="toggleAll()"
+        />
+        {{ texts.downloads.selectAll }}
+      </label>
+      <button
+        type="button"
+        data-testid="retry-selected"
+        class="h-9 rounded-full bg-accent-solid px-4 text-sm font-medium text-on-accent disabled:opacity-50"
+        [disabled]="selectedIds().length === 0 || retryingSelection()"
+        (click)="retrySelected()"
+      >
+        {{ texts.downloads.retrySelected.replace('{n}', '' + selectedIds().length) }}
+      </button>
+    </div>
+  }
+
   <div class="flex min-w-0 flex-col gap-1" data-testid="downloads-list">
     @if (days().length === 0 && !jobsService.loading()) {
       <p class="m-0 py-6 text-center text-sm text-muted" data-testid="downloads-empty">
@@ -104,7 +128,7 @@
                     [attr.aria-label]="texts.downloads.moreActions"
                     [title]="texts.downloads.moreActions"
                     [attr.aria-expanded]="menuFor() === 'batch:' + item.batchId"
-                    [disabled]="!canRemoveBatch(item)"
+                    [disabled]="!hasBatchActions(item)"
                     (click)="toggleMenu('batch:' + item.batchId)"
                   >
                     <app-icon name="more" class="size-5" />
@@ -116,16 +140,42 @@
                       [attr.aria-label]="texts.downloads.moreActions"
                       class="absolute right-0 z-30 mt-1 w-56 rounded-xl border border-line bg-bg py-2 shadow-lg"
                     >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        data-testid="remove-batch"
-                        class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
-                        (click)="askRemoveBatch(item, batchMore)"
-                      >
-                        <app-icon name="trash" class="size-4" />
-                        {{ texts.downloads.remove }}
-                      </button>
+                      @if (canCancelBatch(item)) {
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="cancel-batch"
+                          class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                          (click)="askCancelBatch(item, batchMore)"
+                        >
+                          <app-icon name="close" class="size-4" />
+                          {{ texts.downloads.cancelBatch }}
+                        </button>
+                      }
+                      @if (canRetryBatch(item)) {
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="retry-batch"
+                          class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                          (click)="retryBatch(item)"
+                        >
+                          <app-icon name="retry" class="size-4" />
+                          {{ texts.downloads.retryBatch }}
+                        </button>
+                      }
+                      @if (canRemoveBatch(item)) {
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-testid="remove-batch"
+                          class="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-surface"
+                          (click)="askRemoveBatch(item, batchMore)"
+                        >
+                          <app-icon name="trash" class="size-4" />
+                          {{ texts.downloads.remove }}
+                        </button>
+                      }
                     </div>
                   }
                 </div>
@@ -161,6 +211,16 @@
       [attr.data-status]="job.status"
     >
       <div class="flex items-center gap-3">
+        @if (selecting()) {
+          <input
+            type="checkbox"
+            class="size-4 shrink-0 accent-[var(--accent-solid)]"
+            data-testid="select-job"
+            [attr.aria-label]="texts.downloads.selectJob + ': ' + title(job)"
+            [checked]="isSelected(job)"
+            (change)="toggleSelected(job)"
+          />
+        }
         <div
           class="grid h-10 w-[72px] shrink-0 place-items-center overflow-hidden rounded-md bg-surface text-muted"
           data-testid="job-thumbnail-box"
@@ -401,7 +461,7 @@
     [title]="confirmTexts().title"
     [text]="confirmTexts().text"
     [confirmLabel]="confirmTexts().confirm"
-    [cancelLabel]="texts.downloads.cancel"
+    [cancelLabel]="confirmTexts().dismiss"
     (confirmed)="confirm()"
     (dismissed)="dismissConfirmation()"
     (closed)="restoreFocus()"

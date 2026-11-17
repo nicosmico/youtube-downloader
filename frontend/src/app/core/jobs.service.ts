@@ -405,6 +405,37 @@ export class JobsService {
     return this.command(jobId, 'retry');
   }
 
+  /** Cancels the queued and running jobs of a Batch. The state of each arrives by SSE too. */
+  cancelBatch(batchId: string): Observable<Job[]> {
+    return this.http
+      .post<{ jobs: Job[] }>(`/api/batches/${encodeURIComponent(batchId)}/cancel`, {})
+      .pipe(
+        tap((response) => response.jobs.forEach((job) => this.upsert(job))),
+        map((response) => response.jobs),
+        catchError((error: unknown) => this.failed(error)),
+      );
+  }
+
+  /** A new Attempt of every failed, canceled or interrupted job of a Batch. */
+  retryBatch(batchId: string): Observable<Job[]> {
+    return this.http
+      .post<{ jobs: Job[] }>(`/api/batches/${encodeURIComponent(batchId)}/retry`, {})
+      .pipe(
+        tap((response) => response.jobs.forEach((job) => this.adopt(job))),
+        map((response) => response.jobs),
+        catchError((error: unknown) => this.failed(error)),
+      );
+  }
+
+  /** A new Attempt of each of the given jobs; the server skips the ones that cannot be retried. */
+  retryMany(jobIds: readonly string[]): Observable<Job[]> {
+    return this.http.post<{ jobs: Job[] }>('/api/jobs/retry', { ids: jobIds }).pipe(
+      tap((response) => response.jobs.forEach((job) => this.adopt(job))),
+      map((response) => response.jobs),
+      catchError((error: unknown) => this.failed(error)),
+    );
+  }
+
   private command(jobId: string, action: 'cancel' | 'retry'): Observable<Job> {
     return this.http.post<Job>(`/api/jobs/${encodeURIComponent(jobId)}/${action}`, {}).pipe(
       tap((job) => (action === 'retry' ? this.adopt(job) : this.upsert(job))),

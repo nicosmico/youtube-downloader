@@ -231,6 +231,39 @@ class JobRepository:
         )
         return self.get(job_id) if changed else None
 
+    def cancel_queued_of_batch(self, batch_id: str) -> list[Job]:
+        """Every `queued` job of a Batch becomes `canceled` without ever running, in
+        `playlist_index` order. Run it under the Queue's lock so none is claimed meanwhile."""
+        rows = self._db.query(
+            "SELECT id FROM jobs WHERE batch_id = ? AND status = ? ORDER BY playlist_index, rowid",
+            (batch_id, JobStatus.QUEUED.value),
+        )
+        canceled = (self.cancel_queued(r["id"]) for r in rows)
+        return [job for job in canceled if job is not None]
+
+    def active_ids_of_batch(self, batch_id: str) -> list[str]:
+        """The `downloading`/`processing` jobs of a Batch, in `playlist_index` order."""
+        rows = self._db.query(
+            "SELECT id FROM jobs WHERE batch_id = ? AND status IN (?, ?) "
+            "ORDER BY playlist_index, rowid",
+            (batch_id, JobStatus.DOWNLOADING.value, JobStatus.PROCESSING.value),
+        )
+        return [r["id"] for r in rows]
+
+    def retryable_ids_of_batch(self, batch_id: str) -> list[str]:
+        """The `failed`/`canceled`/`interrupted` jobs of a Batch, in `playlist_index` order."""
+        rows = self._db.query(
+            "SELECT id FROM jobs WHERE batch_id = ? AND status IN (?, ?, ?) "
+            "ORDER BY playlist_index, rowid",
+            (
+                batch_id,
+                JobStatus.FAILED.value,
+                JobStatus.CANCELED.value,
+                JobStatus.INTERRUPTED.value,
+            ),
+        )
+        return [r["id"] for r in rows]
+
     def requeue(self, job_id: str) -> Job | None:
         """A `failed`/`canceled`/`interrupted` job starts a new Attempt at the end of the line:
         `attempt + 1`, progress, error and output cleared. `created_at` is kept (History).
