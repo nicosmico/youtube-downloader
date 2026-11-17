@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from app.engine.io import ProcessHandle
 from app.jobs import failures
@@ -191,6 +192,54 @@ class JobQueue:
         self._publish_counts()
         self.kick()
         return queued
+
+    def cancel_batch(self, batch_id: str) -> list[Job]:
+        """Cancel every `queued` and running job of a Batch; returns the ones that ended
+        `canceled` (maybe none).
+
+        The queued ones are canceled first, in one step under the lock, so none of them starts
+        while the running ones are terminated (in parallel: the grace period is per job).
+        Same rules as `cancel`: a running job that completes despite the TERM is not returned.
+        """
+        with self._lock:
+            if self._repo.get_batch(batch_id) is None:
+                raise UnknownBatch(batch_id)
+            canceled = self._repo.cancel_queued_of_batch(batch_id)
+            active_ids = self._repo.active_ids_of_batch(batch_id)
+        for job in canceled:
+            self._events.job_updated(job)
+        if canceled:
+            self._publish_counts()
+        results: list[Job] = []
+        if active_ids:
+            with ThreadPoolExecutor(max_workers=len(active_ids)) as pool:
+                futures = [pool.submit(self._try_cancel, job_id) for job_id in active_ids]
+                results = [job for f in futures if (job := f.result()) is not None]
+        return [*canceled, *results]
+
+    def retry_batch(self, batch_id: str) -> list[Job]:
+        """A new Attempt of every `failed`, `canceled` or `interrupted` job of a Batch, in
+        playlist order; returns the ones requeued (maybe none)."""
+        if self._repo.get_batch(batch_id) is None:
+            raise UnknownBatch(batch_id)
+        return self.retry_many(self._repo.retryable_ids_of_batch(batch_id))
+
+    def retry_many(self, job_ids: list[str]) -> list[Job]:
+        """Retry the given jobs, in order; unknown or not retryable ones are skipped. Returns
+        the ones requeued."""
+        retried: list[Job] = []
+        for job_id in job_ids:
+            try:
+                retried.append(self.retry(job_id))
+            except (UnknownJob, NotRetryable):
+                continue
+        return retried
+
+    def _try_cancel(self, job_id: str) -> Job | None:
+        try:
+            return self.cancel(job_id)
+        except (UnknownJob, NotCancelable):
+            return None
 
     def remove(self, job_id: str) -> None:
         """Take a finished job out of the History. The downloaded file stays where it is."""

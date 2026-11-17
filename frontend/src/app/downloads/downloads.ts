@@ -149,7 +149,10 @@ export function groupByDay(items: readonly ListItem[], now: Date): DayGroup[] {
 }
 
 /** What the user is asked to confirm. */
-type Confirmation = { kind: 'batch'; batchId: string; count: number } | { kind: 'history' };
+type Confirmation =
+  | { kind: 'batch'; batchId: string; count: number }
+  | { kind: 'cancelBatch'; batchId: string; count: number }
+  | { kind: 'history' };
 
 /** One card per DownloadJob, live through `JobsService`; a playlist groups its jobs. */
 @Component({
@@ -182,17 +185,21 @@ export class Downloads {
   protected readonly confirmTexts = computed(() => {
     const request = this.confirmation();
     const texts = TEXTS.downloads;
-    if (request?.kind === 'batch') {
-      const dialog = texts.removeBatchConfirm;
+    if (request?.kind === 'batch' || request?.kind === 'cancelBatch') {
+      const dialog =
+        request.kind === 'batch'
+          ? { ...texts.removeBatchConfirm, dismiss: texts.cancel }
+          : texts.cancelBatchConfirm;
       return {
         title:
           request.count === 1 ? dialog.titleOne : dialog.title.replace('{n}', `${request.count}`),
         text: dialog.text,
         confirm: dialog.confirm,
+        dismiss: dialog.dismiss,
       };
     }
-    const dialog = texts.clearHistoryConfirm;
-    return request ? dialog : { title: '', text: '', confirm: '' };
+    const dialog = { ...texts.clearHistoryConfirm, dismiss: texts.cancel };
+    return request ? dialog : { title: '', text: '', confirm: '', dismiss: texts.cancel };
   });
   /** Label of the reveal button: the file manager of the server's platform. */
   protected readonly revealLabel = computed(() => {
@@ -213,11 +220,38 @@ export class Downloads {
   /** Jobs with a cancel or retry request in flight. */
   protected readonly busy = signal<ReadonlySet<string>>(new Set());
   protected readonly actionMessage = signal<string | null>(null);
+  /** Ids ticked in the "Con error" filter (the only one with selection). */
+  private readonly ticked = signal<ReadonlySet<string>>(new Set());
+  /** The bulk retry of the selection is in flight. */
+  protected readonly retryingSelection = signal(false);
+  /** The jobs of the "Con error" filter can be ticked; no other filter has selection. */
+  protected readonly selecting = computed(() => this.jobsService.filter() === 'failed');
+  /** What can be ticked right now: the jobs of the filter, as the list shows them. */
+  private readonly selectable = computed(() =>
+    this.selecting() ? this.jobsService.visibleJobs() : [],
+  );
+  /** The ticked jobs still in the filter (one that leaves it, e.g. retried elsewhere, is dropped). */
+  protected readonly selectedIds = computed(() =>
+    this.selectable()
+      .map((job) => job.id)
+      .filter((id) => this.ticked().has(id)),
+  );
+  protected readonly allSelected = computed(
+    () => this.selectable().length > 0 && this.selectedIds().length === this.selectable().length,
+  );
   protected readonly folderMessage = signal<{ ok: boolean; text: string } | null>(null);
 
   private knownActive = new Set<string>();
+  /** Jobs the user just retried from the selection: they join the Queue without leaving "Con error". */
+  private retriedFromSelection = new Set<string>();
 
   constructor() {
+    // The selection belongs to one visit to "Con error": changing filter empties it.
+    effect(() => {
+      this.jobsService.filter();
+      untracked(() => this.ticked.set(new Set()));
+    });
+
     // A job that just joined the Queue (enqueued or retried) must be seen: a filter that hides
     // it gives way to "Todas".
     effect(() => {
@@ -227,7 +261,9 @@ export class Downloads {
           .filter(isInProgress)
           .map((job) => job.id),
       );
-      if ([...ids].some((id) => !this.knownActive.has(id))) {
+      const joined = [...ids].filter((id) => !this.knownActive.has(id));
+      const expected = joined.filter((id) => this.retriedFromSelection.delete(id));
+      if (joined.length > expected.length) {
         untracked(() => {
           if (this.jobsService.filter() !== 'active') {
             this.jobsService.select('all');
@@ -375,6 +411,99 @@ export class Downloads {
     return this.removableOf(group.batchId) > 0;
   }
 
+  /** Queued and running jobs of a Batch that the client knows. */
+  private pendingOf(batchId: string): number {
+    return this.jobsService.jobs().filter((job) => job.batchId === batchId && isInProgress(job))
+      .length;
+  }
+
+  protected canCancelBatch(group: BatchGroup): boolean {
+    return this.pendingOf(group.batchId) > 0;
+  }
+
+  /** Failed, canceled or interrupted jobs of a Batch that the client knows. */
+  protected canRetryBatch(group: BatchGroup): boolean {
+    return this.jobsService
+      .jobs()
+      .some((job) => job.batchId === group.batchId && this.canRetry(job));
+  }
+
+  /** The "⋮" of a Batch has something to offer. */
+  protected hasBatchActions(group: BatchGroup): boolean {
+    return this.canCancelBatch(group) || this.canRetryBatch(group) || this.canRemoveBatch(group);
+  }
+
+  protected askCancelBatch(group: BatchGroup, trigger: HTMLElement): void {
+    this.ask(
+      { kind: 'cancelBatch', batchId: group.batchId, count: this.pendingOf(group.batchId) },
+      trigger,
+    );
+  }
+
+  protected retryBatch(group: BatchGroup): void {
+    this.menuFor.set(null);
+    this.bulk(this.jobsService.retryBatch(group.batchId));
+  }
+
+  protected isSelected(job: Job): boolean {
+    return this.ticked().has(job.id);
+  }
+
+  protected toggleSelected(job: Job): void {
+    this.ticked.update((ids) => {
+      const next = new Set(ids);
+      if (!next.delete(job.id)) {
+        next.add(job.id);
+      }
+      return next;
+    });
+  }
+
+  /** Ticks every job of the filter, or none when they all are already. */
+  protected toggleAll(): void {
+    this.ticked.set(this.allSelected() ? new Set() : new Set(this.selectable().map((j) => j.id)));
+  }
+
+  protected retrySelected(): void {
+    const ids = this.selectedIds();
+    if (ids.length === 0 || this.retryingSelection()) {
+      return;
+    }
+    this.retryingSelection.set(true);
+    this.retriedFromSelection = new Set(ids);
+    this.bulk(this.jobsService.retryMany(ids), {
+      next: (retried) => {
+        // The server skips what could not be retried: those never join the Queue.
+        const returned = new Set((retried as Job[]).map((job) => job.id));
+        this.retriedFromSelection = new Set(
+          [...this.retriedFromSelection].filter((id) => returned.has(id)),
+        );
+        this.ticked.set(new Set());
+      },
+      error: () => (this.retriedFromSelection = new Set()),
+      finally: () => this.retryingSelection.set(false),
+    });
+  }
+
+  /** A request over several jobs; the states come by SSE and in the response. */
+  private bulk(
+    request: Observable<unknown>,
+    hooks: { next?: (value: unknown) => void; error?: () => void; finally?: () => void } = {},
+  ): void {
+    this.actionMessage.set(null);
+    request.subscribe({
+      next: (value) => {
+        hooks.next?.(value);
+        hooks.finally?.();
+      },
+      error: () => {
+        hooks.error?.();
+        hooks.finally?.();
+        this.actionMessage.set(TEXTS.downloads.actionFailed);
+      },
+    });
+  }
+
   protected askRemoveBatch(group: BatchGroup, trigger: HTMLElement): void {
     this.ask(
       { kind: 'batch', batchId: group.batchId, count: this.removableOf(group.batchId) },
@@ -400,6 +529,10 @@ export class Downloads {
     const request = this.confirmation();
     this.confirmation.set(null);
     if (!request) {
+      return;
+    }
+    if (request.kind === 'cancelBatch') {
+      this.bulk(this.jobsService.cancelBatch(request.batchId));
       return;
     }
     this.actionMessage.set(null);

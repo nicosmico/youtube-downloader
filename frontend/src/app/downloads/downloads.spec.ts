@@ -1404,6 +1404,350 @@ describe('Downloads filters, days and cleaning', () => {
     });
   });
 
+  describe('cancelling and retrying in bulk', () => {
+    const batchJob = (id: string, n: number, state: Job['status']) =>
+      jobAt(id, at(16, 10 + n), {
+        status: state,
+        batchId: 'b1',
+        batchTitle: 'Mi lista',
+        batchEntryCount: 4,
+        playlistIndex: n,
+      });
+    const dialog = () => el('confirm-dialog') as HTMLDialogElement;
+    const statusOf = (id: string) => jobs.jobs().find((j) => j.id === id)?.status;
+    const checked = () => all('select-job').map((box) => (box as HTMLInputElement).checked);
+    const retryLabel = () => el('retry-selected')?.textContent?.trim();
+    /** The "Con error" filter, with its page answered by what is already known. */
+    const openFailed = async () => {
+      await click('filter-failed');
+      http.match((r) => r.url === '/api/jobs');
+      await settle();
+    };
+
+    beforeEach(() => {
+      document.body.appendChild(root());
+    });
+
+    describe('the "⋮" menu of a Batch', () => {
+      it('offers "Cancelar descargas" and "Reintentar fallidas" along with "Quitar del historial" when each applies', async () => {
+        jobs.jobs.set([
+          batchJob('b3', 3, 'downloading'),
+          batchJob('b2', 2, 'failed'),
+          batchJob('b1', 1, 'completed'),
+        ]);
+        await settle();
+        await click('batch-menu');
+
+        const items = Array.from(root().querySelectorAll('[role=menuitem]')).map((i) =>
+          i.textContent?.trim(),
+        );
+        expect(items).toEqual([
+          'Cancelar descargas',
+          'Reintentar fallidas',
+          'Quitar del historial',
+        ]);
+      });
+
+      it('is enabled with only queued jobs, offering just "Cancelar descargas"', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'queued'), batchJob('b2', 2, 'downloading')]);
+        await settle();
+
+        expect((el('batch-menu') as HTMLButtonElement).disabled).toBe(false);
+        await click('batch-menu');
+        expect(el('cancel-batch')).not.toBeNull();
+        expect(el('retry-batch')).toBeNull();
+        expect(el('remove-batch')).toBeNull();
+      });
+
+      it.each(['failed', 'canceled', 'interrupted'] as const)(
+        'offers "Reintentar fallidas" for a %s job',
+        async (state) => {
+          jobs.jobs.set([batchJob('b1', 1, state), batchJob('b2', 2, 'completed')]);
+          await settle();
+          await click('batch-menu');
+
+          expect(el('retry-batch')).not.toBeNull();
+          expect(el('cancel-batch')).toBeNull();
+        },
+      );
+
+      it('offers neither when everything completed', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'completed')]);
+        await settle();
+        await click('batch-menu');
+
+        expect(el('cancel-batch')).toBeNull();
+        expect(el('retry-batch')).toBeNull();
+        expect(el('remove-batch')).not.toBeNull();
+      });
+
+      it('asks before cancelling, counting the pending jobs it knows', async () => {
+        jobs.jobs.set([
+          batchJob('b1', 1, 'queued'),
+          batchJob('b2', 2, 'downloading'),
+          batchJob('b3', 3, 'completed'),
+        ]);
+        await settle();
+        await click('batch-menu');
+        await click('cancel-batch');
+
+        expect(dialog().hasAttribute('open')).toBe(true);
+        expect(el('confirm-title')?.textContent?.trim()).toBe(
+          '¿Cancelar las 2 descargas pendientes de esta playlist?',
+        );
+        expect(el('confirm-yes')?.textContent?.trim()).toBe('Sí, cancelar');
+        expect(el('confirm-no')?.textContent?.trim()).toBe('No');
+        http.expectNone('/api/batches/b1/cancel');
+      });
+
+      it('speaks of one download in the singular', async () => {
+        jobs.jobs.set([batchJob('b1', 1, 'queued'), batchJob('b2', 2, 'completed')]);
+        await settle();
+        await click('batch-menu');
+        await click('cancel-batch');
+
+        expect(el('confirm-title')?.textContent?.trim()).toBe(
+          '¿Cancelar la descarga pendiente de esta playlist?',
+        );
+      });
+
+      it('cancels the Batch with POST /api/batches/{id}/cancel once confirmed', async () => {
+        jobs.jobs.set([
+          batchJob('b1', 1, 'queued'),
+          batchJob('b2', 2, 'downloading'),
+          batchJob('b3', 3, 'completed'),
+        ]);
+        await settle();
+        await click('batch-menu');
+        await click('cancel-batch');
+        await click('confirm-yes');
+
+        const req = http.expectOne('/api/batches/b1/cancel');
+        expect(req.request.method).toBe('POST');
+        expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+        expect(statusOf('b1')).toBe('queued'); // nothing changes before the answer
+        req.flush({
+          jobs: [
+            { ...batchJob('b1', 1, 'canceled'), finishedAt: at(16, 20) },
+            batchJob('b2', 2, 'canceled'),
+          ],
+        });
+        await settle();
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        expect(['b1', 'b2', 'b3'].map(statusOf)).toEqual(['canceled', 'canceled', 'completed']);
+        expect(el('action-message')).toBeNull();
+      });
+
+      it.each([
+        ['"No"', 'confirm-no'],
+        ['a click outside', 'outside'],
+      ])('does nothing on %s', async (_, how) => {
+        jobs.jobs.set([batchJob('b1', 1, 'queued')]);
+        await settle();
+        await click('batch-menu');
+        await click('cancel-batch');
+        if (how === 'outside') {
+          dialog().click();
+          await settle();
+        } else {
+          await click(how);
+        }
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        http.expectNone('/api/batches/b1/cancel');
+        expect(statusOf('b1')).toBe('queued');
+        expect(document.activeElement).toBe(el('batch-menu'));
+      });
+
+      it('retries the Batch at once with POST /api/batches/{id}/retry, without asking', async () => {
+        jobs.jobs.set([
+          batchJob('b1', 1, 'failed'),
+          batchJob('b2', 2, 'canceled'),
+          batchJob('b3', 3, 'completed'),
+        ]);
+        await settle();
+        await click('batch-menu');
+        await click('retry-batch');
+
+        expect(dialog().hasAttribute('open')).toBe(false);
+        expect(el('retry-batch')).toBeNull(); // the menu closed
+        const req = http.expectOne('/api/batches/b1/retry');
+        expect(req.request.method).toBe('POST');
+        req.flush({
+          jobs: [
+            { ...batchJob('b1', 1, 'queued'), attempt: 2 },
+            { ...batchJob('b2', 2, 'queued'), attempt: 2 },
+          ],
+        });
+        await settle();
+
+        expect(['b1', 'b2', 'b3'].map(statusOf)).toEqual(['queued', 'queued', 'completed']);
+      });
+
+      it.each(['cancel', 'retry'])(
+        'shows the usual error when %s fails, and the real state',
+        async (action) => {
+          jobs.jobs.set([batchJob('b1', 1, 'queued'), batchJob('b2', 2, 'failed')]);
+          await settle();
+          await click('batch-menu');
+          await click(`${action}-batch`);
+          if (action === 'cancel') {
+            await click('confirm-yes');
+          }
+          http
+            .expectOne(`/api/batches/b1/${action}`)
+            .flush({ code: 'batch_not_found', message: 'x' }, { status: 404, statusText: 'x' });
+          http.match((r) => r.url === '/api/jobs').forEach((r) => r.flush(page([])));
+          await settle();
+
+          expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+        },
+      );
+    });
+
+    describe('selecting in "Con error"', () => {
+      const failures = [
+        jobAt('f1', at(16, 14), { status: 'failed' }),
+        jobAt('i1', at(16, 13), { status: 'interrupted' }),
+        batchJob('b2', 2, 'failed'),
+        jobAt('c1', at(16, 9), { status: 'completed' }),
+      ];
+
+      beforeEach(async () => {
+        jobs.jobs.set(failures);
+        await settle();
+      });
+
+      it('has no checkboxes in any other filter', async () => {
+        expect(all('select-job')).toHaveLength(0);
+        expect(el('selection-bar')).toBeNull();
+        await click('filter-completed');
+        http.match((r) => r.url === '/api/jobs');
+        await settle();
+
+        expect(all('select-job')).toHaveLength(0);
+        expect(el('selection-bar')).toBeNull();
+      });
+
+      it('puts a checkbox on every failed job, also on the ones of a playlist, and "Reintentar (0)" disabled', async () => {
+        await openFailed();
+
+        expect(titles()).toEqual(['f1', 'i1', 'b2']);
+        expect(all('select-job')).toHaveLength(3);
+        expect(el('select-all')?.closest('label')?.textContent?.trim()).toBe('Seleccionar todas');
+        expect(retryLabel()).toBe('Reintentar (0)');
+        expect((el('retry-selected') as HTMLButtonElement).disabled).toBe(true);
+      });
+
+      it('counts the jobs ticked one by one', async () => {
+        await openFailed();
+        await click('select-job', 0);
+        await click('select-job', 2);
+
+        expect(checked()).toEqual([true, false, true]);
+        expect(retryLabel()).toBe('Reintentar (2)');
+        expect((el('retry-selected') as HTMLButtonElement).disabled).toBe(false);
+
+        await click('select-job', 0);
+        expect(retryLabel()).toBe('Reintentar (1)');
+      });
+
+      it('"Seleccionar todas" ticks every loaded job, and a second time clears them', async () => {
+        await openFailed();
+        await click('select-all');
+
+        expect(checked()).toEqual([true, true, true]);
+        expect(retryLabel()).toBe('Reintentar (3)');
+        expect((el('select-all') as HTMLInputElement).checked).toBe(true);
+
+        await click('select-all');
+        expect(checked()).toEqual([false, false, false]);
+        expect(retryLabel()).toBe('Reintentar (0)');
+      });
+
+      it('ticks "Seleccionar todas" by itself when every job is ticked by hand', async () => {
+        await openFailed();
+        for (const index of [0, 1, 2]) {
+          await click('select-job', index);
+        }
+
+        expect((el('select-all') as HTMLInputElement).checked).toBe(true);
+      });
+
+      it('retries the ticked jobs with POST /api/jobs/retry, then empties the selection and the filter', async () => {
+        await openFailed();
+        await click('select-job', 0);
+        await click('select-job', 2);
+        await click('retry-selected');
+
+        const req = http.expectOne('/api/jobs/retry');
+        expect(req.request.method).toBe('POST');
+        expect(req.request.headers.get('X-Requested-With')).toBe('youtube-downloader');
+        expect(req.request.body).toEqual({ ids: ['f1', 'b2'] });
+        expect((el('retry-selected') as HTMLButtonElement).disabled).toBe(true); // in flight
+        req.flush({
+          jobs: [
+            { ...failures[0], status: 'queued', attempt: 2 },
+            { ...failures[2], status: 'queued', attempt: 2 },
+          ],
+        });
+        await settle();
+
+        expect(titles()).toEqual(['i1']);
+        expect(retryLabel()).toBe('Reintentar (0)');
+        expect(checked()).toEqual([false]);
+        expect(el('action-message')).toBeNull();
+      });
+
+      it('shows the usual error and keeps the selection when the retry fails', async () => {
+        await openFailed();
+        await click('select-all');
+        await click('retry-selected');
+        http
+          .expectOne('/api/jobs/retry')
+          .flush({ code: 'x', message: 'x' }, { status: 500, statusText: 'x' });
+        http.match((r) => r.url === '/api/jobs').forEach((r) => r.flush(page(failures)));
+        await settle();
+
+        expect(el('action-message')?.textContent).toContain('No se pudo completar la acción');
+        expect(retryLabel()).toBe('Reintentar (3)');
+        expect((el('retry-selected') as HTMLButtonElement).disabled).toBe(false);
+      });
+
+      it('empties the selection when the filter changes', async () => {
+        await openFailed();
+        await click('select-all');
+        await click('filter-all');
+        await openFailed();
+
+        expect(checked()).toEqual([false, false, false]);
+        expect(retryLabel()).toBe('Reintentar (0)');
+      });
+
+      it('forgets a ticked job that leaves the filter on its own (removed from another tab)', async () => {
+        jobs.connect();
+        await openFailed();
+        await click('select-all');
+        FakeEventSource.instances[0].emit('job.removed', { id: 'f1' });
+        await settle();
+
+        expect(titles()).toEqual(['i1', 'b2']);
+        expect(retryLabel()).toBe('Reintentar (2)');
+      });
+
+      it('shows no bar when the filter has no job', async () => {
+        jobs.jobs.set([jobAt('c1', at(16, 9), { status: 'completed' })]);
+        await click('filter-failed');
+        answer('failed,interrupted', page([]));
+        await settle();
+
+        expect(el('selection-bar')).toBeNull();
+        expect(el('downloads-empty')).not.toBeNull();
+      });
+    });
+  });
+
   describe('removing from the History', () => {
     const batchJob = (id: string, n: number, state: Job['status']) =>
       jobAt(id, at(16, 10 + n), {
@@ -1442,15 +1786,18 @@ describe('Downloads filters, days and cleaning', () => {
 
         expect(el('batch-menu')?.getAttribute('aria-expanded')).toBe('true');
         expect(el('remove-batch')?.textContent?.trim()).toBe('Quitar del historial');
-        expect(document.activeElement).toBe(el('remove-batch'));
+        expect(document.activeElement).toBe(el('cancel-batch')); // the first item
         expect(dialog().hasAttribute('open')).toBe(false);
       });
 
-      it('is disabled while the Batch has no finished job', async () => {
+      it('stays enabled while the Batch has no finished job: it can be canceled, not removed', async () => {
         jobs.jobs.set([batchJob('b1', 1, 'downloading'), batchJob('b2', 2, 'queued')]);
         await settle();
+        await click('batch-menu');
 
-        expect((el('batch-menu') as HTMLButtonElement).disabled).toBe(true);
+        expect((el('batch-menu') as HTMLButtonElement).disabled).toBe(false);
+        expect(el('cancel-batch')).not.toBeNull();
+        expect(el('remove-batch')).toBeNull();
       });
 
       it('asks first, with the number of finished jobs of the Batch and the files staying', async () => {

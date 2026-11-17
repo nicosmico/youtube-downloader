@@ -38,10 +38,15 @@ Reutilizar `JobQueue.cancel` y `JobQueue.retry` (`backend/app/jobs/queue.py`) y 
 
 ## Acceptance criteria
 
-- [ ] Los tres endpoints con tests (incluido: cancelar una Batch con jobs en cola y en curso, y que ningún `queued` arranque mientras tanto; 404; ids no reintentables ignorados).
-- [ ] Menú de la playlist con las dos acciones nuevas, confirmación para cancelar, y tests en `downloads.spec.ts`.
-- [ ] Selección y "Reintentar (N)" en "Con error", con tests.
-- [ ] `npm run test:ci` y `npm run build`; `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
-- [ ] Sin textos que expliquen la UI.
+- [x] Los tres endpoints con tests (incluido: cancelar una Batch con jobs en cola y en curso, y que ningún `queued` arranque mientras tanto; 404; ids no reintentables ignorados).
+- [x] Menú de la playlist con las dos acciones nuevas, confirmación para cancelar, y tests en `downloads.spec.ts`.
+- [x] Selección y "Reintentar (N)" en "Con error", con tests.
+- [x] `npm run test:ci` y `npm run build`; `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
+- [x] Sin textos que expliquen la UI.
 
 ## Comments
+
+- 2026-11-16 (agente): implementado.
+  - Backend: `JobQueue.cancel_batch/retry_batch/retry_many` (reusan `cancel`/`retry`; los `queued` de la Batch se cancelan en un solo paso bajo el lock de la Queue y luego los activos en paralelo). Rutas en `history_api.py`. `POST /api/jobs/retry` sin `require_engine_ready` (el retry individual tampoco lo tiene). Ids repetidos o más de 500: 422. Tests en `backend/tests/test_bulk_actions.py`.
+  - Frontend: menú de la playlist con "Cancelar descargas" (confirmación, botones "Sí, cancelar" / "No") y "Reintentar fallidas"; "Quitar del historial" solo aparece si hay algo terminado. Con "Con error": casilla por job (también dentro de playlists), "Seleccionar todas" (alterna) y "Reintentar (N)". Un reintento desde la selección no saca al usuario de "Con error" (el cambio automático a "Todas" cuando un job entra en la Queue se omite para esos ids); la selección se vacía al cambiar de filtro y tras reintentar con éxito (si falla se conserva).
+  - Los botones del menú de una playlist con solo jobs en curso ya no se desactivan (se puede cancelar): se ajustó el test existente.
