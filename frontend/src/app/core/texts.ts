@@ -40,6 +40,14 @@ export const TEXTS = {
     version: 'Versión',
     newVersion: 'Hay una versión nueva:',
   },
+  downloadDir: {
+    heading: 'Carpeta de descargas',
+    change: 'Cambiar…',
+    reset: 'Restablecer',
+    unavailable: 'No disponible',
+    changeFailed: 'No se pudo cambiar la carpeta.',
+    resetFailed: 'No se pudo restablecer la carpeta.',
+  },
   preview: {
     urlLabel: 'Enlace de YouTube',
     urlPlaceholder: 'Pega un enlace de YouTube',

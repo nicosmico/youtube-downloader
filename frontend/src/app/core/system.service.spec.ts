@@ -46,6 +46,32 @@ describe('SystemService', () => {
     expect(result).toEqual(body);
   });
 
+  it('does not store the folder when the dialog is canceled', () => {
+    let result: unknown;
+    service.chooseDownloadDir().subscribe((r) => (result = r));
+
+    const req = http.expectOne('/api/settings/download-dir/choose');
+    expect(req.request.method).toBe('POST');
+    req.flush({ canceled: true });
+
+    expect(result).toEqual({ canceled: true });
+    expect(service.downloadDir()).toBeNull();
+  });
+
+  it('stores the chosen folder and the one after a reset', () => {
+    const dir = { path: '/a', display: '/a', isDefault: false, available: true };
+    service.chooseDownloadDir().subscribe();
+    http.expectOne('/api/settings/download-dir/choose').flush(dir);
+    expect(service.downloadDir()).toEqual(dir);
+
+    const def = { path: '/h/Downloads', display: '~/Downloads', isDefault: true, available: true };
+    service.resetDownloadDir().subscribe();
+    const req = http.expectOne('/api/settings/download-dir');
+    expect(req.request.method).toBe('DELETE');
+    req.flush(def);
+    expect(service.downloadDir()).toEqual(def);
+  });
+
   it('sends the app header when requesting shutdown', () => {
     service.shutdown().subscribe();
 

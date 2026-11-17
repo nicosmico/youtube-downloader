@@ -61,7 +61,7 @@
             role="menu"
             appMenuKeys
             [attr.aria-label]="texts.menu.settings"
-            class="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-line bg-bg py-2 shadow-lg"
+            class="absolute right-0 z-30 mt-2 w-64 rounded-xl border border-line bg-bg py-2 shadow-lg"
           >
             <p class="m-0 px-4 pb-1 text-xs font-medium text-muted">{{ texts.menu.theme }}</p>
             @for (option of themes; track option.value) {
@@ -82,6 +82,66 @@
               </button>
             }
             <hr class="my-2 border-line" />
+            @if (downloadDir(); as dir) {
+              <div data-testid="download-dir">
+                <p class="m-0 px-4 pb-1 text-xs font-medium text-muted">
+                  {{ texts.downloadDir.heading }}
+                </p>
+                <p
+                  class="m-0 truncate px-4 text-sm"
+                  [class.text-accent]="!dir.available"
+                  [title]="dir.path"
+                  data-testid="download-dir-path"
+                >
+                  {{ dir.display }}
+                </p>
+                @if (!dir.available) {
+                  <p class="m-0 px-4 text-xs text-accent" data-testid="download-dir-unavailable">
+                    {{ texts.downloadDir.unavailable }}
+                  </p>
+                }
+                @if (dirError(); as message) {
+                  <p
+                    class="m-0 px-4 pt-1 text-xs text-accent"
+                    role="alert"
+                    data-testid="download-dir-error"
+                  >
+                    {{ message }}
+                  </p>
+                }
+                <div class="mt-1 flex flex-wrap gap-x-2 px-2">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="download-dir-change"
+                    class="flex h-9 items-center gap-2 rounded-md px-2 text-sm hover:bg-surface disabled:opacity-60"
+                    [disabled]="choosing()"
+                    (click)="chooseDir()"
+                  >
+                    @if (choosing()) {
+                      <span
+                        class="size-4 shrink-0 rounded-full border-2 border-muted border-t-transparent motion-safe:animate-spin"
+                        aria-hidden="true"
+                        data-testid="download-dir-spinner"
+                      ></span>
+                    }
+                    {{ texts.downloadDir.change }}
+                  </button>
+                  @if (!dir.isDefault) {
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="download-dir-reset"
+                      class="flex h-9 items-center rounded-md px-2 text-sm hover:bg-surface"
+                      (click)="resetDir()"
+                    >
+                      {{ texts.downloadDir.reset }}
+                    </button>
+                  }
+                </div>
+              </div>
+              <hr class="my-2 border-line" />
+            }
             <button
               type="button"
               role="menuitem"
