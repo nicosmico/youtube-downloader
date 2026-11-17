@@ -42,9 +42,11 @@ Hoy, si el preview de un vídeo trae `playlistUrl`, se muestra "Ver playlist com
 
 ## Acceptance criteria
 
-- [ ] Los cinco puntos, con tests en `url-preview.spec.ts` (Vitest + jsdom): playlist en segundo plano y "Descargar N" que pone en cola todas las entradas; sin "Descargar N" si la playlist falla o tiene 1 vídeo; textos nuevos; enlace a YouTube con `target=_blank` y `rel`; limpieza tras éxito y no tras error.
-- [ ] Tests de backend del punto 4.
-- [ ] `npm run test:ci` y `npm run build` en `frontend/`; `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
-- [ ] Sin textos que expliquen la UI.
+- [x] Los cinco puntos, con tests en `url-preview.spec.ts` (Vitest + jsdom): playlist en segundo plano y "Descargar N" que pone en cola todas las entradas; sin "Descargar N" si la playlist falla o tiene 1 vídeo; textos nuevos; enlace a YouTube con `target=_blank` y `rel`; limpieza tras éxito y no tras error.
+- [x] Tests de backend del punto 4.
+- [x] `npm run test:ci` y `npm run build` en `frontend/`; `docker compose run --rm tests`, `ruff check .`, `ruff format --check .`.
+- [x] Sin textos que expliquen la UI.
 
 ## Comments
+
+- 2026-11-16: implementado. Backend: `to_playlist_preview` filtra las entradas no disponibles (conservan `index`) y falla con "Esta playlist no tiene videos disponibles." si no queda ninguna. Frontend: el preview de un vídeo con `playlistUrl` carga la playlist en segundo plano (`switchMap`, se cancela al cambiar o limpiar); "Descargar 1" (primario, `download-button`) y "Descargar N" (secundario, `download-all-button`, con spinner y "Descargar playlist" mientras carga; oculto si falla o hay <=1 vídeo, y entonces el botón dice "Descargar"). "Ir a YouTube" fuera del input, en una fila con `flex-wrap`. Tras encolar bien se llama a `clear()` (vacía, cierra y enfoca); se eliminó el estado `enqueued` y el texto `preview.enqueued`. Decisiones: "Ver playlist completa" vuelve a pedir la playlist (no reutiliza la respuesta); el código de filas en gris del frontend (`available`, `unavailableReason`) se deja por compatibilidad; mientras carga la playlist el botón del vídeo ya dice "Descargar 1".

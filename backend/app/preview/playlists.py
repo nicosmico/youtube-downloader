@@ -45,11 +45,15 @@ def to_playlist_preview(data: dict[str, Any], classified: ClassifiedUrl) -> dict
 
     count = data.get("playlist_count")
     truncated = (count > MAX_ENTRIES) if isinstance(count, int) else len(raw_entries) >= MAX_ENTRIES
+    # Unavailable entries are left out (nothing to download), but keep their position in the
+    # playlist: `index` numbers the files.
     entries = [
-        _entry(index, raw)
+        entry
         for index, raw in enumerate(raw_entries[:MAX_ENTRIES], start=1)
-        if isinstance(raw, dict)
+        if isinstance(raw, dict) and (entry := _entry(index, raw))["available"]
     ]
+    if not entries:
+        raise PreviewFailure(failure("unavailable", "Esta playlist no tiene videos disponibles."))
     return {
         "kind": "playlist",
         "id": str(data.get("id") or ""),

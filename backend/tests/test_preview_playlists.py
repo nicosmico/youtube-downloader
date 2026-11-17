@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.engine import EngineManager
 from app.main import create_app
 from app.preview.mapping import PreviewFailure
-from app.preview.playlists import MAX_ENTRIES, to_playlist_preview
+from app.preview.playlists import MAX_ENTRIES, _entry, to_playlist_preview
 from app.preview.urls import ClassifiedUrl, UrlKind
 from tests.conftest import APP_HEADERS, HOST, PORT
 from tests.fakes import FakeYtdlp, load_fixture
@@ -64,16 +64,26 @@ class TestMapping:
         }
         assert [e["index"] for e in preview["entries"]] == [1, 2]
 
-    def test_private_or_deleted_entries_are_unavailable_with_a_reason(self) -> None:
+    def test_private_or_deleted_entries_are_left_out_keeping_the_original_index(self) -> None:
         preview = to_playlist_preview(load_fixture("playlist_unavailable"), classified())
 
         entries = preview["entries"]
-        assert preview["entryCount"] == 11
-        gone = [e for e in entries if not e["available"]]
-        assert [e["index"] for e in gone] == [4, 8, 10]  # positions in the playlist
-        assert all(e["unavailableReason"] == "Video privado o eliminado" for e in gone)
-        assert all(e["title"] == "Video no disponible" for e in gone)
-        assert all("unavailableReason" not in e for e in entries if e["available"])
+        assert preview["entryCount"] == len(entries) == 8
+        assert all(e["available"] for e in entries)
+        assert all("unavailableReason" not in e for e in entries)
+        # 11 in the playlist; positions 4, 8 and 10 are gone and the others keep their number
+        assert [e["index"] for e in entries] == [1, 2, 3, 5, 6, 7, 9, 11]
+
+    def test_a_playlist_with_nothing_available_is_refused(self) -> None:
+        data = synthetic(2)
+        for entry in data["entries"]:
+            entry["title"] = "[Private video]"
+
+        with pytest.raises(PreviewFailure) as exc:
+            to_playlist_preview(data, classified())
+
+        assert exc.value.failure.code == "unavailable"
+        assert exc.value.failure.message == "Esta playlist no tiene videos disponibles."
 
     @pytest.mark.parametrize(
         ("raw", "reason"),
@@ -87,10 +97,7 @@ class TestMapping:
         ],
     )
     def test_reasons(self, raw: dict, reason: str) -> None:
-        data = synthetic(1)
-        data["entries"][0].update(raw)
-
-        (entry,) = to_playlist_preview(data, classified())["entries"]
+        entry = _entry(1, {"id": "a" * 11, **raw})
 
         assert entry["available"] is False
         assert entry["unavailableReason"].startswith(reason)
@@ -98,13 +105,20 @@ class TestMapping:
         assert not entry["title"].startswith("[")
 
     def test_an_entry_without_a_valid_id_is_unavailable_and_has_no_url(self) -> None:
-        data = synthetic(1)
-        data["entries"][0]["id"] = "x"
-
-        (entry,) = to_playlist_preview(data, classified())["entries"]
+        entry = _entry(1, {"id": "x", "title": "Video"})
 
         assert entry["available"] is False
         assert entry["url"] == ""
+
+    def test_unavailable_entries_are_not_in_the_preview(self) -> None:
+        data = synthetic(3)
+        data["entries"][0]["availability"] = "needs_auth"
+        data["entries"][2]["id"] = "x"
+
+        preview = to_playlist_preview(data, classified())
+
+        assert [e["index"] for e in preview["entries"]] == [2]
+        assert preview["entryCount"] == 1
 
     def test_more_than_500_is_truncated(self) -> None:
         preview = to_playlist_preview(synthetic(730), classified())
@@ -215,11 +229,11 @@ class TestPreviewApi:
         ]
         assert not download_dir.exists()
 
-    def test_unavailable_entries_come_with_their_reason(self, api: TestClient) -> None:
-        entries = preview(api, UNAVAILABLE).json()["entries"]
+    def test_unavailable_entries_are_left_out(self, api: TestClient) -> None:
+        body = preview(api, UNAVAILABLE).json()
 
-        assert sum(not e["available"] for e in entries) == 3
-        assert all(e["unavailableReason"] for e in entries if not e["available"])
+        assert body["entryCount"] == len(body["entries"]) == 8
+        assert all(e["available"] for e in body["entries"])
 
     def test_a_bare_channel_url_asks_for_the_videos_tab(
         self, api: TestClient, ytdlp: FakeYtdlp
