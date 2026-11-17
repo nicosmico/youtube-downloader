@@ -10,7 +10,10 @@ import { JOB, jobAt, localIso } from '../../testing/fixtures';
 import { flushRehydration } from '../../testing/rehydration';
 import { Job, JobsService } from '../core/jobs.service';
 import { SystemService } from '../core/system.service';
-import { Downloads, formatBytes, groupJobs } from './downloads';
+import { BATCH_OPEN_STORAGE_KEY, Downloads, formatBytes, groupJobs } from './downloads';
+
+// The open/closed choice of a playlist lives in localStorage: no test may see another's.
+beforeEach(() => localStorage.clear());
 
 describe('Downloads', () => {
   let fixture: ComponentFixture<Downloads>;
@@ -410,12 +413,155 @@ describe('batches', () => {
     expect(root().querySelectorAll('[data-testid=batch] [data-testid=job-card]')).toHaveLength(3);
   });
 
+  describe('folding', () => {
+    const toggle = () => all('batch-toggle')[0] as HTMLButtonElement;
+    const click = async (target: HTMLElement) => {
+      target.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const finished = [
+      batchJob(1, { id: 'a', status: 'completed' }),
+      batchJob(2, { id: 'b', status: 'completed' }),
+      batchJob(3, { id: 'c', status: 'failed' }),
+    ];
+
+    it('shows only the header when every job has finished, with a button that says so', async () => {
+      await show(...finished);
+
+      expect(all('batch-title')[0].textContent).toContain('Mi playlist');
+      expect(all('batch-summary')[0].textContent).toContain('2/3 completadas');
+      expect(all('job-card')).toHaveLength(0);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().getAttribute('aria-controls')).toBe(all('batch-rows')[0].id);
+      expect(toggle().textContent).toContain('Mi playlist');
+    });
+
+    it('opens by default while a job is queued or running', async () => {
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'queued' }));
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(2);
+
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'downloading' }));
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('opens and closes with a click (a real button: Enter and Space do the same)', async () => {
+      await show(...finished);
+
+      expect(toggle().tagName).toBe('BUTTON');
+      expect(toggle().type).toBe('button');
+      await click(toggle());
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(3);
+      await click(toggle());
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(all('job-card')).toHaveLength(0);
+    });
+
+    it('folds by itself when the playlist finishes while watched', async () => {
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'downloading' }));
+      expect(all('job-card')).toHaveLength(2);
+
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'completed' }));
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(all('job-card')).toHaveLength(0);
+    });
+
+    it('keeps what the user chose, even when the jobs change', async () => {
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'downloading' }));
+      await click(toggle());
+      expect(all('job-card')).toHaveLength(0);
+
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'completed' }));
+      await show(batchJob(1, { status: 'completed' }), batchJob(2, { status: 'queued' }));
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('always shows the rows in "Con error", where they are ticked', async () => {
+      await show(...finished);
+      expect(all('job-card')).toHaveLength(0);
+
+      jobs.select('failed');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(1);
+      expect(all('select-job')).toHaveLength(1);
+    });
+
+    it('remembers the choice by batch id across reloads', async () => {
+      await show(...finished);
+      await click(toggle());
+      expect(JSON.parse(localStorage.getItem(BATCH_OPEN_STORAGE_KEY)!)).toEqual([['b1', true]]);
+
+      fixture.destroy();
+      fixture = TestBed.createComponent(Downloads);
+      await fixture.whenStable();
+      await show(...finished);
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(3);
+    });
+
+    it('keeps only the newest 200 choices', async () => {
+      const old = Array.from({ length: 200 }, (_, i) => [`old${i}`, true]);
+      localStorage.setItem(BATCH_OPEN_STORAGE_KEY, JSON.stringify(old));
+      fixture.destroy();
+      fixture = TestBed.createComponent(Downloads);
+      await fixture.whenStable();
+      await show(...finished);
+
+      await click(toggle());
+
+      const kept: [string, boolean][] = JSON.parse(localStorage.getItem(BATCH_OPEN_STORAGE_KEY)!);
+      expect(kept).toHaveLength(200);
+      expect(kept[0][0]).toBe('old1');
+      expect(kept.at(-1)).toEqual(['b1', true]);
+    });
+
+    it('works without storage, and ignores a corrupt one', async () => {
+      localStorage.setItem(BATCH_OPEN_STORAGE_KEY, '{not json');
+      const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      fixture.destroy();
+      fixture = TestBed.createComponent(Downloads);
+      await fixture.whenStable();
+      await show(...finished);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+
+      await click(toggle());
+
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(all('job-card')).toHaveLength(3);
+      setItem.mockRestore();
+    });
+
+    it('does not fold or unfold when the "⋮" menu is used', async () => {
+      await show(...finished);
+
+      await click(all('batch-menu')[0]);
+
+      expect(all('batch-menu')[0].getAttribute('aria-expanded')).toBe('true');
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      await click(all('retry-batch')[0]);
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
   it('keeps the jobs individual: each has its own status and error', async () => {
     await show(
       batchJob(1, { status: 'completed' }),
       batchJob(2, { status: 'failed', error: 'El video es privado' }),
       batchJob(3, { status: 'completed' }),
     );
+    (all('batch-toggle')[0] as HTMLElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
 
     expect(all('job-status').map((s) => s.textContent?.trim())).toEqual([
       'Video · Mejor disponible · Completada',
@@ -1377,6 +1523,8 @@ describe('Downloads filters, days and cleaning', () => {
         inBatch('b1', 1, at(15, 19)),
         jobAt('older', at(15, 8), { status: 'completed' }),
       ]);
+      await settle();
+      (el('batch-toggle') as HTMLElement).click();
       await settle();
 
       expect(headers()).toEqual(['Hoy', 'Ayer']);
